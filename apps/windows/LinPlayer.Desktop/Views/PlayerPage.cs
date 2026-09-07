@@ -2619,8 +2619,8 @@ public sealed class PlayerPage : UserControl
     /// <summary>
     /// 画质档位(<c>UI_PC.md</c> §7 底部第七个面板,快捷键 <c>U</c>)。
     ///
-    /// <para>档位表由<b>核心层</b>给(28 档,分 Anime4K / FSR / NVIDIA / 通用四族),
-    /// UI 不自己写一份。写一份的下场是加档位要改两处,而漏改的那处不报错。</para>
+    /// <para>档位表由<b>核心层</b>给(六档 A/B/C,见 <c>core/shaders</c>),
+    /// UI 不自己写一份 —— 写一份的下场是加档位要改两处,而漏改的那处不报错。</para>
     ///
     /// <para><b>档位故意不持久化</b>(2026-08-31 已定,别顺手加)——
     /// 它跟当前这一片的分辨率和窗口大小绑定,记住上一片的档位只会带来
@@ -2632,7 +2632,8 @@ public sealed class PlayerPage : UserControl
     /// <para>存在的理由:着色器方言跟渲染后端走。换了后端(这里是
     /// libplacebo → gl_video + ANGLE),<b>每一档都得重新验</b> ——
     /// 而这类失败编译绿、单测绿、返回码也绿,只有真渲染才现形。
-    /// 一档一档手点要跑 28 轮,没人会跑;一轮跑完才有人跑。</para>
+    /// 跑之前先看一眼日志里那行「GL 后端 / 显卡 / 着色器语言」:
+    /// 方言对不上的时候,那一行就是答案。</para>
     /// </summary>
     private async Task SelfCheckSweepQuality()
     {

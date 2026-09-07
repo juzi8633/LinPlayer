@@ -84,6 +84,23 @@ static int lp_rc_create(void **out, void *mpv, void *gpa, void *gpa_ctx) {
     return mpv_render_context_create(out, mpv, ps);
 }
 
+// lp_gl_strings 用宿主给的 get_proc_address 问一次「这个 GL 是谁」。
+//
+// 必须在 GL 上下文 current 的线程上调(GLInit 就是)。取不到就留空指针 ——
+// EGL 允许 eglGetProcAddress 不返回核心函数,那不是错误。
+static void lp_gl_strings(void *gpa, void *gpa_ctx,
+                          const char **ver, const char **rend, const char **glsl) {
+    typedef void* (*gpa_fn)(void*, const char*);
+    typedef const unsigned char* (*get_string_fn)(unsigned int);
+    *ver = *rend = *glsl = 0;
+    if (!gpa) return;
+    get_string_fn gs = (get_string_fn)((gpa_fn)gpa)(gpa_ctx, "glGetString");
+    if (!gs) return;
+    *rend = (const char*)gs(0x1F01);  // GL_RENDERER
+    *ver  = (const char*)gs(0x1F02);  // GL_VERSION
+    *glsl = (const char*)gs(0x8B8C);  // GL_SHADING_LANGUAGE_VERSION
+}
+
 // mpv_event / mpv_event_log_message 照 client.h 原样声明。
 //
 // ★ 原来这里只读第一个 int(event_id)并注释「不碰后面的,读了就是在赌」。
@@ -437,7 +454,27 @@ func GLInit(getProcAddress unsafe.Pointer, ctx unsafe.Pointer) int32 {
 	rctx = out
 	rctxSet.Store(true)
 	bus.Logf("info", "视频通道 B 已就绪(render context 已建立)")
+	logGLIdentity(getProcAddress, ctx)
 	return 0
+}
+
+// logGLIdentity 把 GL 的自我介绍打进日志。
+//
+// ☠ 着色器方言跟渲染后端走:同一份 .glsl 在 libplacebo 上跑得好好的,
+// 换到 ANGLE 的 GLES 上可能编不过、或者编过了但那一趟 pass 根本没法 dispatch
+// (计算着色器就是这样),而返回码、属性、挂载数**全是绿的**。
+// 之前每次「超分没效果」都得靠猜是哪一层,现在这一行直接给答案 ——
+// 顺带也是「有没有跑在独显上」的判据(GL_RENDERER 里就是显卡名)。
+func logGLIdentity(gpa, ctx unsafe.Pointer) {
+	var ver, rend, glsl *C.char
+	C.lp_gl_strings(gpa, ctx, &ver, &rend, &glsl)
+	if ver == nil && rend == nil {
+		bus.Logf("warn", "问不到 GL 自己是谁(get_proc_address 不给 glGetString)—— "+
+			"着色器出问题时这一层就查不了")
+		return
+	}
+	bus.Logf("info", "GL 后端:%s | 显卡:%s | 着色器语言:%s",
+		C.GoString(ver), C.GoString(rend), C.GoString(glsl))
 }
 
 /* GLWantsRedraw 有没有新帧。**宿主已经不拿它决定画不画了** —— 见 GLRender 上面那段:

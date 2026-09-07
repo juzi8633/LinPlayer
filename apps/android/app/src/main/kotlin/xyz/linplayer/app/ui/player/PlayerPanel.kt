@@ -31,6 +31,7 @@ import xyz.linplayer.app.data.Item
 import xyz.linplayer.app.data.LocalApp
 import xyz.linplayer.app.data.arr
 import xyz.linplayer.app.data.bool
+import xyz.linplayer.app.data.boolOrNull
 import xyz.linplayer.app.data.dbl
 import xyz.linplayer.app.data.long
 import xyz.linplayer.app.data.strList
@@ -39,6 +40,7 @@ import xyz.linplayer.app.data.str
 import xyz.linplayer.app.ui.components.Dim3
 import xyz.linplayer.app.ui.components.glass
 import xyz.linplayer.app.ui.components.OptRow
+import xyz.linplayer.app.data.ToastKind
 import xyz.linplayer.app.ui.pages.args
 import xyz.linplayer.app.ui.theme.Lp
 import xyz.linplayer.app.ui.theme.R
@@ -123,13 +125,21 @@ fun PlayerPanel(
                     current = itemId
                 }
             }
+            /* 画质(超分)。★ **`will_run == false` 的档位不进列表**
+               ——【用户定 2026-09-04:「不生效的选项直接删掉,不要展示出来」】。
+               核心层每档都带这个判据,上一版安卓侧把它整个丢了,于是 PC 藏起来的
+               档位在手机上照样列出来,点了画面一点不变 —— 那正是用户说的
+               「完全没看出来效果」。`off` 永远留着:它是「关掉」不是一档效果。 */
             "quality" -> {
-                options = runCatching { app.call("player.shaderLevels") }.getOrNull().arr()
-                    .mapNotNull {
-                        val o = it.obj() ?: return@mapNotNull null
-                        Triple(o.str("id") ?: return@mapNotNull null, o.str("group"),
-                            o.str("name") ?: "档位")
-                    }
+                val lv = runCatching { app.call("player.shaderLevels") }.getOrNull().arr()
+                options = lv.mapNotNull {
+                    val o = it.obj() ?: return@mapNotNull null
+                    val id = o.str("id") ?: return@mapNotNull null
+                    // ★ 用 boolOrNull:没这个键 = 核心层还没法判断(没在播),那就全都留着
+                    if (id != "off" && o.boolOrNull("will_run") == false) return@mapNotNull null
+                    Triple(id, o.str("group"), o.str("name") ?: "档位")
+                }
+                current = lv.firstOrNull { it.obj().bool("selected") }.obj().str("id")
             }
             "danmaku" -> {
                 options = listOf(
@@ -154,11 +164,15 @@ fun PlayerPanel(
                ☠ 上一版把它当设置项走 `pick`,而 pick 的 when 里根本没有 "more"
                   这一支 —— 落到 `else -> Unit`,表现是「更多里点什么都没反应」。 */
             "more" -> {
-                options = listOf(
+                options = listOfNotNull(
                     Triple("ratio", null, "画面比例"),
                     Triple("source", null, "版本与线路"),
                     Triple("audio", null, "音轨"),
-                    Triple("quality", null, "画质"),
+                    /* ☠ **Exo 内核下没有「画质」这一项。** 超分是 mpv 的 glsl-shaders,
+                       Exo 那条路上 mpv 手里根本没有这一片 —— 挂上去是空转,
+                       而 `player.setShaderLevel` 照样返回成功。
+                       一颗「点开永远没效果」的按钮比没有它更糟。 */
+                    if (exo == null) Triple("quality", null, "画质") else null,
                     Triple("danmaku", null, "弹幕"),
                 )
             }
@@ -235,7 +249,15 @@ private suspend fun pick(
             "subtitle" -> app.call("player.setTrack", args("kind" to "sub", "id" to id))
             "source" -> app.call("player.play", args("item_id" to itemId, "media_source_id" to id))
             "episodes" -> app.call("player.play", args("item_id" to id))
-            "quality" -> app.call("player.setShaderLevel", args("level" to id))
+            /* ★ 超分**必须看返回体**:`setShaderLevel` 在着色器跑不起来时会
+               自己退回关闭并带上 `reverted` —— 不看就是「界面说已启用、实际是关的」,
+               本仓最贵的那类 bug。核心层把原因写在 note 里,原样转给用户。 */
+            "quality" -> {
+                val r = app.call("player.setShaderLevel", args("level" to id)).obj()
+                if (r.bool("reverted")) {
+                    app.toast(r.str("note") ?: "这档在你这台机器上跑不起来", ToastKind.Error)
+                }
+            }
             /* 弹幕开关走 player.setDanmakuEnabled(2026-09-06 新增)。
                ☠ **不是** danmaku.setDanmakuConfig —— 那条收的是**弹幕源清单**,
                  传 enabled 进去核心层只会报「缺少 sources」。

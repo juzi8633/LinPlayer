@@ -29,6 +29,11 @@ fun JsonObject?.str(k: String): String? = this?.get(k)?.jsonPrimitive?.contentOr
 fun JsonObject?.long(k: String): Long? = this?.get(k)?.jsonPrimitive?.longOrNull
 fun JsonObject?.dbl(k: String): Double? = this?.get(k)?.jsonPrimitive?.doubleOrNull
 fun JsonObject?.bool(k: String): Boolean = this?.get(k)?.jsonPrimitive?.booleanOrNull == true
+
+/* boolOrNull:**「没这个键」和「键是 false」不是一回事**的场合用它。
+   `bool` 把两者都折成 false —— 用它去筛「核心层说不生效的档位」,
+   会把「核心层还没法判断(没在播)」的整张表也筛没,用户看到一张空表。 */
+fun JsonObject?.boolOrNull(k: String): Boolean? = this?.get(k)?.jsonPrimitive?.booleanOrNull
 fun JsonObject?.strList(k: String): List<String> =
     this?.get(k).arr().mapNotNull { it.jsonPrimitive.contentOrNull }
 

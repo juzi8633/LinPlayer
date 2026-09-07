@@ -39,10 +39,16 @@ var (
 	shaderErr   string // 最近一条着色器编译错误;取走即清
 )
 
-// isShaderCompileError 认一条 mpv 日志是不是着色器编译/链接失败。
+// isShaderCompileError 认一条 mpv 日志是不是「这一档跑不起来」。
 //
 // ★ 只认这几种:mpv 的 error 级日志里还有网络、解码、字幕的错,
 // 把它们也当成「着色器坏了」会让好好的档位被无故关掉。
+//
+// ☠ 名字里写着 compile,但**分类的是「跑不起来」而不是「编不过」**。
+// 2026-09-07 补上 dispatch 那一支:计算着色器在 ANGLE 的 GLES 上不一定有,
+// 那种 pass **编译得过、只是没法派发**,mpv 说的是
+// 「Failed dispatching COMPUTE shader」—— 上一版只认编译错,于是这一整类
+// 「开了没效果」从闸门底下走过去,UI 照样报「已启用」。
 func isShaderCompileError(text string) bool {
 	t := strings.ToLower(text)
 	switch {
@@ -50,6 +56,7 @@ func isShaderCompileError(text string) bool {
 		strings.Contains(t, "fragment shader source"),
 		strings.Contains(t, "vertex shader source"),
 		strings.Contains(t, "no matching overloaded function"),
+		strings.Contains(t, "failed dispatching"),
 		strings.Contains(t, "shader link log"):
 		return true
 	}
@@ -222,7 +229,7 @@ func revertedResult(level, reason string) map[string]any {
 		"count":    0,
 		"will_run": false,
 		"reverted": true,
-		"note": "这档在你这台机器的渲染后端上编译不过,已自动退回「关闭」" +
+		"note": "这档在你这台机器的渲染后端上跑不起来,已自动退回「关闭」" +
 			"(画面不会被弄坏)。mpv 的原话:" + firstLine(reason),
 	}
 }

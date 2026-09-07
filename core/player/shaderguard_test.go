@@ -18,6 +18,9 @@ func Test着色器错误分类(t *testing.T) {
 		"fragment shader source:",
 		"vertex shader source:",
 		"shader link log (status=0):",
+		// 2026-09-07:计算着色器派发失败。**编译是过的**,只是这一趟 pass 跑不起来,
+		// 而画面照旧渲染 —— 上一版认不出它,于是「开了没效果」从闸门底下走过去
+		"Failed dispatching COMPUTE shader",
 	}
 	for _, s := range yes {
 		if !isShaderCompileError(s) {
@@ -30,6 +33,7 @@ func Test着色器错误分类(t *testing.T) {
 		"Error parsing subtitle file",
 		"cu->cuGLGetDevices(...) failed -> CUDA_ERROR_OPERATING_SYSTEM",
 		"Failed sending hook command auto_profiles/on_load. Removing hook.",
+		"Failed to open segment",
 		"Loading failed.",
 	}
 	for _, s := range no {

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 
 	"linplayer/core/bus"
 	"linplayer/core/config"
@@ -24,6 +25,20 @@ import (
 
 var prefsClient *emby.Client
 
+/* 当前生效的画质档。**不落盘**(档位跟这一片的分辨率和窗口大小绑定,
+   记住上一片的只会带来「上次好好的这次不生效」),但要记在进程里 ——
+   移动端的面板每次打开都是新建的,没有这个就回显不出「现在开着哪一档」,
+   用户看到的是一张全都没选中的表。 */
+var curShader atomic.Value
+
+func currentShaderLevel() string {
+	v, _ := curShader.Load().(string)
+	if v == "" {
+		return "off"
+	}
+	return v
+}
+
 // registerPrefsCommands 由 RegisterCommands 调用。
 func registerPrefsCommands(version string) {
 	prefsClient = emby.NewClient(version)
@@ -31,11 +46,11 @@ func registerPrefsCommands(version string) {
 
 	/* shaderLevels 档位表。
 
-	   ★★ 2026-09-04 起**每一档都带 will_run** —— 用户原话:「不生效的选项直接删掉,
-	     不要展示出来,只保留生效的(目前很多选中了却不生效)」。
-	     此前的口径是「会不会真跑由 WillRun 在**点击时**如实告知,不在列表里预标」,
-	     那条被推翻了:放大那几族在窗口模式下**一档都不会跑**,而它们占了列表的 5/8,
-	     用户挨个点一遍、每次收到一句「这档不会生效」,那不是告知,是让他做无用功。
+	   ★★ 每一档都带 will_run —— 用户原话:「不生效的选项直接删掉,不要展示出来,
+	     只保留生效的(目前很多选中了却不生效)」。
+	     2026-09-07 重排档位之后,六档都带一个不挑尺寸的锐化 pass,所以这个字段
+	     现在恒为 true;**它留着不是摆设** —— 它是「档位表里不许再出现纯放大档」
+	     这条约束的运行期出口,哪天有人加了一档纯放大,UI 会自己把它藏掉。
 	   ★ 判据和 setShaderLevel 用的是**同一个** shaders.WillRun + 同一份尺寸,
 	     不另写一套 —— 两份判断迟早会说不一样的话。
 	   ★ 尺寸未知(没在播)时**不给这个字段**,UI 那边就全都显示。
@@ -43,9 +58,11 @@ func registerPrefsCommands(version string) {
 	bus.Register("player.shaderLevels", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
 		vw, vh := propF("video-params/w"), propF("video-params/h")
 		ow, oh := propF("osd-dimensions/w"), propF("osd-dimensions/h")
+		cur := currentShaderLevel()
 		out := make([]map[string]any, 0, len(shaders.Levels()))
 		for _, l := range shaders.Levels() {
-			m := map[string]any{"id": l.ID, "name": l.Name, "group": l.Group}
+			m := map[string]any{"id": l.ID, "name": l.Name, "group": l.Group,
+				"selected": l.ID == cur}
 			if run, ok := shaders.WillRun(l.ID, vw, vh, ow, oh); ok {
 				m["will_run"] = run
 			}
@@ -76,6 +93,7 @@ func registerPrefsCommands(version string) {
 		   mpv 每个着色器程序一个进程里只报一次错(实测),所以「等错误冒出来」
 		   这一招只挡得住第一档,后面共用同一个坏文件的全会漏过去。 */
 		if r := knownBadReason(level, list); r != "" {
+			curShader.Store("off")
 			return revertedResult(level, r), nil
 		}
 
@@ -85,6 +103,7 @@ func registerPrefsCommands(version string) {
 
 		out := map[string]any{"level": level, "count": len(list)}
 		if len(list) == 0 {
+			curShader.Store("off")
 			return out, nil // off:关掉就完事,没有「会不会跑」这回事
 		}
 
@@ -102,12 +121,24 @@ func registerPrefsCommands(version string) {
 			setProp("glsl-shader-opts", "")
 			setProp("glsl-shaders", "")
 			markShaderBad(level, list, e)
-			bus.Logf("error", "着色器档位 %s 编译失败,已退回关闭:%s", level, e)
+			curShader.Store("off")
+			bus.Logf("error", "着色器档位 %s 跑不起来,已退回关闭:%s", level, e)
 			return revertedResult(level, e), nil
 		}
 		markShaderOK(level, list)
+		curShader.Store(level)
 		vw, vh := propF("video-params/w"), propF("video-params/h")
 		ow, oh := propF("osd-dimensions/w"), propF("osd-dimensions/h")
+		/* 放大那半跑没跑**只进日志,不进界面**【用户定 2026-09-07:
+		   「各种各样的莫名的提示……这个提示对这个选项没有用处」】。
+		   它是「用户说开了不够清晰」时唯一能分清「档位没生效」和「屏幕就这么大」
+		   的一行 —— 而屏幕就这么大不是故障,不该每次切档都念给他听。 */
+		if up, ok := shaders.UpscaleWillRun(level, vw, vh, ow, oh); ok {
+			bus.Logf("info", "档位 %s:放大那半%s(源 %.0f×%.0f → 画面区 %.0f×%.0f,"+
+				"要 %.1f 倍以上才跑);锐化那半任何尺寸都跑",
+				level, map[bool]string{true: "在跑", false: "没跑"}[up],
+				vw, vh, ow, oh, shaders.WhenRatio)
+		}
 		if run, ok := shaders.WillRun(level, vw, vh, ow, oh); ok {
 			out["will_run"] = run
 			if !run {

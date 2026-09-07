@@ -1,42 +1,42 @@
 // Package shaders 是超分 / 画质增强档位 → glsl shader 链。
 //
-// **Rust 版是黄金实现。**
-// # 设计口径(用户 2026-07-15 定,推翻此前所有版本)
+// # 只做两件事:锐化、提分辨率
 //
-// 用户原话:「为什么要用还原呢?不应该是**锐化+去噪**吗」
-// 「我也需要**窗口模式下也能锐化/去噪**」。
+// 用户 2026-09-07 原话:「超分能看得出效果的,一个是锐化,一个是提升分辨率,
+// 就这两个,你选择这两个相关的超分算法」。所以这里**只有**自适应锐化和
+// Anime4K CNN 放大两种 pass,双边去噪那两个文件同日删除 ——
+// 它们改变的是噪点而不是清晰度,用户看不出来,却让每一档多一份开销。
 //
-// **核心教训:锐化/去噪 和 放大 是两件事,别糅成一坨。**
-//
-// 此前六档全是 Anime4K 的 CNN **放大**链,而 Anime4K 每个 CNN pass 都带门槛
+// **锐化和放大是两件事,别糅成一坨。** Anime4K 每个 CNN pass 都带门槛
 // `//!WHEN OUTPUT.w MAIN.w / 1.200 > ...` —— 输出没比源大 1.2 倍就**一帧都不跑**。
-// 于是窗口里播 1080p(输出 1770×1080 < 源 1920×1080)点什么档位都毫无变化,
-// 而 UI 还在报「超分已生效 · 挂载 6 个 shader」—— 典型的「不报错,只是静默不干活」。
-//
-// 正确的分法是:**锐化归锐化(门槛是参数,任何尺寸都跑),放大归放大(才看尺寸)**。
+// 所以每一档都由「不挑尺寸的锐化」+「挑尺寸的 CNN 放大」两半组成:
+// 窗口里退化成只锐化,全屏才补上放大。上一版有五档是纯放大,
+// 在 1080p 屏上播 1080p 时一帧都不跑,就是用户说的「开了也看不出效果」。
 //
 // # 强度是「档位设计」的一部分,不是用户的活
 //
 // 用户 2026-07-15 原话:「强度不是靠用户调的 是让你设计挡位的 我说看不太出来
-// 你就把各个档位都调高不就好了吗 用户又不会调」。
-// 此前加过一个 0~100 的 stepper 让用户自己找甜点 —— 那是把设计责任外包给用户。
-// 现在每档的参数**在 presets 里调死**,梯度由档位名承诺(轻 / 推荐 / 强),
-// UI 上没有任何数字可拧。
+// 你就把各个档位都调高不就好了吗 用户又不会调」。每档的参数在 presetsFor 里调死,
+// 梯度由档位名承诺(A/B/C = 低/中/高),UI 上没有任何数字可拧。
+//
+// # 六档 A/B/C(用户定 2026-09-07)
+//
+// 用户原话:「只需要三个档位 低中高 也就是 ABC,三个档位排列组合
+// A+A B+B A+C A B C 六个档位即可」。ABC 在这里是**锐化强度三档**,
+// 不是 Anime4K 官方那三种 Restore 模式(那套要 Restore CNN,用户 2026-07-11 否过)。
+// 带 `+` 的三档 = 同强度再叠一层 CNN 放大。
 //
 // # 历史(别再走回头路)
 //
-//   - Restore CNN:用户 2026-07-11 明确否掉 —— 动态画面边缘振铃 / 拖影,且最吃显卡。
-//     **别加回来**,有测试钉。
-//   - 纯 Anime4K CNN 去噪梯子(S/M/L/VL):看着合理,实际窗口模式下全程空转。
-//     只留 VL 作壮机全屏档。
+//   - Restore CNN:用户 2026-07-11 明确否掉 —— 边缘振铃 / 拖影,且最吃显卡。有测试钉。
+//   - ArtCNN_C4F16:2026-09-07 删除。它**八个 pass 全是 `//!COMPUTE`**,
+//     而桌面走 ANGLE 的 GLES;那条路上不一定有计算着色器,mpv 只在日志里说
+//     「Failed dispatching COMPUTE shader」,返回码全绿 —— 于是「开了没效果」。
 //
 // # 为什么把 .glsl 编进二进制
 //
 // 绿色版是平铺分发,没有 resources 目录可用。首次用时落盘到数据目录 ——
-// mpv 的 glsl-shaders 只收**文件路径**。
-//
-// ★ `files/` 下这份是本仓唯一一份。迁移期曾在旧栈里另有一份拷贝,
-// 2026-09-04 那一份随旧栈一并删除。
+// mpv 的 glsl-shaders 只收**文件路径**。`files/` 下这份是本仓唯一一份。
 package shaders
 
 import (
@@ -65,13 +65,24 @@ var helpers = map[string]bool{
 	"Anime4K_AutoDownscalePre_x4.glsl": true,
 }
 
+// 链上的固定件。抽成常量是因为它们在六档里反复出现,而写错一个字母的下场是
+// 落一个空文件、mpv 收下路径之后静默不跑。
+const (
+	sharpen  = "Adaptive_sharpen_lite_luma_RT.glsl"
+	clamp    = "Anime4K_Clamp_Highlights.glsl"
+	upM      = "Anime4K_Upscale_CNN_x2_M.glsl"
+	upVL     = "Anime4K_Upscale_Denoise_CNN_x2_VL.glsl"
+	downPre2 = "Anime4K_AutoDownscalePre_x2.glsl"
+	downPre4 = "Anime4K_AutoDownscalePre_x4.glsl"
+)
+
 // Preset 一个档位 = shader 链 + 这条链**调好的参数**。
 type Preset struct {
-	// Files **顺序就是 pipeline**:先去噪(在源分辨率上最干净)→ 再放大 → 最后锐化。
+	// Files **顺序就是 pipeline**:先放大(在源分辨率上做完 CNN)→ 最后锐化。
 	Files []string
 	// Opts 喂 mpv `glsl-shader-opts` 的 `K=V,K=V`。空 = 这条链没有可调参数。
 	//
-	// ⚠️ 只能写**本档 Files 里真实存在**的 `//!PARAM` —— mpv 遇到不认识的参数名会
+	// 只能写**本档 Files 里真实存在**的 `//!PARAM` —— mpv 遇到不认识的参数名会
 	// **整条 opts 拒掉**(于是锐化强度静默回到 shader 自带默认,正是用户
 	// 「看不太出来」的那个状态)。有测试逐档钉这件事。
 	Opts string
@@ -84,91 +95,68 @@ type Level struct {
 	Group string `json:"group"`
 }
 
-// Levels 全部档位。
+// Levels 全部档位。六档 A/B/C(见包头)。
 //
-// ## 2026-09-02:砍到只剩 Anime4K 一族
-//
-// 用户原话:「有一个 Anime4K 足以了超分,其他的不需要」。此前有四族 28 档
-// (Anime4K / FSR / NVIDIA / 锐化专精,2026-07-16 与 07-20 陆续加的),现在只留第一族。
-//
-// **直接起因**:换渲染后端之后真机全表跑了一遍,`AMD_CAS_luma_RT.glsl` 在
-// `gl_video` + ANGLE(`#version 300 es`)下编译不过(`linearize()` 是 libplacebo 才有的),
-// 用它的四个档位全是坏的。既然要删坏的,顺手把用不上的三族一起删了 ——
-// 少一族就少一族要在每次换后端时重验的东西。
-//
-// ★ `ak_sharp` 原来挂的就是那个坏文件,**换成了 Adaptive_sharpen_lite**
-// (同一轮真机验过能编译)。不是删掉这一档:它是唯一「窗口模式也生效」的
-// 锐化+去噪档,而用户的基线是「清晰最重要的是锐化」。
-//
-// 「某档在当前窗口尺寸下会不会真跑」由 WillRun 在点击时如实告知,不在列表里预标。
-//
-// ★ 档位 id 是**历史键**,与内容无关 —— 别为了「名字对得上」去改键,
-// 改了用户存的档位就丢。
+// 档位表**两个平台一样**,变的只是 `+` 那三档背后挂的放大链粗细(见 presetsFor)——
+// 让手机少几个选项没有意义,它需要的是同一档更轻的实现。
 func Levels() []Level {
 	return []Level{
 		{"off", "关闭", ""},
-		{"ak_denoise_l", "去噪 · 轻", "Anime4K"},
-		{"ak_denoise_h", "去噪 · 强", "Anime4K"},
-		{"ak_sharp", "锐化+去噪 · 推荐", "Anime4K"},
-		{"ak_up_m", "放大 · CNN M", "Anime4K"},
-		{"ak_up_dn", "放大+去噪 · CNN M", "Anime4K"},
-		{"ak_up_vl", "放大去噪 · CNN VL · 壮机", "Anime4K"},
-		{"ak_up_artcnn", "放大 · ArtCNN · 清晰轻量", "Anime4K"},
-		{"ak_up_artcnn_sh", "放大+锐化 · ArtCNN · 最清晰", "Anime4K"},
+		{"ak_a", "A · 锐化 低", "Anime4K"},
+		{"ak_b", "B · 锐化 中", "Anime4K"},
+		{"ak_c", "C · 锐化 高", "Anime4K"},
+		{"ak_aa", "A+A · 低 + 放大", "Anime4K"},
+		{"ak_bb", "B+B · 中 + 放大", "Anime4K"},
+		{"ak_ca", "C+A · 高 + 放大", "Anime4K"},
 	}
 }
 
 /*
-	presets 档位 → shader 链 + 参数。
+	锐化强度。`STR` 是 Adaptive_sharpen_lite 的 `//!PARAM`,区间 0.0~2.0,**越大越锐**;
+	0 = 整个 pass 不跑(`//!WHEN STR`)。
 
-参数怎么来的(别拍脑袋改,先看这段):
-  - `STR`(CAS,0.0~1.0,**越大越锐**):shader 默认 0.5 = 只开一半,
-    就是「看不太出来」的根因。代码 `peak = -1.0 / mix(8.0, 5.0, STR)`。
-    0 = 不跑(`//!WHEN STR`)。
-  - `SHARP`(RCAS,0.0~4.0,**越小越锐**):代码 `sharp = exp2(-SHARP)`,
-    默认 0.2 本就接近最锐,所以放大档的提升空间不在这儿。4.0 = 不跑。
+shader 自带默认是 0.5 —— 只开一半,就是用户「看不太出来」的根因,所以每档都显式写。
+1.30 是 2026-07-20 调出来的「推荐」值,低/高两档以它为中心上下拉开。
 */
-var presets = map[string]Preset{
-	// Denoise_Bilateral 没有 //!PARAM,强度靠换 Mean(温和)/ Mode(更狠)两个算法拉开
-	"ak_denoise_l": {Files: []string{"Anime4K_Denoise_Bilateral_Mean.glsl"}},
-	"ak_denoise_h": {Files: []string{"Anime4K_Denoise_Bilateral_Mode.glsl"}},
-	/* ★★ 原来第二个 pass 是 AMD_CAS_luma_RT.glsl,**在新渲染后端上编译不过**
-	   (2026-09-02 真机:`ERROR: 'linearize' : no matching overloaded function found`,
-	   整屏变纯蓝)。换成 Adaptive_sharpen_lite —— 同一轮扫描里验过能编译,
-	   而且 ak_up_artcnn_sh 一直在用它。
-	   STR 量纲跟着换了:CAS 是 0~1,Adaptive 是 0~2,所以 0.85 → 1.30
-	   (对齐 sh_ada_m 那档「推荐」的强度,那个值是 2026-07-20 调出来的)。 */
-	"ak_sharp": {
-		Files: []string{"Anime4K_Denoise_Bilateral_Mode.glsl", "Adaptive_sharpen_lite_luma_RT.glsl"},
-		Opts:  "STR=1.30",
-	},
-	// CNN x2 放大(窗口下不跑,全屏才生效)。Clamp_Highlights 是前置辅助 pass
-	"ak_up_m": {Files: []string{"Anime4K_Clamp_Highlights.glsl", "Anime4K_Upscale_CNN_x2_M.glsl"}},
-	"ak_up_dn": {Files: []string{
-		"Anime4K_Denoise_Bilateral_Mode.glsl",
-		"Anime4K_Clamp_Highlights.glsl",
-		"Anime4K_Upscale_CNN_x2_M.glsl",
-	}},
-	// 重型 CNN 去噪放大链(壮机 + 全屏)。
-	// ★ Anime4K CNN 没有 //!PARAM —— 权重写死在模型里,强度不可调,只能换模型大小
-	"ak_up_vl": {Files: []string{
-		"Anime4K_Clamp_Highlights.glsl",
-		"Anime4K_Upscale_Denoise_CNN_x2_VL.glsl",
-		"Anime4K_AutoDownscalePre_x2.glsl",
-		"Anime4K_AutoDownscalePre_x4.glsl",
-		"Anime4K_Upscale_CNN_x2_M.glsl",
-	}},
-	"ak_up_artcnn": {Files: []string{"Anime4K_Clamp_Highlights.glsl", "ArtCNN_C4F16.glsl"}},
-	// 放大 + 锐化收尾:CNN 放大后再补一刀 Adaptive,全屏下最清晰的一档
-	"ak_up_artcnn_sh": {
-		Files: []string{"Anime4K_Clamp_Highlights.glsl", "ArtCNN_C4F16.glsl", "Adaptive_sharpen_lite_luma_RT.glsl"},
-		Opts:  "STR=1.30",
-	},
+const (
+	strLow  = "STR=0.90"
+	strMid  = "STR=1.30"
+	strHigh = "STR=1.70"
+)
+
+// upscaleFor 放大那半用哪条链。**这是唯一按平台分岔的地方。**
+//
+// medium(移动端)封顶在 CNN x2 (M) 单段;high(桌面)最重那一档才上
+// VL 放大 + 两级 AutoDownscalePre + 二次 M —— 这是 Anime4K 官方
+// C+A 那条链的结构。手机 GPU 是集显且有温度墙,VL 那条链在它上面
+// 就是用户说的「超级无敌卡」(和解码软硬无关,卡在着色器这一段)。
+func upscaleFor(t Tier, top bool) []string {
+	if top && t == TierHigh {
+		return []string{clamp, upVL, downPre2, downPre4, upM}
+	}
+	return []string{clamp, upM}
+}
+
+// presetsFor 档位 → shader 链 + 参数。
+//
+// 每档的形状都是 `[放大] + [锐化]`,其中放大那半可以为空。
+// 锐化**永远在最后而且永远在**:它是唯一不挑尺寸的 pass,
+// 少了它这一档在窗口模式下就什么都不做。
+func presetsFor(t Tier) map[string]Preset {
+	up := func(top bool) []string { return append(upscaleFor(t, top), sharpen) }
+	return map[string]Preset{
+		"ak_a":  {Files: []string{sharpen}, Opts: strLow},
+		"ak_b":  {Files: []string{sharpen}, Opts: strMid},
+		"ak_c":  {Files: []string{sharpen}, Opts: strHigh},
+		"ak_aa": {Files: up(false), Opts: strLow},
+		"ak_bb": {Files: up(false), Opts: strMid},
+		"ak_ca": {Files: up(true), Opts: strHigh},
+	}
 }
 
 // PresetOf 取一个档位。off / 未知 = 关(ok=false)。
 func PresetOf(level string) (Preset, bool) {
-	p, ok := presets[level]
+	p, ok := presetsFor(platformTier)[level]
 	return p, ok
 }
 
@@ -177,7 +165,7 @@ func PresetOf(level string) (Preset, bool) {
 // ★ 切到 off 时给空串,**顺带把上一档的参数清掉** —— 不清的话下一档会吃到
 // 上一档留下的值(glsl-shader-opts 是全局的)。
 func Opts(level string) string {
-	p, ok := presets[level]
+	p, ok := PresetOf(level)
 	if !ok {
 		return ""
 	}
@@ -194,7 +182,7 @@ func bodyOf(name string) string {
 
 // isUpscaleGated 这个 shader 是不是「只有放大才跑」。
 //
-// ★ **从源里现算,不手工维护名单** —— 换 shader 文件时结论自动跟着变,
+// 从源里现算,不手工维护名单 —— 换 shader 文件时结论自动跟着变,
 // 不会留下过期的白名单。判据:`//!WHEN` 里有没有拿 OUTPUT 比尺寸。
 func isUpscaleGated(name string) bool {
 	for _, l := range strings.Split(bodyOf(name), "\n") {
@@ -208,13 +196,10 @@ func isUpscaleGated(name string) bool {
 // WorksAtAnySize 这档在**任意尺寸**(含窗口模式、缩小播放)下有可见效果吗。
 //
 // 判据:存在至少一个「非辅助、且不挑尺寸」的 pass。
-//
-// ⚠️ 语义是「**有效果**」,不是「**全部 pass 都跑**」。FSR 档在窗口下 EASU 放大那半
-// 会被跳过、RCAS 锐化那半照跑 → 判 true,即「退化成只锐化」。
-// 这是 Rust 侧第一版写错的地方:照直觉把 FSR 档标成 false,
-// 是测试红了才发现 RCAS 的门槛(`//!WHEN SHARP 4.0 <`)是**参数**不是尺寸。
+// 语义是「**有效果**」,不是「**全部 pass 都跑**」—— 带放大的三档在窗口下
+// 退化成只有锐化,那也算有效果。
 func WorksAtAnySize(level string) bool {
-	p, ok := presets[level]
+	p, ok := PresetOf(level)
 	if !ok {
 		return false
 	}
@@ -228,15 +213,15 @@ func WorksAtAnySize(level string) bool {
 
 // WillRun 当前尺寸下这档会不会真的有效果。ok=false 表示尺寸未知(没在播),**不下结论**。
 //
-// ★★ 存在的理由:**mpv 收下 glsl-shaders 路径 ≠ shader 会执行**。
+// ☠ 存在的理由:**mpv 收下 glsl-shaders 路径 ≠ shader 会执行**。
 // 2026-07-15 真机:窗口 1770×1080 播 1920×1080,六个 CNN pass 全被 //!WHEN 跳过,
 // 而 UI 还在报「超分已生效 · 挂载 6 个 shader」。那是在撒谎,正是本项目最贵的那类 bug。
 func WillRun(level string, videoW, videoH, outW, outH float64) (run bool, ok bool) {
-	if _, exists := presets[level]; !exists {
+	if _, exists := PresetOf(level); !exists {
 		return false, false // off / 未知
 	}
 	if WorksAtAnySize(level) {
-		return true, true // 锐化 / 去噪档:不挑尺寸,永远有效果
+		return true, true // 锐化那半不挑尺寸,永远有效果
 	}
 	if videoW <= 0 || videoH <= 0 || outW <= 0 || outH <= 0 {
 		return false, false // 尺寸未知,不下结论
@@ -244,9 +229,31 @@ func WillRun(level string, videoW, videoH, outW, outH float64) (run bool, ok boo
 	return outW/videoW > WhenRatio && outH/videoH > WhenRatio, true
 }
 
+// UpscaleWillRun 这档的**放大那半**在当前尺寸下跑不跑。
+//
+// 和 WillRun 分开是因为两者答的不是同一个问题:WillRun 答「这档有没有用」,
+// 这个答「你现在拿到的是完整效果还是只有锐化」。没有放大 pass 的档位 ok=false。
+func UpscaleWillRun(level string, videoW, videoH, outW, outH float64) (run bool, ok bool) {
+	p, exists := PresetOf(level)
+	if !exists {
+		return false, false
+	}
+	gated := false
+	for _, f := range p.Files {
+		if isUpscaleGated(f) {
+			gated = true
+			break
+		}
+	}
+	if !gated || videoW <= 0 || videoH <= 0 || outW <= 0 || outH <= 0 {
+		return false, false
+	}
+	return outW/videoW > WhenRatio && outH/videoH > WhenRatio, true
+}
+
 // EnsureFiles 把嵌入的 shader 落到 dir 下,返回文件名 → 绝对路径。
 //
-// ★ 内容是编译期常量,**长度一致即认为已是当前版本** —— 免得每次起播重写 520KB。
+// 内容是编译期常量,**长度一致即认为已是当前版本** —— 免得每次起播重写几百 KB。
 func EnsureFiles(dir string) (map[string]string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("建 shader 目录失败: %w", err)
@@ -276,7 +283,7 @@ func EnsureFiles(dir string) (map[string]string, error) {
 // Paths 档位 → 可直接喂给 mpv glsl-shaders 的绝对路径列表。
 // off / 未知 → 空列表(= 关)。
 func Paths(dir, level string) ([]string, error) {
-	p, ok := presets[level]
+	p, ok := PresetOf(level)
 	if !ok {
 		return []string{}, nil
 	}
@@ -304,4 +311,18 @@ func ParamsOf(file string) []string {
 		}
 	}
 	return out
+}
+
+// UsesCompute 这个 shader 需要计算着色器吗。
+//
+// ☠ 这是「开了没效果还不报错」的第二种机制:计算着色器在 ANGLE 的 GLES 上不一定有,
+// mpv 遇到没法 dispatch 的 pass **只在日志里说一句**,返回码和属性全是绿的。
+// 有测试拿它扫全表 —— 再往 files/ 里放 `//!COMPUTE` 的 shader 会当场红。
+func UsesCompute(file string) bool {
+	for _, l := range strings.Split(bodyOf(file), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(l), "//!COMPUTE") {
+			return true
+		}
+	}
+	return false
 }

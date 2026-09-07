@@ -5,9 +5,9 @@
 2. **mpv 的命令是异步排队的**:`loadfile` 只排队就返回,紧跟的 `sub-add`/`seek` 必失败且常被 `let _ =` 吞掉;要等 `FILE_LOADED`。
 3. **属性不可用 ≠ 属性等于 0**:`get_f64` 不看返回值就会把栈上的 `0.0` 当成位置交出去;`keep-open=yes` 下 `END_FILE` 永远不发,判播完只能读 `eof-reached`。
 4. **改 mpv 选项前先确认它在这颗库里真的存在**(不同 build 会砍选项),写错是静默 no-op。
-5. **画质档位的「不生效」多半不是档位表**:双显卡默认跑核显、软件纹理根本不跑 GLSL、放大类 shader 有尺寸门槛。
+5. **画质档位的「不生效」多半不是档位表**:双显卡默认跑核显、放大类 shader 有尺寸门槛、计算着色器在 ANGLE 上没法派发 —— 三种在屏幕上长得一模一样,都是「画面没变」。
 
-> 本文件共 **21** 条。每条都标了它的原记忆文件名与类型;正文按原样搬运,未做压缩或改写。
+> 本文件共 **22** 条。每条都标了它的原记忆文件名与类型;正文按原样搬运,未做压缩或改写。
 
 ## 本页条目
 
@@ -34,6 +34,7 @@
 - FFmpeg magicyuv CVE — `ffmpeg-magicyuv-cve.md`
 - ☠☠ `evFileLoaded = 6` —— 6 是 START_FILE，8 才是 FILE_LOADED — 2026-09-03
 - 无窗口取一帧：`screenshot-to-file` 能用，`screenshot-raw` 不能 — 2026-09-03
+- 超分重排:「开了没效果」的两种机制(计算着色器 / 纯放大档)— 2026-09-07
 
 ---
 
@@ -713,56 +714,27 @@ PlayKit 的做法才对 —— **锐化的门槛是参数、跟尺寸无关**(�
 | `Anime4K_Denoise_Bilateral_*`(去噪) | **无 WHEN** | ✅ 永远跑 |
 | `AMD_FSR1_EASU`(放大 10K) | `OUTPUT.w HOOKED.w 1.0 * >` | 仅放大时 |
 
-##### ★ 2026-07-16 重构:三家族 × 每家六档(推翻旧的 modeA..modeAC + 「窗口/需放大」两组分法)
-用户原话:「去掉放大才生效的模式那种分组,加入 FSR、专门的 NV 滤镜,三种滤镜每种六个模式」。
-`levels()` 第三元由 `bool(窗口是否生效)` 改成 **家族名字符串**(`Anime4K`/`FSR`/`NVIDIA`),
-UI(App.tsx `SHADER_FAMILIES`)按家族分三组,每组六档;**不再打「需放大」角标**
-(那个割裂分组用户明确要去掉)。某档在当前窗口尺寸下跑不跑,仍由 `will_run()` 在**点击时** toast。
-- **Anime4K**:去噪·轻/强(Bilateral Mean/Mode)、锐化+去噪·推荐(Bilateral+CAS)、放大 CNN M、放大+去噪 CNN M、放大去噪 CNN VL·壮机
-- **FSR**:锐化 轻/推荐/强(CAS STR 0.60/0.85/1.0+RCAS)、放大+锐化 FSR1 / 强 / +去噪
-- **NVIDIA(NIS)**:锐化 轻/推荐/强(NVSharpen SHARP 0.30/0.50/0.85)、放大 NIS / +锐化 / +去噪(NVScaler SHARP)
+##### 档位表的三次推翻(2026-07-16 → 07-20 → 09-02 → 09-07)
 
-新增 shader:`NVScaler_RT.glsl`(放大,`//!WHEN OUTPUT` 挑尺寸)+`NVSharpen_RT.glsl`
-(锐化,`//!WHEN SHARP` 是参数、窗口也跑),取自 `hooke007/mpv_PlayKit/portable_config/shaders/NV/`。
-键名前缀 `ak_/fsr_/nv_`,别为「名字对得上」改键(改了用户存的档位就丢)。测试 `three_families_six_modes_each` 钉每族=6。
+三家族六档 → 四家族 28 档 → 只剩 Anime4K 一族 8 档 → **六档 A/B/C**。
+前三次的具体表已作废,现表见 `core/shaders/shaders.go`。留下来的只有两条不随表变的:
+
+- **shader 自带默认都极保守**(Adaptive 的 `STR` 默认 0.5,只开一半),档位不写参数就吃默认,
+  表现正是用户说的「看不太出来」。强度是**档位设计的一部分**,不是给用户拧的旋钮。
+- **`glsl-shader-opts` 是全局 K=V 表**:Adaptive / aWarpSharp2 / BCAS 都叫 `STR` 而量纲是
+  0~2 / -20~20 / 0~1,叠进同一档必然串味而 mpv 不报错。一档只准挂一个锐化器,有测试钉。
 
 shader 取自 `hooke007/mpv_PlayKit/portable_config/shaders`(AMD/ 与 Anime4K/ 与 NV/,均 MIT)。
-那个仓库还有 ArtCNN/FSRCNNX/nlmeans/Adaptive_sharpen/SSim 等,要加档先去那儿翻。
+那个仓库还有 FSRCNNX/nlmeans/SSim 等,要加档先去那儿翻。
 下载法:`curl raw.githubusercontent.com/hooke007/mpv_PlayKit/main/portable_config/shaders/<dir>/<file>.glsl`
 (先 `api.github.com/repos/.../git/trees/main?recursive=1` 列路径)。
+⚠️ 翻到的东西**先看有没有 `//!COMPUTE`** —— 见本文 2026-09-07 那条。
 
-##### ★ 2026-07-20:四家族 + 锐化专精族 + 折叠 UI(用户报「强度不够」)
-用户原话:「我感觉像 Anime4K 和 FSR 和 NVIDIA 三款模型的强度不够?开到最大档位有一点点变清晰
-**其实清晰最重要的是锐化 锐化是最能提升看起来清晰的程度的**」「加多几个档位 这样的话就不能直接
-展示了 **要叠起来 用户点击了某款超分模型再展开**」。
-
-- **新家族 `Sharpen`「锐化 · 清晰度首选」7 档**,全部窗口就生效、全部 luma-only(便宜):
-  Adaptive_sharpen_lite_luma(STR 0.70/1.30/1.90)、FineSharp(SSTR 2.50/5.00)、
-  aWarpSharp2(STR=10,推像素收紧线条,动漫线稿最明显)、AMD_BCAS(双边 CAS,STR=1.0+SIGMA=0.3)。
-- **Anime4K 族加 ArtCNN_C4F16 两档**(`ak_up_artcnn` / `ak_up_artcnn_sh`):PlayKit 里
-  「清晰/开销」比最好的放大器之一,213K 单文件。尺寸门控写法是 `OUTPUT.w LUMA.w 1.200 * >`
-  ——和 Anime4K 的 `OUTPUT.w MAIN.w / 1.200 >` **数学等价**,但 `when_ratio_matches_shader_source`
-  只扫 MAIN.w,扫不到它(不影响,`is_upscale_gated` 认 `OUTPUT.` 判得对)。
-- **强度不够的根因**:这些 shader 自带默认都极保守(Adaptive STR=1.0 / FineSharp SSTR=**0.5** /
-  aWarpSharp2 STR=4.0),而档位不设参数就吃默认。新测试
-  `sharpen_family_runs_windowed_and_is_stronger_than_defaults` **从 shader 源现读默认值**并断言
-  推荐档必须高于它。
-- **UI 改折叠**:`App.tsx` 的 `SHADER_FAMILIES` 变三元组 `[键, 标题, 说明]`,四族按
-  已有惯例 `.p-li static` + `.rt.sel`(「当前档 ▾」)+ `.p-li.sub` 渲染 —— 这套折叠**仓库里
-  早就有**(画面比例/定时播放/字幕字体都在用),别自造。收起时行内仍显示本族已选中的档。
-- **新增两条静默失效守卫**(都反向注入验过红):
-  1. `no_preset_loads_two_shaders_sharing_a_param_name` —— `glsl-shader-opts` 是**全局**
-     K=V 表,Adaptive/aWarpSharp2/BCAS **都叫 `STR`** 但量纲是 0~2 / -20~20 / 0~1,
-     叠进同一档会共用一个值、必然串味且 mpv 不报错。
-  2. `api_contract_tests::shader_family_groups_match_the_core_level_table` —— 核层家族名与
-     App.tsx 的 `SHADER_FAMILIES` 逐字对齐,前端漏登记一族 = 那族**整组从面板静默消失**。
-- 顺带把 `preset_opt_values_are_in_range_and_actually_run` 里写死的 `0.0..=4.0` 改成
-  **从声明该参数的那个 shader 源里现读 MIN/MAX**,死值判定(`//!WHEN` 为假的端点)也改成按文件算
-  —— 原来那张全局表在 RCAS(SHARP=4.0 死)和 NVSharpen(SHARP=0 死)并存时必然判错一边。
 
 **⚠️ 超分档位「不持久化」是用户故意的设计,不是 bug**(2026-07-20 原话:「超分档位不持久化
 我故意这么做的 用户不是每集都需要」)。**别再去给它加 Prefs 字段/起播回放** —— 我这轮就是先
 误诊成这个、动手改了 config.rs 才被叫停。见 [别过度解读需求](methodology.md)。
+(2026-09-07 补:进程内**记着**当前档,那是给面板回显用的,和落盘是两回事。)
 
 ##### 永远不要 Restore
 用户 **2026-07-11(a5e21885)** 和 **07-15** 两次否掉:动态画面边缘振铃/拖影,且最吃显卡。
@@ -1372,6 +1344,93 @@ openapi.json(452 条路由)搜 "trickplay" → 零命中
 ★ 章节图很粗:实测 85 分钟的电影只有 2 个章节。
 ★ 这三条都成立,**但都不用** —— 记在这里是为了下次有人再提「问服务端要」时,
   能一句话说清为什么不。
+
+## 超分重排:「开了没效果」的两种机制 — 2026-09-07
+
+用户报三件事:PC 开了超分看不出效果、移动端开了超级卡而且也看不出效果、
+档位要收成六档 A/B/C 且两端算法分开。三件事有两个共同的机制根因。
+
+### 机制一:计算着色器在 ANGLE 的 GLES 上跑不起来,而且不算「编译失败」
+
+`ArtCNN_C4F16.glsl` 那两档挂的是 **八个 pass 全是 `//!COMPUTE`** 的着色器。桌面走
+Avalonia 的 ANGLE(`Avalonia.Angle.Windows.Natives`,deps.json 里能看到),
+那条路上不一定有计算着色器 —— 于是:
+
+| 检查点 | 结果 |
+|---|---|
+| `mpv_set_option_string("glsl-shaders", …)` | 0(收下了) |
+| `player.setShaderLevel` 返回 | `count=2, will_run=true` |
+| 属性 / 事件 | 一个字都没有 |
+| mpv 的 error 级日志 | `Failed dispatching COMPUTE shader` |
+
+`shaderguard` 的分类器当时**只认编译失败**(`shader compile log` / `no matching
+overloaded function` / `shader link log`),这条从闸门底下走过去,UI 照样报「已启用」。
+
+**一般化的教训:那个分类器分的不是「编不过」,是「跑不起来」。**
+一个 pass 可以编译得过、只是没法派发;可以派发、只是 `//!WHEN` 判假被跳过。
+三种在屏幕上长得一模一样,都是「画面没变」。分类只覆盖第一种,就等于只挡了三分之一。
+
+处置:分类器补 `failed dispatching` 那一支;`core/shaders` 加一条门禁
+`TestNoComputeOnlyShaders` —— 往 `files/` 里再放带 `//!COMPUTE` 的 shader 会当场红。
+往 PlayKit 那个仓库翻新 shader 时,**先看有没有 `//!COMPUTE`**。
+
+### 机制二:「纯放大档」在同分辨率下一帧都不跑
+
+Anime4K 每个 CNN pass 都带 `//!WHEN OUTPUT.w MAIN.w / 1.200 > …`。
+1080p 屏上播 1080p(全屏也一样,比例是 1.0)→ 整条链空转。上一版八档里五档是纯放大,
+用户挨个点一遍,每一档都「已启用」而画面一动不动。
+
+处置:**每一档都必须自带一个不挑尺寸的 pass**。现在六档的形状统一成
+`[放大(挑尺寸)] + [锐化(任何尺寸都跑)]` —— 窗口里退化成只锐化,全屏才补上放大。
+门禁 `TestEveryLevelDoesSomethingAtAnySize` 钉住这件事,反向注入(去掉锐化收尾)当场红。
+
+放大那半跑没跑**只进日志不进界面**:屏幕就这么大不是故障,不该每次切档都念给用户听。
+
+### 档位:六档 A/B/C,平台分层
+
+用户原话:「只需要三个档位 低中高 也就是 ABC,三个档位排列组合 A+A B+B A+C A B C
+六个档位即可」「移动端最高到 medium,PC 最高到 high」「超分能看得出效果的,
+一个是锐化,一个是提升分辨率,就这两个」。
+
+- ABC = **锐化强度三档**(`STR` 0.90 / 1.30 / 1.70),不是 Anime4K 官方那三种 Restore 模式
+  —— 那套要 Restore CNN,用户 2026-07-11 和 07-15 两次否过。
+- 带 `+` 的三档 = 同强度再叠一层 CNN 放大。
+- **平台档是构建标签定的**(`tier_android.go` / `tier_other.go`),不是运行期判断,
+  也不给用户选。安卓封顶 CNN x2 (M);桌面最重那档才上 VL + 两级 AutoDownscalePre + 二次 M。
+  两个文件的标签互斥,删掉任何一个那个平台会**编译失败**而不是静默退回默认(验过)。
+- 双边去噪那两个 `.glsl` 同日删除:它改的是噪点不是清晰度,用户看不出来,却每档多一份开销。
+  配套门禁 `Test没有没人用的shader` —— 删档位漏删文件会当场红。
+
+### ⚠️ 订正:安卓的 libmpv **不是纯软解**
+
+仓库里 `surface_android.go` 和几处注释写着「安卓端 libmpv 是纯软解」——**这是错的**,
+而且它误导过一次归因。实证:`third_party/libmpv/android/*/libmpv.so` 里
+`mediacodec-copy` 是合法的 `hwdec` 取值,`mediacodec` 相关符号 43 处;
+起手选项给的是 `hwdec=auto`;`player.status` 一直在发 `hwdec-current`。
+
+所以移动端「开 Anime4K 超级无敌卡」**卡在着色器不在解码** ——
+手机 GPU 是集显且有温度墙,VL 那条 CNN 链在它上面跑不动。
+排查时先读 `hwdec-current` 那个字段再下结论。
+
+### 顺带:让 GL 自己报家门
+
+`lp_gl_init` 现在用宿主给的 `get_proc_address` 取一次 `glGetString`,打一行:
+
+```
+GL 后端:OpenGL ES 3.0 (ANGLE …) | 显卡:ANGLE (NVIDIA GeForce RTX …) | 着色器语言:…
+```
+
+在这之前,「超分没效果」到底是方言不对、计算着色器没有、还是跑在核显上,
+**三者在日志里长得一模一样**(都是一片安静)。这一行把前两种当场分开,
+顺带也是「有没有跑在独显上」的判据(见 [双显卡必须钉独显](player-mpv.md))。
+取不到就打一句 warn,不假装成功 —— EGL 允许 `eglGetProcAddress` 不返回核心函数。
+
+### 还没验的
+
+⚠️ 上面 ANGLE 那条的**具体 ES 版本没有实测**,是从「Avalonia 用 ANGLE + mpv 报
+dispatch 失败」推出来的。装上新包之后那行 `GL 后端:…` 会给出确切答案;
+在它出现之前,别拿「ES 3.0 没有计算着色器」当已证事实往外说。
+Linux 那边 GL 后端不是 ANGLE,**要单独验**。
 
 ## 跨域交叉引用
 

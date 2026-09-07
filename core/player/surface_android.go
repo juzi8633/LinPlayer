@@ -160,7 +160,8 @@ func setSurfProp(h unsafe.Pointer, k, v string) int {
 // platformOptions 是安卓专属的 mpv 起手选项,追加在 baseOptions 之后(后写的赢)。
 //
 // vo/gpu-context:桌面那条 vo=libmpv 是给 render API 用的,安卓走 wid。
-// 软解调优:安卓端 libmpv 是纯软解,不调的表现是 1080p 以上卡顿(TODO N2 丢过一次)。
+// 软解调优:这份 libmpv 有 MediaCodec 硬解(hwdec=auto 会选它),但 MediaCodec
+// 顶不住的片子会回落软解,那时不调的表现是 1080p 以上卡顿(TODO N2 丢过一次)。
 // sub-fonts-dir:不给的话 libass 找不到字体,**文本字幕整个不显示**(桌面早有、安卓漏过)。
 func platformOptions() [][2]string {
 	return [][2]string{
