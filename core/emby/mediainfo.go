@@ -17,10 +17,12 @@ import (
 
 // StreamInfo 一条流(视频/音频/字幕),字段照详情页媒体信息卡的 kv 行来。
 type StreamInfo struct {
-	Index         int64    `json:"index"`
-	Type          string   `json:"type_"` // Video | Audio | Subtitle
-	Codec         string   `json:"codec"`
-	Profile       *string  `json:"profile"`
+	Index   int64   `json:"index"`
+	Type    string  `json:"type_"` // Video | Audio | Subtitle
+	Codec   string  `json:"codec"`
+	Profile *string `json:"profile"`
+	// Title 轨道真名(压制组写的);DisplayTitle 是服务器拼的「语言 + 格式」。
+	Title         *string  `json:"title"`
 	DisplayTitle  *string  `json:"display_title"`
 	Language      *string  `json:"language"`
 	Width         *int64   `json:"width"`
@@ -69,6 +71,7 @@ func versionFrom(m rawMediaSource) MediaVersion {
 			Type:          deref(s.Type),
 			Codec:         deref(s.Codec),
 			Profile:       nonEmpty(s.Profile),
+			Title:         nonEmpty(s.Title),
 			DisplayTitle:  nonEmpty(s.DisplayTitle),
 			Language:      nonEmpty(s.Language),
 			Width:         s.Width,

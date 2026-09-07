@@ -69,6 +69,7 @@ object Libass {
     /** 想放的那条轨。数据还没到就先记下来,等第一批数据到了自己开 —— 见 [activateTrack]。 */
     private var wanted: String? = null
     private var wantedFonts = ""
+
     /** 下一帧强制重画。灌了字体 / 换了尺寸之后要用它 —— 见 [render]。 */
     private var pendingForce = false
     /** 这一部片已经灌过的字体名。附件字体常常在多条轨里重复,灌两遍是白花内存。 */
@@ -145,8 +146,11 @@ object Libass {
     /** 切到一份外挂 .ass / .ssa(整份文件)。 */
     fun activateFile(key: String, bytes: ByteArray, fontsDir: String): Boolean = synchronized(lock) {
         if (!available) return false
-        // 外挂轨接管:内封那条不许再自己开回来,否则两条轮流抢同一个渲染器
-        wanted = null
+        /* ☠ 外挂 .ass 和内封 ASS **抢同一个渲染器**,到达顺序却是随机的:
+           外挂要走一趟网络(几百毫秒),内封等解封装。上一版没有主次、谁后到谁赢,
+           而且外挂那条还顺手把 `wanted` 清了 —— 内封再也开不回来。
+           规矩:**选中的内封轨说了算,外挂只补空缺**。 */
+        if (wanted != null) return false
         if (active == key && opened) return true
         if (Native.assOpenFile(bytes, fontsDir) != 0) {
             opened = false; active = null

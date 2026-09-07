@@ -125,6 +125,12 @@ func play(ctx context.Context, s *emby.Session, itemID string, resumeSecs float6
 
 	whCtx := <-histCh
 	if whCtx != nil {
+		/* ☠ **调用方没给续播位置就自己去拿**,不要默认成 0。
+		   服务器上的进度本来就在 `candidate.PositionTicks` 里(取判据那一趟顺手带回来的),
+		   而「让每个调用方各自传一份」的写法漏一处就是**那一端整个不续播、从头放**,
+		   而且不报错 —— 安卓两个内核都栽在这上面(2026-09-07)。判据在核心层,
+		   调用方传 0 的含义统一为「我不知道,你来定」。 */
+		resumeSecs = resumeFor(resumeSecs, whCtx.candidate.PositionTicks)
 		// ★ 调用方传进来的 resumeSecs 只是**这一台** Emby 的进度;
 		//   跨服续播开着时,本地记录里别的服务器上更靠后的进度会覆盖它(取最大)。
 		remote := int64(resumeSecs * float64(history.TicksPerSec))
@@ -257,6 +263,17 @@ func startPrefetch(ctx context.Context, s *emby.Session, target *emby.PlaybackTa
 		bus.Logf("info", "本地代理旁路模式(不超前拉,只把读过的字节落盘给缩略图用)")
 	}
 	return h.URL
+}
+
+// resumeFor 定这一次从第几秒起播。
+//
+// caller <= 0 的含义统一为「我不知道,你来定」,这时用服务器给的进度。
+// 调用方给了就听它的 —— 桌面端是从详情页那一份数据里读的,和服务器同源。
+func resumeFor(caller float64, serverTicks int64) float64 {
+	if caller > 0 || serverTicks <= 0 {
+		return caller
+	}
+	return float64(serverTicks) / float64(history.TicksPerSec)
 }
 
 // historyContext 这次播放在观看记录里的上下文。

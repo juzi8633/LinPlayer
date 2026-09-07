@@ -4,6 +4,8 @@ import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -75,18 +77,43 @@ import xyz.linplayer.app.ui.theme.lpTween
 /**
  * 按下 `scale .97`(UI_MOBILE.md §2.2)。
  *
- * ★ 用 `graphicsLayer` 的 lambda 版:它只在 draw 阶段读值,不触发重组(§2.3 第 3 条)。
+ * 按下**即刻**缩到位、松手用弹簧回弹:硬切两头的写法在手上像卡了一下,
+ * 而两头都做动画会让点击反馈慢半拍(用户 2026-09-07:「按钮不要做成静态的」)。
+ * 用 `graphicsLayer` 的 lambda 版:只在 draw 阶段读值,不触发重组(§2.3 第 3 条)。
  */
 @Composable
 fun Modifier.pressable(onClick: () -> Unit, enabled: Boolean = true): Modifier {
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        if (pressed) 0.96f else 1f,
+        if (pressed) tween(0) else spring(dampingRatio = 0.42f, stiffness = 520f),
+        label = "press",
+    )
     return this
-        .graphicsLayer {
-            val s = if (pressed) 0.97f else 1f
-            scaleX = s; scaleY = s
-        }
+        .graphicsLayer { scaleX = scale; scaleY = scale }
         .clickable(interactionSource = src, indication = null, enabled = enabled, onClick = onClick)
+}
+
+/**
+ * 一颗按钮的皮:上亮下暗的膜 + 顶沿高光 + 一圈发丝边。
+ *
+ * 这三层叠出来的是「有厚度的玻璃片」而不是一块色板 ——
+ * 全站按钮共用它,各处自己刷 `background(色)` 的写法早晚会长出第二套(用户 2026-09-07)。
+ * [base] 是主色;给 `Color.Transparent` 就只剩玻璃本身。
+ */
+@Composable
+fun Modifier.buttonSkin(base: Color, corner: androidx.compose.ui.unit.Dp = R.sm): Modifier {
+    val dark = Lp.colors.isDark
+    val shape = RoundedCornerShape(corner)
+    val sheen = Color.White.copy(alpha = if (dark) .16f else .40f)
+    val shade = Color.Black.copy(alpha = if (dark) .18f else .06f)
+    val edge = Color.White.copy(alpha = if (dark) .18f else .34f)
+    return this
+        .clip(shape)
+        .background(base)
+        .background(Brush.verticalGradient(listOf(sheen, Color.Transparent, shade)))
+        .border(Dim.hairline, edge, shape)
 }
 
 // ---------------------------------------------------------------- 文字
@@ -119,16 +146,35 @@ fun LpIconButton(
     m: Modifier = Modifier,
     size: Int = 22,
     tint: Color? = null,
+    /** 辉光。主动作(播放键)才给 —— 满屏都在发光等于没有重点。 */
+    glow: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val c = Lp.colors
     Box(
         m.sizeIn(minWidth = Dim.tap, minHeight = Dim.tap)
             .clip(RoundedCornerShape(R.pill))
             .pressable(onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, desc, Modifier.size(size.dp), tint = tint ?: Lp.colors.fg)
+        if (glow) Halo(c.acc, Modifier.matchParentSize())
+        Icon(icon, desc, Modifier.size(size.dp), tint = tint ?: c.fg)
     }
+}
+
+/** 呼吸辉光。三秒一轮,靠透明度而不是尺寸 —— 尺寸变化会带着周围的布局一起抖。 */
+@Composable
+fun Halo(color: Color, m: Modifier = Modifier) {
+    val t = rememberInfiniteTransition(label = "halo")
+    val a by t.animateFloat(
+        0.30f, 0.72f,
+        infiniteRepeatable(tween(1500, easing = LpEasing.standard), RepeatMode.Reverse),
+        label = "haloA",
+    )
+    Box(m.graphicsLayer { alpha = a }.background(
+        Brush.radialGradient(listOf(color.copy(alpha = .55f), Color.Transparent)),
+        RoundedCornerShape(R.pill),
+    ))
 }
 
 // ---------------------------------------------------------------- 按钮
@@ -152,6 +198,8 @@ fun LpButton(
         BtnKind.Danger -> c.bad
         BtnKind.Ghost -> Color.Transparent
     }
+    // Ghost 是「看起来不像按钮」的那一档,给它上玻璃就不是 Ghost 了
+    val skin = if (kind == BtnKind.Ghost) Modifier else Modifier.buttonSkin(bg)
     val fg = when (kind) {
         BtnKind.Primary, BtnKind.Danger -> c.accFg
         else -> c.fg
@@ -159,10 +207,8 @@ fun LpButton(
     val on = enabled && !loading
     Box(
         m.heightIn(min = Dim.tap)
-            .clip(RoundedCornerShape(R.sm))
-            .background(bg)
-            .then(if (kind == BtnKind.Secondary) Modifier.border(Dim.hairline, c.line, RoundedCornerShape(R.sm)) else Modifier)
             .graphicsLayer { alpha = if (on) 1f else 0.45f }
+            .then(skin)
             .pressable(onClick, on)
             .padding(horizontal = Sp.x20, vertical = Sp.x12),
         contentAlignment = Alignment.Center,
@@ -591,7 +637,9 @@ fun LpMenu(
         Column(
             Modifier
                 .graphicsLayer { scaleX = sc; scaleY = sc; alpha = op; transformOrigin = origin }
-                .widthIn(min = 184.dp, max = 300.dp)
+                // 菜单收窄一档【用户 2026-09-07:「又大又丑」】—— 它是几条一两个字的动作,
+                // 撑到 184dp 宽、每行 48dp 高就成了一块盖住半张卡的板
+                .widthIn(min = 148.dp, max = 260.dp)
                 .heightIn(max = 420.dp)
                 .glass(R.md, solid = 1.7f)
                 .verticalScroll(androidx.compose.foundation.rememberScrollState())
@@ -612,15 +660,15 @@ fun LpMenuItem(
 ) {
     val c = Lp.colors
     Row(
-        Modifier.fillMaxWidth().heightIn(min = Dim.tap)
+        Modifier.fillMaxWidth().heightIn(min = 40.dp)
             .pressable(onClick)
-            .padding(horizontal = Sp.x16, vertical = Sp.x6),
+            .padding(horizontal = Sp.x12, vertical = Sp.x2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
             Text(
                 label, color = when { danger -> c.bad; selected -> c.acc; else -> c.fg },
-                fontSize = 14.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             if (sub != null) Dim3(sub, Modifier.padding(top = 1.dp))
         }

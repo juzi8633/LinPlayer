@@ -842,9 +842,11 @@ public sealed class DetailPage : PageBase
         }
     }
 
-    /// <summary>一条流在下拉里怎么写。 服务器给了 display_title 就用它 —— 那是它自己拼好的人话。</summary>
+    /// <summary>一条流在下拉里怎么写。 轨道真名(title)优先,它才是压制组写的那个名字;
+    /// display_title 是服务器拼的「语言 + 格式」,看着像名字但不是。</summary>
     private static string StreamLabel(JsonElement s)
     {
+        if (Str(s, "title") is { Length: > 0 } t) return t;
         if (Str(s, "display_title") is { Length: > 0 } d) return d;
         var bits = new List<string>();
         if (Str(s, "language") is { Length: > 0 } l) bits.Add(l);

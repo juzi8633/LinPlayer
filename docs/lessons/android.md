@@ -889,3 +889,68 @@ ANDROID_HOME=<SDK 路径> bash scripts/build-core-android.sh arm64-v8a
 
 **改过 android 专属文件就跑它,再推。** 这和「桌面 check 照不到安卓」
 是同一个洞在 Go 栈上的形态 —— 那次连红三个提交。
+
+---
+
+### 一轮六件:受控开关、手指落点、轨道名、续播 — 2026-09-07
+
+*(类型:project)*
+
+用户一次报了六件事,里面有四件是**同一类**:界面上摆着一个东西,
+它看起来在工作,实际上什么都没接。
+
+#### 受控开关不回填 = 「点不开」
+
+设置页的三个开关拨过去就弹回来。根因**不是点击没生效**,是
+`LpCell(switch = prefs.bool(k))` 显示的永远是本地那份 `prefs`,
+而 `setPref` 只发命令、从不把新值写回去。乐观更新 + 失败回滚(`prefs.setPrefetchSettings`
+那一页早就是这么写的),这类事结构上就不会再发生。
+
+同一批里还有更糟的一层:`background_play` / `auto_next` 这两个键
+**核心层里连字段都没有** —— `setPlaybackPrefs` 收下、返回成功、一个字节都不改。
+`check-android-args.py` 当时是 62 条,照不到它们,因为那个门禁只扫「命令的参数名」,
+而这两个是塞在 `settings` 里的**内嵌键**。删掉换成核心层真读的那几项之后是 64 条。
+
+#### 长按菜单要从手指底下长出来
+
+`LpMenu(open, onDismiss, Alignment.Center)` 挂在卡片外面那个 `Box` 上,
+于是不管点哪儿都从卡片正中间冒出来。解法是把手势从 `combinedClickable`
+换成 `pointerInput { detectTapGestures(onLongPress = { ... }) }` 拿到落点,
+再 `Popup(Alignment.TopStart, IntOffset(落点))`。
+
+☠ **坐标要补偿。** 手势挂在 Row 上(Panel 里面),Popup 的父级是外面那个 Box ——
+两者差一圈 `Panel` 的外边距,不补的话菜单整体偏左上一个边距。
+
+#### `display_title` 不是轨道名
+
+Emby 的 `MediaStream.DisplayTitle` 是**服务器自己拼的**「语言 + 格式」
+(`Chinese - PGS`),压制组写的「简体中文特效」在 `Title` 里。
+`core/emby/mediainfo.go` 原来只映射前者,于是三端的字幕列表整张表都是格式标签。
+两个字段都要透出,回落顺序 `title → display_title → 自己拼`。
+
+改这个字段会让 `check-core.sh` 第 5 关(差分对账)红一条 ——
+语料录的是黄金实现的输出,而黄金实现没有这个字段。**这是有意的分歧,改语料的 `expect`**,
+不要往 `knownDiffs` 里塞(那是给「还没修的差异」用的,要带到期日)。
+
+#### 续播判据必须在核心层
+
+安卓两个内核都从头播放。根因:`PlayerPage` 起播时压根没传 `resume_secs`,
+而 `player.play` 把「没传」当成了 0。桌面端传了,所以只有手机端不续播。
+
+判据放核心层(`resumeFor`:调用方 <= 0 就用 `candidate.PositionTicks`)。
+**让每个调用方各自记得传**的写法,漏一处就是那一端整个不续播,而且不报错。
+
+#### Exo 的画面比例:`VideoSize.UNKNOWN` 会把已知值抹掉
+
+`onVideoSizeChanged` 在换轨 / 渲染器重建时会发一次 0×0,而上一版是无条件
+`ratio = r` —— 刚从 `Tracks` 里算出来的正确比例被一个 0 覆盖,而那条
+「拿到就停」的轮询早退出了,再没有人纠正。`videoRect` 里 `ar<=0` 走的是「先铺满」,
+铺满和拉伸在屏幕上长得一模一样。
+
+两条一起改才行:**拿不到就别写**,以及**轮询不退出**(没在等的时候一秒一次)。
+
+#### 内封 ASS 和外挂 ASS 抢同一个渲染器
+
+`libass` 这一层只有一个 `g_track`。外挂要走一趟网络(几百毫秒),内封等解封装,
+**谁后到谁赢**;而外挂那条还顺手把 `wanted` 清空,内封再也开不回来。
+规矩定死:选中的内封轨说了算,外挂只在 `wanted == null` 时补空缺。

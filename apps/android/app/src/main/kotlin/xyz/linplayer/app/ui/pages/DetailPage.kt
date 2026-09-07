@@ -94,11 +94,24 @@ import xyz.linplayer.app.ui.theme.rememberTone
 /** 一条流。字段名照 `core/emby/mediainfo.go` 的 `StreamInfo`。 */
 internal data class Stream(
     val index: Long, val type: String, val codec: String, val profile: String?,
-    val title: String?, val lang: String?, val width: Long?, val height: Long?,
+    val title: String?, val display: String?, val lang: String?,
+    val width: Long?, val height: Long?,
     val bitrate: Long?, val channels: Long?, val layout: String?, val fps: Double?,
     val range: String?, val isDefault: Boolean, val isExternal: Boolean,
 ) {
-    val label: String get() = title ?: listOfNotNull(langCn(lang), codec.uppercase()).joinToString(" ")
+    /* ☠ **轨道名优先用 `title`,不是 `display_title`。** 后者是 Emby 自己拼的
+       「语言 + 格式」(「Chinese - PGS」),它长得像名字但不是名字 ——
+       压制组写的「简体中文特效」在 `title` 里。上一版只有 display_title,
+       于是整张字幕表看起来全是格式标签,谁是谁分不出来(用户 2026-09-07 第二次报)。 */
+    val label: String
+        get() = title ?: display ?: listOfNotNull(langCn(lang), codec.uppercase()).joinToString(" ")
+
+    /** 副标题那一行:语言标识 / 字幕格式【用户定 2026-09-07】。 */
+    val langAndCodec: String
+        get() = listOfNotNull(
+            langCn(lang) ?: lang,
+            codec.uppercase().takeIf { it.isNotBlank() },
+        ).joinToString(" / ")
 }
 
 /** 一个可播版本。`preferred` 由**核心层**标 —— UI 不许自己回落 `versions[0]`。 */
@@ -124,7 +137,8 @@ internal data class Version(
                     Stream(
                         index = s.long("index") ?: 0, type = s.str("type_") ?: "",
                         codec = s.str("codec") ?: "", profile = s.str("profile"),
-                        title = s.str("display_title"), lang = s.str("language"),
+                        title = s.str("title"), display = s.str("display_title"),
+                        lang = s.str("language"),
                         width = s.long("width"), height = s.long("height"),
                         bitrate = s.long("bitrate"), channels = s.long("channels"),
                         layout = s.str("channel_layout"), fps = s.dbl("frame_rate"),
@@ -1004,8 +1018,8 @@ private fun LangDialog(
  *
  * ☠ **一条轨一行,不是一种语言一行。** 上一版按语言折叠 —— 而一部片常常挂着
  *   「简中 / 繁中 / 简日双语 / 特效」四条中文轨,折起来之后它们在界面上是同一行,
- *   用户根本看不出自己选中的是哪一条。第一行是轨道名,第二行小字写清
- *   「格式 · 语言 · 内封还是外挂」。
+ *   用户根本看不出自己选中的是哪一条。第一行是轨道名(`title`,压制组写的那个),
+ *   第二行小字是「语言标识 / 字幕格式」【用户定 2026-09-07】。
  * ☠ **落库的仍然是语言。** `prefs.setPrefs` 只认 `sub_lang`,核心层没有「记住某一条轨」
  *   这回事 —— 同语言的两条轨在这里选谁,起播时由播放器按同一条规则挑。
  *   播放中要精确换某一条,走播放页的字幕面板(那里是真的按轨切)。
@@ -1025,11 +1039,7 @@ private fun SubDialog(
                 OptRow(
                     st.label.ifBlank { langCn(st.lang) ?: "字幕轨 ${st.index}" },
                     { onPick(st.lang.orEmpty()) },
-                    sub = listOfNotNull(
-                        st.codec.uppercase().takeIf { it.isNotBlank() },
-                        langCn(st.lang) ?: st.lang,
-                        if (st.isExternal) "外挂" else "内封",
-                    ).joinToString(" / "),
+                    sub = st.langAndCodec + if (st.isExternal) " · 外挂" else "",
                     // 只有语言能落库,所以选中态也只能按语言判 —— 同语言的几条会一起亮
                     selected = !current.isNullOrEmpty() && st.lang == current,
                 )

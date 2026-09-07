@@ -307,9 +307,11 @@ fun GlassIcon(
     m: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
+    // 上一版是一块 34% 的纯黑饼。换成和面板同一块玻璃:亮画面上不再糊成一坨,
+    // 暗画面上也还认得出是个按钮(用户 2026-09-07:「扁平化太严重」)
     Box(
-        m.size(44.dp).clip(RoundedCornerShape(R.pill))
-            .background(Color.Black.copy(alpha = .34f))
+        m.size(44.dp)
+            .buttonSkin(Color.Black.copy(alpha = .30f), R.pill)
             .pressable(onClick),
         contentAlignment = Alignment.Center,
     ) { Icon(icon, desc, Modifier.size(22.dp), tint = Color.White) }

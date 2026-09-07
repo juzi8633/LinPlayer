@@ -75,12 +75,12 @@ type Page struct {
 // ---------------------------------------------------------------- 线上结构
 
 type rawItem struct {
-	ID                    string            `json:"Id"`
-	Name                  *string           `json:"Name"`
-	Type                  *string           `json:"Type"`
-	IsFolder              *bool             `json:"IsFolder"`
-	CollectionType        *string           `json:"CollectionType"`
-	ImageTags             map[string]any    `json:"ImageTags"`
+	ID             string         `json:"Id"`
+	Name           *string        `json:"Name"`
+	Type           *string        `json:"Type"`
+	IsFolder       *bool          `json:"IsFolder"`
+	CollectionType *string        `json:"CollectionType"`
+	ImageTags      map[string]any `json:"ImageTags"`
 	// ★ 背景图挂在**这个数组**里,不在 ImageTags 里(写成 ImageTags["Backdrop"] 恒 false)。
 	//   只给 Hero 挑片用 —— 它不进 Item,所以不动对外的 JSON 形状。
 	BackdropImageTags     []string          `json:"BackdropImageTags"`
@@ -125,9 +125,13 @@ type rawMediaSource struct {
 }
 
 type rawMediaStream struct {
-	Type          *string  `json:"Type"`
-	Codec         *string  `json:"Codec"`
-	Profile       *string  `json:"Profile"`
+	Type    *string `json:"Type"`
+	Codec   *string `json:"Codec"`
+	Profile *string `json:"Profile"`
+	// Title 是**压制组写在轨道里的那个名字**(「简体中文特效」「Signs & Songs」)。
+	// DisplayTitle 是 Emby 自己拼的「语言 + 格式」,两者不是一回事 ——
+	// 只透 DisplayTitle 的话界面上永远看不到轨道真名(用户 2026-09-07 点名)。
+	Title         *string  `json:"Title"`
 	DisplayTitle  *string  `json:"DisplayTitle"`
 	Language      *string  `json:"Language"`
 	Width         *int64   `json:"Width"`

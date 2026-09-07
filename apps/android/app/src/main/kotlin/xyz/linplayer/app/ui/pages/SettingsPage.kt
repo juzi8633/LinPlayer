@@ -29,6 +29,7 @@ import androidx.navigation.NavController
 import androidx.navigation.toRoute
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import xyz.linplayer.app.data.LocalApp
 import xyz.linplayer.app.data.ToastKind
 import xyz.linplayer.app.data.arr
@@ -177,6 +178,29 @@ private fun PlayerPrefsPanel() {
     LaunchedEffect(Unit) {
         prefs = runCatching { app.call("player.getPlaybackPrefs") }.getOrNull().obj()
     }
+    /* ☠☠ **改完必须把新值写回本地这份 `prefs`。** 开关是**受控**控件 ——
+       它显示的永远是 `prefs` 里的那个值。上一版只发命令不回填,于是每个开关
+       拨过去又弹回来,用户看到的就是「三个按钮点不开」(2026-09-07 原话)。
+       乐观更新 + 失败回滚,和多线程加载那一页同一套写法。 */
+    fun flip(key: String, v: Boolean) {
+        val before = prefs
+        prefs = patch(before, key, JsonPrimitive(v))
+        scope.launch {
+            runCatching { app.call("player.setPlaybackPrefs", args(key to v)) }
+                .onSuccess { r -> r.obj()?.let { prefs = it } }
+                .onFailure { prefs = before; app.report(it) }
+        }
+    }
+    fun pick(key: String, v: String) {
+        val before = prefs
+        prefs = patch(before, key, JsonPrimitive(v))
+        scope.launch {
+            runCatching { app.call("player.setPlaybackPrefs", args(key to v)) }
+                .onSuccess { r -> r.obj()?.let { prefs = it } }
+                .onFailure { prefs = before; app.report(it) }
+        }
+    }
+
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val engine = if (xyz.linplayer.app.data.UiPrefs.engine.value == "exo") "ExoPlayer" else "mpv"
     Panel(Modifier.padding(Sp.x16)) {
@@ -190,17 +214,31 @@ private fun PlayerPrefsPanel() {
         }, sub = "mpv 认的格式多、字幕全;ExoPlayer 走安卓自带解码,更省电也更稳。" +
             "换完要退出当前播放再进才生效")
         Hairline()
-        LpCell("后台播放", sub = "切到别的应用时音频继续,通知栏可以控制",
-            switch = prefs.bool("background_play"),
-            onSwitch = { v -> setPref(app, scope, "player.setPlaybackPrefs", "background_play", v) })
+        /* ★ 这一栏只放**核心层真的读**的那几项。上一版的「后台播放」「播完自动下一集」
+           在核心层里连字段都没有:拨了返回成功、配置一个字没变,而且下次进来还是关着。
+           不生效的选项直接删,不摆在界面上(用户 2026-09-04 的口径)。 */
+        SegRow("硬件解码", listOf("自动", "关闭"),
+            if (prefs.str("hwdec") == "no") "关闭" else "自动",
+            { v -> pick("hwdec", if (v == "关闭") "no" else "auto-safe") },
+            sub = "关掉更费电,但少数机型的花屏、绿屏只能靠它")
         Hairline()
-        LpCell("播完自动下一集", switch = prefs.bool("auto_next"),
-            onSwitch = { v -> setPref(app, scope, "player.setPlaybackPrefs", "auto_next", v) })
+        LpCell("杜比视界自动软解", sub = "DoVi 片源走硬解常见偏色,自动切软解画面才是对的",
+            switch = prefs.bool("dolby_auto_sw"), onSwitch = { v -> flip("dolby_auto_sw", v) })
         Hairline()
-        LpCell("跳过片头片尾", switch = prefs.bool("skip_intro"),
-            onSwitch = { v -> setPref(app, scope, "player.setPlaybackPrefs", "skip_intro", v) })
+        LpCell("跳过片头", switch = prefs.bool("skip_intro"),
+            onSwitch = { v -> flip("skip_intro", v) })
+        Hairline()
+        LpCell("跳过片尾", switch = prefs.bool("skip_outro"),
+            onSwitch = { v -> flip("skip_outro", v) })
+        Hairline()
+        LpCell("到了就自己跳", sub = "关着的话只弹一个「跳过」按钮,由你点",
+            switch = prefs.bool("skip_auto"), onSwitch = { v -> flip("skip_auto", v) })
     }
 }
+
+/** 把一个键就地换掉,别的原样留着。乐观更新要的就是这一步。 */
+private fun patch(o: JsonObject?, key: String, v: JsonPrimitive): JsonObject =
+    JsonObject((o ?: JsonObject(emptyMap())).toMutableMap().apply { put(key, v) })
 
 /**
  * 截屏【用户定 2026-09-07】。
@@ -411,15 +449,5 @@ private fun AboutPanel() {
         // 安卓端**不做应用内更新**:安装权限对一个第三方播放器是过重的要求,
         // 而且各厂商 ROM 拦法各不相同。只提示,跳发布页
         LpCell("检查更新", value = update?.let { "有新版 $it" } ?: "已是最新", arrow = false)
-    }
-}
-
-private fun setPref(
-    app: xyz.linplayer.app.data.AppState,
-    scope: kotlinx.coroutines.CoroutineScope,
-    cmd: String, key: String, value: Boolean,
-) {
-    scope.launch {
-        runCatching { app.call(cmd, args(key to value)) }.onFailure { app.report(it) }
     }
 }

@@ -606,9 +606,11 @@ private fun Osd(
             ) {
                 LpIconButton(LpIcons.rewind, "后退 10 秒", size = 22, tint = Color.White,
                     onClick = { onSeek((position - 10).coerceAtLeast(0.0)) })
+                /* 播放键带辉光【用户定 2026-09-07】。整排里**只有它**发光 ——
+                   它是这一页唯一的主动作,别的都在发光就等于谁都不突出。 */
                 LpIconButton(
                     if (paused) LpIcons.play else LpIcons.pause, if (paused) "播放" else "暂停",
-                    size = 30, tint = Color.White, onClick = onToggle,
+                    size = 30, tint = Color.White, glow = true, onClick = onToggle,
                 )
                 LpIconButton(LpIcons.forward, "前进 10 秒", size = 22, tint = Color.White,
                     onClick = { onSeek(position + 10) })

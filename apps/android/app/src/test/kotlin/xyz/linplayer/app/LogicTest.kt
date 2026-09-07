@@ -10,6 +10,7 @@ import xyz.linplayer.app.data.Capabilities
 import xyz.linplayer.app.data.Item
 import xyz.linplayer.app.data.Page
 import xyz.linplayer.app.data.Session
+import xyz.linplayer.app.ui.pages.Stream
 import xyz.linplayer.app.ui.pages.Version
 import xyz.linplayer.app.ui.pages.defaultVersion
 import xyz.linplayer.app.ui.pages.fmtTime
@@ -378,4 +379,30 @@ class LogicTest {
             assertEquals("『$code』走一圈变了样", code, cornerCode(cornerLabel(code)))
         }
     }
+
+    /**
+     * 字幕行的两行字【用户定 2026-09-07】:第一行轨道名,第二行「语言 / 格式」。
+     *
+     * ☠ 轨道名优先 `title`。`display_title` 是 Emby 拼的「语言 + 格式」,
+     * 拿它当名字的表现是整张表全是格式标签,用户分不出哪条是哪条 —— 报过两次。
+     */
+    @Test fun `字幕第一行是轨道名第二行是语言和格式`() {
+        val named = sub(title = "简体中文特效", display = "Chinese - ASS", lang = "chi", codec = "ass")
+        assertEquals("简体中文特效", named.label)
+        assertEquals("中文 / ASS", named.langAndCodec)
+
+        // 没有轨道名才轮到 display_title,再没有才自己拼
+        assertEquals("English - PGS", sub(display = "English - PGS", lang = "eng", codec = "pgs").label)
+        assertEquals("英语 SRT", sub(lang = "eng", codec = "srt").label)
+    }
+
+    private fun sub(
+        title: String? = null, display: String? = null,
+        lang: String? = null, codec: String = "",
+    ) = Stream(
+        index = 0, type = "Subtitle", codec = codec, profile = null,
+        title = title, display = display, lang = lang,
+        width = null, height = null, bitrate = null, channels = null,
+        layout = null, fps = null, range = null, isDefault = false, isExternal = false,
+    )
 }

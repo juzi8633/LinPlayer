@@ -226,13 +226,20 @@ fun ExoSurface(
     var videoH by remember(player) { mutableIntStateOf(0) }
 
     /* 取一次当前的画面尺寸。`ratio` 是 0 就等于「不知道比例」,而不知道比例时
-       [videoRect] 只能铺满 —— 那正是用户看到的「画面被拉伸」。 */
+       [videoRect] 只能铺满 —— 那正是用户看到的「画面被拉伸」。
+
+       ☠☠ **拿不到就别写**。media3 在换轨、渲染器重建、媒体项切换时会发一次
+       `VideoSize.UNKNOWN`(0×0),而上一版是无条件赋值 —— 于是刚从轨道表里
+       算出来的正确比例被一个 0 抹掉,下面那条轮询又已经退出了,再没有人纠正它。
+       表现就是「怎么调都还是拉伸的」,而且只在某些片子上出现(用户报了三轮)。 */
     val take = { v: VideoSize ->
         val par = if (v.pixelWidthHeightRatio > 0f) v.pixelWidthHeightRatio else 1f
-        val r = if (v.height > 0 && v.width > 0) v.width * par / v.height else 0f
-        if (r != ratio) Logs.d(TAG_EXO, "片源尺寸 ${v.width}×${v.height} par=$par 比例=$r")
-        ratio = r
-        videoW = v.width; videoH = v.height
+        if (v.width > 0 && v.height > 0) {
+            val r = v.width * par / v.height
+            if (r != ratio) Logs.d(TAG_EXO, "片源尺寸 ${v.width}×${v.height} par=$par 比例=$r")
+            ratio = r
+            videoW = v.width; videoH = v.height
+        }
     }
 
     DisposableEffect(player, subOff) {
@@ -245,7 +252,9 @@ fun ExoSurface(
                 /* ☠ 轨道表比 `videoSize` **早到**:解封装完就有了,而 videoSize 要等首帧
                    (硬解冷启动实测好几秒)。这期间 ratio 是 0,而 0 的含义是「不知道比例」,
                    [videoRect] 只能铺满 —— 那正是用户三轮都在报的「画面被拉伸」。 */
-                if (ratio <= 0f) ratioOf(tracks).takeIf { it > 0f }?.let { ratio = it }
+                if (ratio <= 0f) videoOf(tracks)?.let { (w, h, r) ->
+                    ratio = r; videoW = w; videoH = h
+                }
                 pickSubtitleTrack(player, tracks, subOff)
                 syncLibassTrack(tracks, subOff)
             }
@@ -255,12 +264,16 @@ fun ExoSurface(
     }
 
     /* ☠ **不能只靠 onVideoSizeChanged。** 它一部片只发一两次,而这一层的监听器
-       会随 `subOff` 重挂、随进程被杀重建 —— 错过那一次就永远是 0,表现正是
-       「怎么调都还是拉伸的」。比例没到手之前每 300ms 自己问一次,拿到就停。 */
+       会随 `subOff` 重挂、随进程被杀重建 —— 错过那一次就永远是 0。
+       ★ 这条轮询**不退出**:比例被清掉(换片、换轨)之后还得有人把它捡回来,
+         「拿到就停」的写法只兜得住第一次。没在等的时候一秒问一次,代价可以忽略。 */
     LaunchedEffect(player) {
-        while (ratio <= 0f) {
-            delay(300)
+        while (true) {
+            delay(if (ratio <= 0f) 300 else 1000)
             take(player.videoSize)
+            if (ratio <= 0f) videoOf(player.currentTracks)?.let { (w, h, r) ->
+                ratio = r; videoW = w; videoH = h
+            }
         }
     }
 
@@ -290,19 +303,22 @@ fun ExoSurface(
 }
 
 /**
- * 从轨道表里读画面比例。
+ * 从轨道表里读画面尺寸和比例:`(宽, 高, 比例)`,读不出来返回 null。
  *
  * `Format.width/height` 在解封装阶段就填好了,比 `videoSize`(要等首帧)早得多。
  * 非方形像素要乘 `pixelWidthHeightRatio` —— 不乘的话 DVD 源和部分 1080i 会算出一个瘦长的画面。
- * 读不出来返回 0,**不猜一个 16:9**。
+ * 读不出来返回 null,**不猜一个 16:9**。
+ *
+ * ★ 宽高也要一起给出去:libass 的 storage size 靠它(见 [LibassLayer])。
+ *   只回比例的话特效字幕按 PlayResX 定位时会整体错位,而那看着像「字幕没对准」。
  */
 @OptIn(UnstableApi::class)
-private fun ratioOf(tracks: Tracks): Float {
+private fun videoOf(tracks: Tracks): Triple<Int, Int, Float>? {
     val f = tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
         .flatMap { g -> (0 until g.length).map { g.getTrackFormat(it) } }
-        .firstOrNull { it.width > 0 && it.height > 0 } ?: return 0f
+        .firstOrNull { it.width > 0 && it.height > 0 } ?: return null
     val par = if (f.pixelWidthHeightRatio > 0f) f.pixelWidthHeightRatio else 1f
-    return f.width * par / f.height
+    return Triple(f.width, f.height, f.width * par / f.height)
 }
 
 /**

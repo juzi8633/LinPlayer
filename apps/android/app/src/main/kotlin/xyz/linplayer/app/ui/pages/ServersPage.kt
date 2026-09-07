@@ -4,6 +4,7 @@ import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
@@ -132,18 +136,23 @@ fun ServersPage(nav: NavController) {
         LazyColumn(Modifier.fillMaxSize(), list, contentPadding = pad) {
             items(accounts, key = { it.id }) { a ->
                 Box {
+                    var at by remember(a.id) { mutableStateOf(IntOffset.Zero) }
+                    val inset = with(LocalDensity.current) {
+                        IntOffset(Sp.x16.roundToPx(), Sp.x6.roundToPx())
+                    }
                     ServerCard(
                         a, status[a.id], a.isActive,
                         onTap = { if (!a.isActive) switchTo(a) },
-                        onLong = {
+                        onLong = { p ->
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            at = IntOffset(p.x.toInt() + inset.x, p.y.toInt() + inset.y)
                             menuFor = a
                         },
                     )
                     /* ☠ 这里原来是 M3 的 `DropdownMenu` —— 方盘、平淡的 fade、
                        和这一套玻璃面完全两回事(用户 2026-09-07 原话「太丑了」)。
-                       换成全站共用的 [LpMenu]:同一块玻璃,从锚点长出来。 */
-                    LpMenu(menuFor?.id == a.id, { menuFor = null }, Alignment.Center) {
+                       换成全站共用的 [LpMenu]:同一块玻璃,**从手指落点**长出来。 */
+                    LpMenu(menuFor?.id == a.id, { menuFor = null }, Alignment.TopStart, at) {
                         if (!a.isActive) LpMenuItem("设为当前", { menuFor = null; switchTo(a) })
                         LpMenuItem("编辑", { menuFor = null; editFor = a })
                         LpMenuItem("服务器线路",
@@ -219,14 +228,22 @@ private fun ServerCard(
     state: String?,
     active: Boolean,
     onTap: () -> Unit,
-    onLong: () -> Unit,
+    /** 长按。参数是**手指落点**(卡片自己的坐标系,像素),菜单要从那里长出来。 */
+    onLong: (androidx.compose.ui.geometry.Offset) -> Unit,
 ) {
     val c = Lp.colors
     val icon = rememberServerIcon(a.id)
     // ★ 服务器卡**不要太透**【用户定 2026-09-06】—— 玻璃调实一点,别让底下的东西透上来
     Panel(Modifier.padding(horizontal = Sp.x16, vertical = Sp.x6), solid = 1.4f) {
         Row(
-            Modifier.fillMaxWidth().combinedClickable(onClick = onTap, onLongClick = onLong)
+            /* ☠ 手势挂在**这一层**而不是外面那个 Box:坐标要和卡片对齐,
+               菜单才会从手指底下长出来(用户 2026-09-07:「不是我手指点哪里
+               就从哪里出现的」)。这一层比外层 Box 少了 Panel 的那圈外边距,
+               所以调用方要把它补回去 —— 补偿量在 [CardInset]。 */
+            Modifier.fillMaxWidth()
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = { onTap() }, onLongPress = { onLong(it) })
+                }
                 .padding(Sp.x16),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -249,12 +266,9 @@ private fun ServerCard(
                             color = c.acc, fontSize = 10.sp)
                     }
                 }
-                // ★ 状态**写成文字**:down 和 unknown 同色不同义,手机没有悬停可以区分
-                Dim3(when (state) {
-                    "up" -> "已连接" + (a.userName?.let { " · $it" } ?: "")
-                    "down" -> "连不上"
-                    else -> "未检测" + (a.userName?.let { " · $it" } ?: "")
-                }, Modifier.padding(top = Sp.x2))
+                /* ★ 副行只写**备注**【用户定 2026-09-07】。原来这里写的是连通状态,
+                   而「未检测」是探测还没回来的中间态 —— 它说的是我们自己的进度,
+                   不是用户想知道的事。状态由右边那颗点表示,够了。 */
                 a.remark?.takeIf { it.isNotBlank() }?.let { Dim3(it, Modifier.padding(top = Sp.x2)) }
             }
             Box(Modifier.size(8.dp).clip(RoundedCornerShape(R.pill)).background(
