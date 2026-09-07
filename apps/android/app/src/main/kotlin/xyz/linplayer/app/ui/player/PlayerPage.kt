@@ -141,7 +141,7 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
             .str("sub_lang") ?: ""
     }
     val exo = rememberExoPlayer(engine == "exo", subLangPref)
-    /* 画面比例【用户定 2026-09-07】。★ **不持久化** —— 和画质档位同一条口径:
+    /* 画面比例【用户定 2026-09-07】。★ **不持久化** —— 和画面增强档位同一条口径:
        它是「这一片这一次这么看」,记住的话下一片莫名其妙就是 4:3。 */
     var videoFit by remember { mutableStateOf(VideoFit.Source) }
     /** 片源比例,来自 `emby.itemMedia`(和判断横竖屏是同一份数据)。0 = 还没拿到。 */

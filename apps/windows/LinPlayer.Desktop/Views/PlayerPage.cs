@@ -147,9 +147,9 @@ public sealed class PlayerPage : UserControl
     /// <summary>总时长,画在进度条右端。 和已播时间**分列进度条两侧** ——
     /// 挤在一起写成 <c>12:30 / 1:45:00</c> 时,眼睛得先找到那个斜杠才知道读到哪儿了。</summary>
     private readonly TextBlock _total = new() { Foreground = Brushes.White, FontSize = 12.5, Opacity = 0.75, VerticalAlignment = VerticalAlignment.Center };
-    /// <summary>音轨 / 字幕 / 画质那一盘。 平铺在控制条上的话底下一整行都是下拉框,
+    /// <summary>音轨 / 字幕 / 画面增强那一盘。 平铺在控制条上的话底下一整行都是下拉框,
     /// 那是设置面板不是 OSD;而且它们**看片时基本不动**,不该长期占着画面。</summary>
-    /// <summary>超分弹层的锚点。快捷键 U 也走它 —— 键和按钮同一条路。</summary>
+    /// <summary>增强弹层的锚点。快捷键 U 也走它 —— 键和按钮同一条路。</summary>
     private Button _qualityBtn = null!, _aspectBtn = null!, _audioBtn = null!;
     /// <summary>正开着的那个弹层。自检要能把它关掉,别的地方不该碰。</summary>
     private Flyout? _openFlyout;
@@ -551,14 +551,14 @@ public sealed class PlayerPage : UserControl
         _aspect.SelectionChanged += (_, _) =>
             _ = Send("player.setAspectRatio", new { ratio = Aspects[Math.Max(0, _aspect.SelectedIndex)].Value });
 
-        /* 顶栏右边放**看片时基本不动**的那几样:截图、超分、比例、片头片尾。
+        /* 顶栏右边放**看片时基本不动**的那几样:截图、增强、比例、片头片尾。
            底栏留给一直在用的:播放、进退、选集、倍速、音轨、字幕、音量、全屏。
            两条各管一类,比十个按钮挤在底栏一排更好瞄 —— 用户 2026-09-06 点的名。
-           这几个用**文字**不用图标:「超分」「比例」没有公认的图标,
+           这几个用**文字**不用图标:「增强」「比例」没有公认的图标,
              随手挑一个 MDL2 字形的结果是用户得靠试才知道它是什么
              (而且字体里没有那个码位时画出来是个空心方框,还编译绿)。 */
-        _qualityBtn = Osd("超分", "超分档位(U)");
-        _qualityBtn.Click += (_, _) => Pick(_qualityBtn, _quality, "超分", null, true);
+        _qualityBtn = Osd("增强", "画面增强档位(U)");
+        _qualityBtn.Click += (_, _) => Pick(_qualityBtn, _quality, "画面增强", null, true);
         _aspectBtn = Osd("比例", "画面比例");
         _aspectBtn.Click += (_, _) => Pick(_aspectBtn, _aspect, "画面比例", null, true);
         var segBtn = Osd("片头片尾", "标记片头片尾 —— 这部剧以后一直用这一份");
@@ -867,7 +867,7 @@ public sealed class PlayerPage : UserControl
         // 而它看着**很像**「抽屉没画出来」。这个坑当场踩了一次。
         if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("LP_SELFCHECK_PLAYER_DRILL")))
             _ = Drill();
-        /* 自检台驱动画质档位。选的是**真的下拉项**,走 SelectionChanged 那条真路 ——
+        /* 自检台驱动画面增强档位。选的是**真的下拉项**,走 SelectionChanged 那条真路 ——
            绕开 UI 直接调命令的自检只能证明核心层活着,证明不了这个面板接对了。 */
         var lvl = Environment.GetEnvironmentVariable("LP_SELFCHECK_SHADER");
         if (!string.IsNullOrEmpty(lvl)) _ = SelfCheckPickQuality(lvl);
@@ -1219,7 +1219,7 @@ public sealed class PlayerPage : UserControl
                    它正是那个「焦点在别的控件上时,播放器的键还灵不灵」的场子。 */
                 _vol.Focus();
                 was = (string?)_pause.Content == Ico.Play; // true = 现在是暂停态
-                Console.WriteLine($"[空格] 焦点在 {(_quality.IsFocused ? "画质下拉框(可聚焦控件)" : "别处")};" +
+                Console.WriteLine($"[空格] 焦点在 {(_quality.IsFocused ? "增强下拉框(可聚焦控件)" : "别处")};" +
                                   $"按之前 暂停={was}");
                 /* 事件要发在**有焦点的那个控件**身上,不是页面上。
                    在页面上发的话路由从页面开始 —— 下拉框根本不在路径里,
@@ -1347,7 +1347,7 @@ public sealed class PlayerPage : UserControl
         },
     };
     /// <summary>
-    /// OSD 上的**文字**按钮。「超分」「比例」「音轨」这类没有公认图标的动作用它。
+    /// OSD 上的**文字**按钮。「增强」「比例」「音轨」这类没有公认图标的动作用它。
     ///
     /// <para>随手挑一个 MDL2 字形的代价是用户得靠试才知道它是什么;
     /// 而字体里没有那个码位时画出来是个空心方框,还编译绿、运行不报错。</para>
@@ -1618,7 +1618,7 @@ public sealed class PlayerPage : UserControl
             case "player.next": GoNext(); break;
             case "player.episodes" when _pickEp.IsVisible: ShowEpisodes(); break;
             // 抽屉关着时直接展开下拉框,列表会飘在一块看不见的面板上 —— 得先把面板拿出来
-            case "player.quality": Pick(_qualityBtn, _quality, "超分", null, true); break;
+            case "player.quality": Pick(_qualityBtn, _quality, "画面增强", null, true); break;
             case "player.screenshot": _ = Screenshot(); break;
             case "player.skip" when _skip.IsVisible: DoSkip(); break;
             // 全屏时先退全屏,不退出播放 —— 看片时误按一下就把片关了很恼人
@@ -1711,7 +1711,7 @@ public sealed class PlayerPage : UserControl
             _fullBtn.Content = _full ? Ico.Windowed : Ico.Full;
             ToolTip.SetTip(_fullBtn, _full ? "退出全屏(F / Esc)" : "全屏(F)");
         }
-        /* 画面区变了 → 能跑的超分档也变了,列表要重拉。
+        /* 画面区变了 → 能跑的增强档也变了,列表要重拉。
            放大那几族的门槛是「画面区 > 源的 1.2 倍」——窗口下一档都不跑、
            全屏下才跑起来。不重拉的话:全屏之后列表里还是只有锐化去噪那几档,
            而用户全屏正是为了用放大档。
@@ -2617,7 +2617,7 @@ public sealed class PlayerPage : UserControl
     }
 
     /// <summary>
-    /// 画质档位(<c>UI_PC.md</c> §7 底部第七个面板,快捷键 <c>U</c>)。
+    /// 画面增强档位(<c>UI_PC.md</c> §7 底部第七个面板,快捷键 <c>U</c>)。
     ///
     /// <para>档位表由<b>核心层</b>给(六档 A/B/C,见 <c>core/shaders</c>),
     /// UI 不自己写一份 —— 写一份的下场是加档位要改两处,而漏改的那处不报错。</para>
@@ -2673,7 +2673,7 @@ public sealed class PlayerPage : UserControl
     }
 
     /// <summary>
-    /// 拉超分档位表。
+    /// 拉画面增强档位表。
     ///
     /// <para>不会生效的档位不进列表(用户:「不生效的选项直接删掉」)。核心层每档
     /// 带 <c>will_run</c>,和真正挂载时用同一份判据。放大那几档要求画面区 &gt; 源的
@@ -2710,9 +2710,9 @@ public sealed class PlayerPage : UserControl
             _quality.SelectedIndex = at < 0 ? 0 : at;
             _qualityMuted = false;
             if (dropped > 0)
-                Console.WriteLine($"[超分] 当前画面尺寸下有 {dropped} 档不会生效,已从列表里去掉");
+                Console.WriteLine($"[增强] 当前画面尺寸下有 {dropped} 档不会生效,已从列表里去掉");
         }
-        catch (Exception e) { _msg.Text = $"超分档位读不到:{LibraryPage.Advice(e)}"; }
+        catch (Exception e) { _msg.Text = $"画面增强档位读不到:{LibraryPage.Advice(e)}"; }
     }
 
     private bool _qualityMuted;
@@ -2744,7 +2744,7 @@ public sealed class PlayerPage : UserControl
                 return;
             }
             var n = r.TryGetProperty("count", out var c) && c.TryGetInt32(out var ci) ? ci : 0;
-            _msg.Text = n == 0 ? "超分已关闭" : $"已启用:{lv.Name}";
+            _msg.Text = n == 0 ? "画面增强已关闭" : $"已启用:{lv.Name}";
         }
         catch (Exception e) { _msg.Text = LibraryPage.Advice(e); }
     }
@@ -2821,7 +2821,7 @@ public sealed class PlayerPage : UserControl
             _ = LoadTracks();
             _ = LoadChapters();
             _ = LoadEpisodes();
-            /* 超分档位表也要在**这里**重拉一次。
+            /* 画面增强档位表也要在**这里**重拉一次。
                构造函数里那次拉的时候 mpv 还没解出画面尺寸(video-params/w = 0),
                核心层就不给 will_run —— 于是「只留会生效的档」这条**一次都没生效过**。
                自检当场逮到:1080p 源放在 1920 窗口里(放大档一档都不会跑),

@@ -125,7 +125,7 @@ fun PlayerPanel(
                     current = itemId
                 }
             }
-            /* 画质(超分)。★ **`will_run == false` 的档位不进列表**
+            /* 画面增强。★ **`will_run == false` 的档位不进列表**
                ——【用户定 2026-09-04:「不生效的选项直接删掉,不要展示出来」】。
                核心层每档都带这个判据,上一版安卓侧把它整个丢了,于是 PC 藏起来的
                档位在手机上照样列出来,点了画面一点不变 —— 那正是用户说的
@@ -168,11 +168,11 @@ fun PlayerPanel(
                     Triple("ratio", null, "画面比例"),
                     Triple("source", null, "版本与线路"),
                     Triple("audio", null, "音轨"),
-                    /* ☠ **Exo 内核下没有「画质」这一项。** 超分是 mpv 的 glsl-shaders,
+                    /* ☠ **Exo 内核下没有「画面增强」这一项。** 它是 mpv 的 glsl-shaders,
                        Exo 那条路上 mpv 手里根本没有这一片 —— 挂上去是空转,
                        而 `player.setShaderLevel` 照样返回成功。
                        一颗「点开永远没效果」的按钮比没有它更糟。 */
-                    if (exo == null) Triple("quality", null, "画质") else null,
+                    if (exo == null) Triple("quality", null, "画面增强") else null,
                     Triple("danmaku", null, "弹幕"),
                 )
             }
@@ -182,7 +182,7 @@ fun PlayerPanel(
 
     val title = when (kind) {
         "source" -> "版本与线路"; "audio" -> "音轨"; "subtitle" -> "字幕"
-        "episodes" -> "选集"; "quality" -> "画质"; "danmaku" -> "弹幕"
+        "episodes" -> "选集"; "quality" -> "画面增强"; "danmaku" -> "弹幕"
         "ratio" -> "画面比例"; else -> "更多"
     }
 

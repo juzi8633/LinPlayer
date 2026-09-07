@@ -642,7 +642,7 @@ private fun DraftPlayer() {
             Spacer(Modifier.height(Sp.x10))
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(Sp.x8)) {
-                listOf("1.0x", "音轨", "字幕", "弹幕", "选集", "画质").forEach {
+                listOf("1.0x", "音轨", "字幕", "弹幕", "选集", "增强").forEach {
                     Text(it, Modifier.clip(S2.pill)
                         .background(Color.White.copy(alpha = .14f))
                         .padding(horizontal = Sp.x12, vertical = Sp.x6),
