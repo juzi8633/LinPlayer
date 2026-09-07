@@ -7,10 +7,12 @@
 4. **`cargo check -p app` 只编 Windows**,`crates/mpv` 的 overlay 有四个 cfg 变体,兜底桩任何 CI 目标都编不到、会静默烂掉。
 5. **别再说「本机没 NDK 跑不了」** —— 仓库自带 `scripts/build-android-apk.sh`,裸 cargo check 会死在 host bindgen 缺 WinSDK 头。
 
-> 本文件共 **11** 条。前 9 条标了原记忆文件名与类型;末两条是 2026-09-06
-> Go 核心 + Compose 手机端落地时新踩的。
+> 本文件共 **36** 条。开头 8 条标了原记忆文件名与类型,是从 memory 搬过来的;
+> 其余都是 Go 核心 + Compose 手机端落地时(2026-09-06 起)新踩的,标着日期。
 
 ## 本页条目
+
+> 只列从 memory 搬来的那几条 —— 带日期的按时间排在正文里,不重复索引一遍。
 
 - 安卓端身份 — `android-app-identity.md`
 - APK 未签名陷阱 — `android-apk-unsigned-trap.md`
@@ -20,8 +22,6 @@
 - Android R8 JNI keep — `android-r8-jni-keep.md`
 - 安卓资源限定符优先级 — `android-resource-qualifier-precedence.md`
 - 安卓视频透出四层 — `android-video-transparency-chain.md`
-- Go 核心层接上安卓:五条只有装机才现形的 — 2026-09-06
-- 出包与签名:minSdk ≥24 时 AGP 默认只签 v2/v3 — 2026-09-06
 
 ---
 
@@ -685,6 +685,72 @@ Modifier.heightIn(max=92.dp).widthIn(max=320.dp), contentScale = Fit)`:
 服务器页则是 `background(accDim)` + `ContentScale.Crop`:
 服务器图标基本都带透明通道,垫一块琥珀色等于给每台服务器套一个不是它的方框,
 `Crop` 还会把非方形的切掉两边。透明底 + `Fit`。
+
+### 画面比例:`videoSize` 要等首帧,而首帧之前 0 的含义是「铺满」 — 2026-09-07
+
+「画面被拉伸铺满整个屏幕,哪怕选了原始比例」用户报了三轮。前两轮修的都是**算式**
+(`videoRect` 已经有单测钉着,一直是对的),而真正的洞在**比例什么时候到手**:
+
+- `ExoPlayer.videoSize` 要等**首帧解出来**才有值(硬解冷启动实测好几秒);
+- 监听器还会随 `subOff` 重挂、随进程重建 —— 错过那一次事件就永远是 0;
+- `videoRect` 里 `ar <= 0` 的分支是「先铺满」,而**铺满和拉伸在屏幕上长得一模一样**。
+
+一般化:**一个「还不知道」的值和一个「已知的错值」在界面上往往没有区别**,
+所以兜底分支必须能被外部看出来。三条来源按到手的早晚排:
+`emby.itemMedia` 的 Video 流宽高(**按下播放之前**就有,和判断横竖屏是同一份数据)→
+`Tracks` 里的 `Format.width/height`(解封装完就有)→ `videoSize`(要等首帧)。
+非方形像素记得乘 `pixelWidthHeightRatio`。
+
+**PGS 位图字幕被拉伸是同一个根因。** `PgsParser` 给的 `Cue` 里
+`position` / `line` / `size` / `bitmapHeight` 全是**相对片源画面的比例**
+(反编译 `PgsParser$CueBuilder.build()` 核对:锚点常量都是 0 =
+`ANCHOR_TYPE_START` / `LINE_TYPE_FRACTION`),所以只要字幕层和视频层共用同一块
+矩形就一定对齐 —— 而那块矩形算错的时候,字幕跟着一起错。
+
+### 截屏不能用 `View.draw`,也不能用核心层那条 — 2026-09-07
+
+`SurfaceView` 的画面不在 View 树里,View 树那一块是被 `PorterDuff.CLEAR` 抠出来的
+**透明洞** —— `View.draw()` 截出来是一片空。唯一能读回它的是
+`PixelCopy.request(surfaceView, bitmap, …)`(API 24+),而且两个内核都是 SurfaceView,
+所以这一条路两边通用。
+
+核心层的 `player.screenshot` 用不了:它是 mpv 的 `screenshot-to-file`,
+ExoPlayer 内核下 mpv 手里根本没有这一片;而且它写进应用私有目录,
+用户拿不到文件(和「导出诊断信息」是同一类安慰剂)。
+落盘走 MediaStore 的 `RELATIVE_PATH=Pictures/LinPlayer`(API 29+ 免权限);
+API 28 及以下写相册要 `WRITE_EXTERNAL_STORAGE`,为一颗截图按钮去要全盘写权限不值,
+那些机器落到 `Android/data/<包名>/files/Pictures/shots`。
+
+### 一颗「点开永远是空的」按钮比没有它更糟 — 2026-09-07
+
+同一批里用户点掉了三处:
+
+- 详情页那颗「选集」:它只是把页面滚到同一页再往下两屏的选集栏;
+- 播放页电影的「选集」:电影没有 `season_id`,点开必然空表;
+- 比例面板里的「片源未知」:那行字是**给我自己看的自检**,用户切比例时读到它
+  只会以为自己弄坏了什么。自检该进日志(`lp-exo` 已经在打),不该摆在选项旁边。
+
+判据:**这个控件在最常见的情况下会给出什么?** 答案是「什么都没有」就别画它。
+
+### M3 的 `DropdownMenu` 和这套皮不是一回事 — 2026-09-07
+
+用户原话「长按出现的编辑列表太丑了,没有做适配软件的 UI 和动效」。
+Material 自带的下拉是方盘 + 一条平淡的 fade,夹在玻璃面里像贴上去的另一款应用。
+换成自己的 `LpMenu`(`Popup` + 同一块 `glass` + 从锚点那一角长出来的缩放),
+卡片长按菜单、服务器长按菜单、首页换服务器三处共用一份 —— 各页自己拼一套
+必然长出三种间距。
+
+顺带:**换服务器不该是弹窗。** 弹窗是「打断你,让你回答一个问题」;
+换服务器是顶栏那颗按钮的**展开态**,它不该盖住整页。
+
+### 固定 dp 的版面高度在两台机器上是两种版面 — 2026-09-07
+
+首页 Hero 原本写死 392dp。用户报「占首屏的比例有点低」—— 在他那台长屏上它只有
+三分之一,而在小屏上早就过半了。版面高度(不是间距)要写成**屏高的比例**再上下夹一下。
+
+同一条的另一面:顶栏那颗服务器胶囊后面跟了个 `Spacer(weight(1f))`,自己不带权重,
+Row 于是「要多少给多少」量它 —— 长服务器名把右边两颗按钮整个挤出屏幕。
+**Row 里会变长的那一项必须自己带 weight**,不能靠后面的 Spacer 顶。
 
 ## 跨域交叉引用
 

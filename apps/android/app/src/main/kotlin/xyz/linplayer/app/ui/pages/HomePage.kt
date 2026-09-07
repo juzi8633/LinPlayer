@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -20,8 +19,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,6 +40,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -69,8 +67,8 @@ import xyz.linplayer.app.ui.components.EmptyState
 import xyz.linplayer.app.ui.components.ErrorState
 import xyz.linplayer.app.ui.components.GlassIcon
 import xyz.linplayer.app.ui.components.Hairline
-import xyz.linplayer.app.ui.components.LpDialog
-import xyz.linplayer.app.ui.components.OptRow
+import xyz.linplayer.app.ui.components.LpMenu
+import xyz.linplayer.app.ui.components.LpMenuItem
 import xyz.linplayer.app.ui.components.LpImmersive
 import xyz.linplayer.app.ui.components.LpRow
 import xyz.linplayer.app.ui.components.LpRowSkeleton
@@ -78,7 +76,7 @@ import xyz.linplayer.app.ui.components.NetImage
 import xyz.linplayer.app.ui.components.SectionTitle
 import xyz.linplayer.app.ui.components.Skeleton
 import xyz.linplayer.app.ui.components.pressable
-import xyz.linplayer.app.ui.theme.Dim
+import xyz.linplayer.app.ui.theme.heroHeight
 import xyz.linplayer.app.ui.theme.LpEasing
 import xyz.linplayer.app.ui.theme.LpIcons
 import xyz.linplayer.app.ui.theme.Lp
@@ -148,9 +146,43 @@ fun HomePage(nav: NavController) {
     val open: (Item) -> Unit = { nav.navigate(Route.Detail(it.id, it.type)) }
     val menu: (Item) -> List<CardAction> = { cardActions(app, scope, it) }
 
+    val switchServer: (Account) -> Unit = { a ->
+        // 已经是这一台就什么都不做:再打一次 setActiveServer 会让整页白重拉
+        if (!a.isActive) scope.launch {
+            runCatching { app.call("account.setActiveServer", args("server_id" to a.id)) }
+                .onSuccess {
+                    /* ☠ 先把各块打回骨架。`PageCache.clear()`(在 boot 里)清的是那张哈希表,
+                       **清不掉当前 composition 手里的那几个 MutableState** —— 不打回去的话,
+                       新服务器的数据到位之前,屏幕上摆的是上一台的媒体库。那是界面在撒谎。 */
+                    hero = Block.Loading; resume = Block.Loading
+                    nextUp = Block.Loading; collections = Block.Loading
+                    views = Block.Loading; latest = emptyMap()
+                    // ★ **必须等 refreshSession**:首页各块读的是新会话,
+                    //   不等的话它们拿旧服务器的凭据去拉内容
+                    app.refreshSession()
+                    reload++
+                    app.toast("已切到「${a.name}」", ToastKind.Ok)
+                }
+                .onFailure { app.report(it) }
+        }
+    }
+
     LpImmersive(bar = {
-        ServerChip(accounts.firstOrNull { it.isActive }) { pickServer = true }
-        Spacer(Modifier.weight(1f))
+        /* ☠ **胶囊必须由 Row 给它定宽**【用户定 2026-09-07】。
+           原来它后面跟一个 `Spacer(weight(1f))`,自己不带权重 —— Row 先按
+           「要多少给多少」量它,于是长服务器名会把右边两颗按钮整个挤出屏幕。
+           改成它自己吃掉剩余宽度,名字放不下就省略号。 */
+        var anchorH by remember { mutableStateOf(0) }
+        Box(Modifier.weight(1f).onSizeChanged { anchorH = it.height }) {
+            ServerChip(accounts.firstOrNull { it.isActive }) { pickServer = !pickServer }
+            ServerMenu(
+                open = pickServer, anchorH = anchorH, accounts = accounts,
+                onClose = { pickServer = false },
+                onPick = { a -> pickServer = false; switchServer(a) },
+                onManage = { pickServer = false; nav.switchTab(Route.Servers) },
+                onAdd = { pickServer = false; nav.navigate(Route.AddServer) },
+            )
+        }
         GlassIcon(LpIcons.search, "搜索") { nav.navigate(Route.Search()) }
         GlassIcon(LpIcons.settings, "设置") { nav.navigate(Route.Settings) }
     }) { pad ->
@@ -207,49 +239,6 @@ fun HomePage(nav: NavController) {
         }
     }
 
-    /* ★★ 顶栏胶囊 = **就地换服务器**【用户定 2026-09-06】。
-       原来它 `navigate(Route.Servers)` —— 那是把「换一台」做成了一次页面跳转,
-       而服务器页是底栏的第三个 Tab,跳过去之后返回栈和 Tab 栈对不上,
-       用户原话:「无法点回首页」。
-       换成弹窗之后这件事根本不需要离开首页,顺带把那条返回路径整个消掉。 */
-    if (pickServer) LpDialog({ pickServer = false }, "切换服务器") {
-        Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
-            accounts.forEach { a ->
-                OptRow(
-                    a.name, sub = a.remark?.takeIf { it.isNotBlank() } ?: a.userName,
-                    selected = a.isActive,
-                    onClick = {
-                        pickServer = false
-                        // 已经是这一台就什么都不做:再打一次 setActiveServer 会让整页白重拉
-                        if (a.isActive) return@OptRow
-                        scope.launch {
-                            runCatching { app.call("account.setActiveServer", args("server_id" to a.id)) }
-                                .onSuccess {
-                                    /* ☠ 先把各块打回骨架。`PageCache.clear()`(在 boot 里)
-                                       清的是那张哈希表,**清不掉当前 composition 手里的
-                                       那几个 MutableState** —— 不打回去的话,新服务器的数据
-                                       到位之前,屏幕上摆的是上一台的媒体库。那是界面在撒谎。 */
-                                    hero = Block.Loading; resume = Block.Loading
-                                    nextUp = Block.Loading; collections = Block.Loading
-                                    views = Block.Loading; latest = emptyMap()
-                                    // ★ **必须等 refreshSession**:首页各块读的是新会话,
-                                    //   不等的话它们拿旧服务器的凭据去拉内容
-                                    app.refreshSession()
-                                    reload++
-                                    app.toast("已切到「${a.name}」", ToastKind.Ok)
-                                }
-                                .onFailure { app.report(it) }
-                        }
-                    },
-                )
-            }
-            Spacer(Modifier.height(Sp.x10))
-            Hairline()
-            Spacer(Modifier.height(Sp.x10))
-            OptRow("管理服务器…", onClick = { pickServer = false; nav.switchTab(Route.Servers) })
-            OptRow("添加服务器…", onClick = { pickServer = false; nav.navigate(Route.AddServer) })
-        }
-    }
 }
 
 /**
@@ -257,30 +246,66 @@ fun HomePage(nav: NavController) {
  *
  * ☠ 图标位上一版是**一块渐变色块** —— 不是「图标没加载出来」,是压根没去取过图标。
  *   现在和服务器页共用 [rememberServerIcon],而且**透明底不垫色块**【用户定 2026-09-07】。
+ * ★ 尺寸跟着顶栏另外两颗按钮一起放大到 44dp 高【用户定 2026-09-07】。
+ * ★ 名字那一段 `weight(1f, fill = false)`:**能省略,但不占满** ——
+ *   短名字的胶囊就该是短的,不该拉成一整条。
  */
 @Composable
 private fun ServerChip(account: Account?, onClick: () -> Unit) {
     val c = Lp.colors
     val icon = account?.id?.let { rememberServerIcon(it) }
     Row(
-        Modifier.clip(RoundedCornerShape(R.pill))
+        Modifier.height(44.dp).clip(RoundedCornerShape(R.pill))
             .background(Color.Black.copy(alpha = .34f))
             .pressable(onClick)
-            .padding(start = 5.dp, end = Sp.x10, top = 5.dp, bottom = 5.dp),
+            .padding(start = 6.dp, end = Sp.x12),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) {
             if (icon != null) androidx.compose.foundation.Image(
                 icon, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit,
-            ) else Icon(LpIcons.server, null, Modifier.size(17.dp), tint = c.acc)
+            ) else Icon(LpIcons.server, null, Modifier.size(21.dp), tint = c.acc)
         }
         Spacer(Modifier.width(Sp.x8))
         Text(
-            account?.name ?: "服务器", color = Color.White, fontSize = 12.5.sp,
+            account?.name ?: "服务器", Modifier.weight(1f, fill = false),
+            color = Color.White, fontSize = 14.sp,
             maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
-        Icon(LpIcons.chevD, null, Modifier.padding(start = Sp.x4).size(13.dp),
+        Icon(LpIcons.chevD, null, Modifier.padding(start = Sp.x4).size(15.dp),
             tint = Color.White.copy(alpha = .75f))
+    }
+}
+
+/**
+ * 换服务器 = **从胶囊底下掉下来的一张列表**【用户定 2026-09-07】。
+ *
+ * ☠ 上一版是一个居中弹窗。弹窗是「打断你,让你回答一个问题」;而换服务器是
+ *   顶栏那颗按钮的**展开态** —— 它不该盖住整页,也不该让人先看一遍标题。
+ *   再上一版更糟,是 `navigate(Route.Servers)`:那台是底栏第三个 Tab,
+ *   跳过去之后返回栈和 Tab 栈对不上,用户原话「无法点回首页」。
+ */
+@Composable
+private fun ServerMenu(
+    open: Boolean,
+    anchorH: Int,
+    accounts: List<Account>,
+    onClose: () -> Unit,
+    onPick: (Account) -> Unit,
+    onManage: () -> Unit,
+    onAdd: () -> Unit,
+) {
+    LpMenu(open, onClose, Alignment.TopStart, androidx.compose.ui.unit.IntOffset(0, anchorH + 8)) {
+        accounts.forEach { a ->
+            LpMenuItem(
+                a.name, { onPick(a) },
+                sub = a.remark?.takeIf { it.isNotBlank() } ?: a.userName,
+                selected = a.isActive,
+            )
+        }
+        if (accounts.isNotEmpty()) Hairline(Modifier.padding(vertical = Sp.x6))
+        LpMenuItem("管理服务器…", onManage)
+        LpMenuItem("添加服务器…", onAdd)
     }
 }
 
@@ -319,7 +344,7 @@ private fun RowBlock(
 @Composable
 private fun Hero(block: Block<List<Item>>, list: LazyListState, open: (Item) -> Unit) {
     val c = Lp.colors
-    val h = Dim.heroHome
+    val h = heroHeight()
     when (block) {
         is Block.Loading -> Skeleton(Modifier.fillMaxWidth().height(h), R.none)
         is Block.Fail -> Unit

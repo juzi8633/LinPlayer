@@ -8,6 +8,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -41,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -61,6 +63,7 @@ import xyz.linplayer.app.ui.theme.Lp
 import xyz.linplayer.app.ui.theme.R
 import xyz.linplayer.app.ui.theme.Sp
 import xyz.linplayer.app.ui.theme.T
+import xyz.linplayer.app.ui.theme.lpTween
 
 /*
  * 共用组件词汇(UI_MOBILE.md §4.2)。**页面只能用它拼,不许各页自造一套**
@@ -549,6 +552,80 @@ fun LpDialog(onDismiss: () -> Unit, title: String? = null, content: @Composable 
                 content()
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------- 浮出菜单
+
+/**
+ * 长按 / 下拉浮出来的那张小面板。
+ *
+ * ☠ **不用 M3 的 `DropdownMenu`**:它是 Material 自己的方盘 + 一条平淡的 fade,
+ *   夹在这一套玻璃面里像贴上去的另一款应用(用户 2026-09-07 原话:
+ *   「太丑了,没有做适配软件的 UI 和动效」)。
+ * ★ 从**锚点那一角**长出来 —— 菜单的来处就是手指刚碰过的地方。
+ */
+@Composable
+fun LpMenu(
+    open: Boolean,
+    onDismiss: () -> Unit,
+    alignment: Alignment = Alignment.TopStart,
+    offset: androidx.compose.ui.unit.IntOffset = androidx.compose.ui.unit.IntOffset.Zero,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
+    if (!open) return
+    androidx.compose.ui.window.Popup(
+        alignment, offset, onDismiss,
+        androidx.compose.ui.window.PopupProperties(focusable = true),
+    ) {
+        var shown by remember { mutableStateOf(false) }
+        androidx.compose.runtime.LaunchedEffect(Unit) { shown = true }
+        val sc by androidx.compose.animation.core.animateFloatAsState(
+            if (shown) 1f else .88f, lpTween(T.T5, LpEasing.emphasizedDecelerate), label = "menuZ")
+        val op by androidx.compose.animation.core.animateFloatAsState(
+            if (shown) 1f else 0f, lpTween(T.T4), label = "menuA")
+        val origin = androidx.compose.ui.graphics.TransformOrigin(
+            if (alignment == Alignment.TopEnd || alignment == Alignment.BottomEnd) 1f else 0f,
+            if (alignment == Alignment.BottomStart || alignment == Alignment.BottomEnd) 1f else 0f,
+        )
+        Column(
+            Modifier
+                .graphicsLayer { scaleX = sc; scaleY = sc; alpha = op; transformOrigin = origin }
+                .widthIn(min = 184.dp, max = 300.dp)
+                .heightIn(max = 420.dp)
+                .glass(R.md, solid = 1.7f)
+                .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                .padding(vertical = Sp.x6),
+            content = content,
+        )
+    }
+}
+
+/** 菜单里的一行。两行:上面是名字,下面那行小字是「它到底是哪一个」。 */
+@Composable
+fun LpMenuItem(
+    label: String,
+    onClick: () -> Unit,
+    sub: String? = null,
+    selected: Boolean = false,
+    danger: Boolean = false,
+) {
+    val c = Lp.colors
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = Dim.tap)
+            .pressable(onClick)
+            .padding(horizontal = Sp.x16, vertical = Sp.x6),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                label, color = when { danger -> c.bad; selected -> c.acc; else -> c.fg },
+                fontSize = 14.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            if (sub != null) Dim3(sub, Modifier.padding(top = 1.dp))
+        }
+        if (selected) Icon(LpIcons.check, null,
+            Modifier.padding(start = Sp.x8).size(17.dp), tint = c.acc)
     }
 }
 

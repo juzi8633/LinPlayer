@@ -294,7 +294,12 @@ fun IconAction(
     }
 }
 
-/** 浮在图上的毛玻璃圆钮。**顶栏不占一行** —— 它整个飘在 Hero 上。 */
+/**
+ * 浮在图上的毛玻璃圆钮。**顶栏不占一行** —— 它整个飘在 Hero 上。
+ *
+ * ★ 尺寸 44dp【用户定 2026-09-07:「顶部的三个按钮都太小了」】。
+ *   36dp 已经低于安卓的 48dp 命中区建议,而它还浮在一张大图上 —— 视觉上更小。
+ */
 @Composable
 fun GlassIcon(
     icon: ImageVector,
@@ -303,11 +308,11 @@ fun GlassIcon(
     onClick: () -> Unit,
 ) {
     Box(
-        m.size(36.dp).clip(RoundedCornerShape(R.pill))
+        m.size(44.dp).clip(RoundedCornerShape(R.pill))
             .background(Color.Black.copy(alpha = .34f))
             .pressable(onClick),
         contentAlignment = Alignment.Center,
-    ) { Icon(icon, desc, Modifier.size(18.dp), tint = Color.White) }
+    ) { Icon(icon, desc, Modifier.size(22.dp), tint = Color.White) }
 }
 
 /**

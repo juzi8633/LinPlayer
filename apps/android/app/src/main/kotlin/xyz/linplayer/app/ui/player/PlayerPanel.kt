@@ -5,16 +5,16 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -24,14 +24,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import xyz.linplayer.app.data.Item
 import xyz.linplayer.app.data.LocalApp
-import xyz.linplayer.app.data.ToastKind
 import xyz.linplayer.app.data.arr
 import xyz.linplayer.app.data.bool
 import xyz.linplayer.app.data.dbl
@@ -40,13 +37,15 @@ import xyz.linplayer.app.data.strList
 import xyz.linplayer.app.data.obj
 import xyz.linplayer.app.data.str
 import xyz.linplayer.app.ui.components.Dim3
-import xyz.linplayer.app.ui.components.EmptyState
-import xyz.linplayer.app.ui.components.H2
+import xyz.linplayer.app.ui.components.glass
 import xyz.linplayer.app.ui.components.OptRow
 import xyz.linplayer.app.ui.pages.args
 import xyz.linplayer.app.ui.theme.Lp
 import xyz.linplayer.app.ui.theme.R
 import xyz.linplayer.app.ui.theme.Sp
+
+/** 让开底排控件和进度条的高度。改了 OSD 底排的高度就要改它,否则面板压在进度条上。 */
+private val OsdClearance = 92.dp
 
 /**
  * 播放器面板。**从侧边推入,只占屏宽 42%**,不做通栏 sheet(UI_MOBILE.md §8.1 收纳手法 4)。
@@ -141,24 +140,14 @@ fun PlayerPanel(
                 current = if (runCatching { app.call("prefs.getPrefs") }
                         .getOrNull().obj().bool("danmaku_enabled")) "on" else "off"
             }
-            "shot" -> {
-                runCatching { app.call("player.screenshot") }
-                    .onSuccess { app.toast("截图已保存", ToastKind.Ok) }
-                    .onFailure { app.report(it) }
-                onClose()
-            }
             /* 画面比例。★ 档位表由 [VideoFit] 一处定 —— 面板里再抄一遍的话,
-               加一档就得改两处,而漏掉的那处不会报错,只是少一个选项。 */
+               加一档就得改两处,而漏掉的那处不会报错,只是少一个选项。
+               ☠ **只写档位名,不挂说明也不挂「片源未知」**【用户定 2026-09-07:
+                 「我只是切换比例而已,这个提示对这个选项没有用处」】。
+                 那行字本来是给我自己看的自检 —— 自检该进日志(`lp-exo` 已经在打了),
+                 不该摆在用户每次切比例都要读一遍的地方。 */
             "ratio" -> {
-                /* 片源分辨率摆在当前那一档旁边。**这是给用户看的自检**:
-                   写着「片源未知」就说明我们还没拿到画面尺寸,那时候画面必然是铺满的
-                   —— 不写的话「拉伸」和「档位没生效」在界面上长得一模一样。 */
-                val v = exo?.videoSize
-                val info = if (v != null && v.width > 0) "${v.width}×${v.height}" else "片源未知"
-                options = VideoFit.entries.map {
-                    Triple(it.name, if (it.name == fit.name) info else null,
-                        it.label + " · " + it.hint)
-                }
+                options = VideoFit.entries.map { Triple(it.name, null, it.label) }
                 current = fit.name
             }
             /* 「更多」是**跳板**,不是设置项:选一条就换一个面板。
@@ -171,7 +160,6 @@ fun PlayerPanel(
                     Triple("audio", null, "音轨"),
                     Triple("quality", null, "画质"),
                     Triple("danmaku", null, "弹幕"),
-                    Triple("shot", null, "截图"),
                 )
             }
         }
@@ -190,31 +178,27 @@ fun PlayerPanel(
              接住面板外的点击,不是把画面调暗 —— 用户明说了面板挡画面挡得厉害。 */
         Box(Modifier.fillMaxSize().background(c.scrim.copy(alpha = .18f))
             .pointerInput(Unit) { detectTapClose(onClose) })
-        /* ★ **面板没有左边线**(草稿 05 第 3 条):底色从右往左渐隐,左缘完全透明。
-           一块不透明的面 + 一条左边界 = 「从画面上切下来的一块」;
-           渐隐过去 = 「浮在画面上的一层」。同一个位置,后者才有纵深。 */
+        /* ☠☠ **面板要小**【用户定 2026-09-07:「各个按钮的弹窗都太大了」】。
+           上一版是**通高、占屏宽 46%** 的一整条侧栏 —— 切一次比例(四个选项)
+           要让出半块屏幕、盖住整条进度条。现在它按内容收:贴着右下角,
+           宽度固定一列,高度到多少算多少、封顶到半屏。
+           ★ 贴**右下角**而不是右中:那儿离拇指最近,也不压住上面的画面主体。
+           ★ 玻璃底和全站其它浮层同一块,不再自己调一套渐变。 */
         Column(
-            Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(0.46f)
-                .background(
-                    /* ☠ 上一版右缘是 0.97 —— 那已经是**一块不透明的板**,
-                       近一半的画面被它切掉。用户报的「窗口不够透明,很挡画面」就是这个。
-                       字要看得清靠的是**渐变到底色 + 白字**,不是靠把底堵死;
-                       右缘压到 0.62 之后字仍然清楚,而画面透得过来。 */
-                    androidx.compose.ui.graphics.Brush.horizontalGradient(
-                        0.00f to Color.Transparent,
-                        0.18f to c.bg.copy(alpha = .28f),
-                        0.42f to c.bg.copy(alpha = .52f),
-                        1.00f to c.bg.copy(alpha = .62f),
-                    )
-                )
-                .safeDrawingPadding().padding(start = Sp.x20, end = Sp.x12, top = Sp.x12, bottom = Sp.x12),
+            Modifier.align(Alignment.BottomEnd)
+                .safeDrawingPadding()
+                .padding(end = Sp.x12, bottom = OsdClearance)
+                .width(236.dp)
+                .heightIn(max = 320.dp)
+                .glass(R.md, solid = 1.6f)
+                .padding(horizontal = Sp.x12, vertical = Sp.x10),
         ) {
-            H2(title)
-            Spacer(Modifier.height(Sp.x8))
+            Dim3(title)
+            Spacer(Modifier.height(Sp.x6))
             when {
                 loading -> Dim3("正在取…")
-                options.isEmpty() -> EmptyState("这里没有可选项", null)
-                else -> LazyColumn(Modifier.fillMaxSize(), list) {
+                options.isEmpty() -> Dim3("这里没有可选项", maxLines = 2)
+                else -> LazyColumn(Modifier.fillMaxWidth(), list) {
                     items(options, key = { it.first }) { (id, badge, label) ->
                         OptRow(label, {
                             if (kind == "more") onOpen(id)

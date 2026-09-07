@@ -74,6 +74,8 @@ fun SettingsPage(nav: NavController) {
                     LpCell("外观", icon = LpIcons.image) { nav.navigate(Route.SettingsSub("appearance")) }
                     Hairline()
                     LpCell("播放器", icon = LpIcons.play) { nav.navigate(Route.SettingsSub("player")) }
+                    Hairline()
+                    LpCell("截屏", icon = LpIcons.camera) { nav.navigate(Route.SettingsSub("shot")) }
                 }
             }
             item("g2") { GroupLabel("网络") }
@@ -119,7 +121,8 @@ fun SettingsSubPage(nav: NavController, entry: NavBackStackEntry) {
     val list = rememberLazyListState()
 
     val title = when (route.group) {
-        "appearance" -> "外观"; "player" -> "播放器"; "prefetch" -> "多线程加载"
+        "appearance" -> "外观"; "player" -> "播放器"; "shot" -> "截屏"
+        "prefetch" -> "多线程加载"
         "blocked" -> "已屏蔽的内容"; "storage" -> "存储与数据目录"; else -> "关于"
     }
 
@@ -130,6 +133,7 @@ fun SettingsSubPage(nav: NavController, entry: NavBackStackEntry) {
                 when (route.group) {
                     "appearance" -> AppearancePanel()
                     "player" -> PlayerPrefsPanel()
+                    "shot" -> ShotPanel()
                     "prefetch" -> PrefetchPanel()
                     "blocked" -> BlockedPanel()
                     "storage" -> StoragePanel()
@@ -196,6 +200,53 @@ private fun PlayerPrefsPanel() {
         LpCell("跳过片头片尾", switch = prefs.bool("skip_intro"),
             onSwitch = { v -> setPref(app, scope, "player.setPlaybackPrefs", "skip_intro", v) })
     }
+}
+
+/**
+ * 截屏【用户定 2026-09-07】。
+ *
+ * ★ 这四项都存在 [UiPrefs](本机 SharedPreferences),**不走核心层** ——
+ *   截屏整条路(PixelCopy 读回当前帧 → 叠字 → 写相册)都在 Kotlin 这一侧,
+ *   核心层没有消费点。往 `prefs.setPrefs` 里塞它们只会得到一个永远不生效的开关,
+ *   而那是本仓库最难查的一类 bug(外观页那一条就是这么栽的)。
+ * ★ 位置只给四个角,不给自由坐标:一个能拖的水印会被拖到画面正中间。
+ */
+@Composable
+private fun ShotPanel() {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val p = xyz.linplayer.app.data.UiPrefs
+    Panel(Modifier.padding(Sp.x16)) {
+        LpCell("截屏保存到", sub = "相册的 Pictures/LinPlayer;安卓 9 及以下落到应用目录",
+            arrow = false)
+        Hairline()
+        LpCell("叠加系统时间", switch = p.shotTime.value,
+            onSwitch = { v -> p.setShotFlag(ctx, xyz.linplayer.app.data.UiPrefs.K_SHOT_TIME, v) })
+        if (p.shotTime.value) SegRow("时间的位置", CORNER_LABELS, cornerLabel(p.shotTimePos.value),
+            { v -> p.setShotPos(ctx, xyz.linplayer.app.data.UiPrefs.K_SHOT_TIME_POS, cornerCode(v)) })
+        Hairline()
+        LpCell("叠加条目艺术字", sub = "这部片的片名艺术字(Emby 的 Logo 图),没有就不叠",
+            switch = p.shotLogo.value,
+            onSwitch = { v -> p.setShotFlag(ctx, xyz.linplayer.app.data.UiPrefs.K_SHOT_LOGO, v) })
+        if (p.shotLogo.value) SegRow("艺术字的位置", CORNER_LABELS, cornerLabel(p.shotLogoPos.value),
+            { v -> p.setShotPos(ctx, xyz.linplayer.app.data.UiPrefs.K_SHOT_LOGO_POS, cornerCode(v)) })
+    }
+}
+
+/**
+ * 四个角。**存的是字母码,显示的是中文** —— 存中文的话改一次文案就把用户已有的设置弄丢了。
+ *
+ * ☠ 两个方向必须**互为反函数**。错开一格的表现是:用户选「右下」,存进去的是别的角,
+ *   下次进设置页显示回「左上」—— 而这两个 `when` 各自看都完全正常,一句错都不报。
+ *   `LogicTest` 拿这四个标签来回走一遍钉住它。
+ */
+internal val CORNER_LABELS = listOf("左上", "右上", "左下", "右下")
+
+internal fun cornerLabel(code: String) = when (code) {
+    "tr" -> "右上"; "bl" -> "左下"; "br" -> "右下"; else -> "左上"
+}
+
+internal fun cornerCode(label: String) = when (label) {
+    "右上" -> "tr"; "左下" -> "bl"; "右下" -> "br"; else -> "tl"
 }
 
 /**

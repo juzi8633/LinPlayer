@@ -18,8 +18,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -65,6 +63,8 @@ import xyz.linplayer.app.ui.components.LpButton
 import xyz.linplayer.app.ui.components.LpDialog
 import xyz.linplayer.app.ui.components.LpField
 import xyz.linplayer.app.ui.components.LpIconButton
+import xyz.linplayer.app.ui.components.LpMenu
+import xyz.linplayer.app.ui.components.LpMenuItem
 import xyz.linplayer.app.ui.components.LpScaffold
 import xyz.linplayer.app.ui.components.Panel
 import xyz.linplayer.app.ui.components.rememberScrolled
@@ -140,12 +140,15 @@ fun ServersPage(nav: NavController) {
                             menuFor = a
                         },
                     )
-                    DropdownMenu(menuFor?.id == a.id, { menuFor = null },
-                        modifier = Modifier.background(Lp.colors.s3)) {
-                        if (!a.isActive) Item2("设为当前") { switchTo(a) }
-                        Item2("编辑") { editFor = a }
-                        Item2("服务器线路") { nav.navigate(Route.Lines(a.id, a.name)) }
-                        Item2("删除", danger = true) { confirmDelete = a }
+                    /* ☠ 这里原来是 M3 的 `DropdownMenu` —— 方盘、平淡的 fade、
+                       和这一套玻璃面完全两回事(用户 2026-09-07 原话「太丑了」)。
+                       换成全站共用的 [LpMenu]:同一块玻璃,从锚点长出来。 */
+                    LpMenu(menuFor?.id == a.id, { menuFor = null }, Alignment.Center) {
+                        if (!a.isActive) LpMenuItem("设为当前", { menuFor = null; switchTo(a) })
+                        LpMenuItem("编辑", { menuFor = null; editFor = a })
+                        LpMenuItem("服务器线路",
+                            { menuFor = null; nav.navigate(Route.Lines(a.id, a.name)) })
+                        LpMenuItem("删除", { menuFor = null; confirmDelete = a }, danger = true)
                     }
                 }
             }
@@ -470,12 +473,4 @@ private fun LineRow(l: Line, ms: String, onTap: () -> Unit, onLong: () -> Unit) 
         }
         if (ms.isNotEmpty()) Dim3(ms, Modifier.padding(start = Sp.x8))
     }
-}
-
-@Composable
-private fun Item2(label: String, danger: Boolean = false, onClick: () -> Unit) {
-    DropdownMenuItem(
-        text = { Text(label, color = if (danger) Lp.colors.bad else Lp.colors.fg, fontSize = 14.sp) },
-        onClick = onClick,
-    )
 }

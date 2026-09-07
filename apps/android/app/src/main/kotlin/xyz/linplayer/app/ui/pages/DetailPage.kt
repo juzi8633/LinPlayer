@@ -373,9 +373,10 @@ fun DetailPage(nav: NavController, entry: NavBackStackEntry) {
                                     }.onFailure { app.report(it) }
                                 }
                             }
-                            if (episodes.isNotEmpty()) IconAction(LpIcons.list, "选集") {
-                                scope.launch { list.animateScrollToItem(6) }
-                            }
+                            /* ☠ 这里原来还有一颗「选集」——**删了**【用户定 2026-09-07】。
+                               它做的事只是把页面滚到下面那条选集栏,而那条栏本来就在同一页
+                               再往下两屏之内。一个「带你去看你马上就会看到的东西」的按钮
+                               不提供任何东西,只是把这一排挤窄。 */
                         }
                     }
                 }
@@ -492,7 +493,7 @@ fun DetailPage(nav: NavController, entry: NavBackStackEntry) {
             }
         }
         "audio" -> LangDialog(
-            "首选音轨语言", ver?.of("Audio").orEmpty(), audioLang, allowOff = false,
+            "首选音轨语言", ver?.of("Audio").orEmpty(), audioLang,
             onPick = { lang ->
                 audioLang = lang; sheet = null
                 // ☠ **两项必须一起发**:核心层的 setPrefs 是无条件覆盖,
@@ -501,8 +502,8 @@ fun DetailPage(nav: NavController, entry: NavBackStackEntry) {
             },
             onDismiss = { sheet = null },
         )
-        "sub" -> LangDialog(
-            "首选字幕语言", ver?.of("Subtitle").orEmpty(), subLang, allowOff = true,
+        "sub" -> SubDialog(
+            ver?.of("Subtitle").orEmpty(), subLang,
             onPick = { lang ->
                 subLang = lang; sheet = null
                 scope.launch { savePrefs(app, audioLang, lang) }
@@ -971,13 +972,12 @@ private fun EpCard(
     }
 }
 
-/** 语言选择弹窗。 */
+/** 语言选择弹窗(现在只剩音轨在用 —— 字幕走 [SubDialog] 的轨道列表)。 */
 @Composable
 private fun LangDialog(
     title: String,
     streams: List<Stream>,
     current: String?,
-    allowOff: Boolean,
     onPick: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -992,7 +992,49 @@ private fun LangDialog(
                     selected = l == current,
                 )
             }
-            if (allowOff) OptRow("不显示字幕", { onPick("") }, selected = current == "")
+            Spacer(Modifier.height(Sp.x8))
+            LpButton("关闭", onDismiss, Modifier.fillMaxWidth(),
+                xyz.linplayer.app.ui.components.BtnKind.Secondary)
+        }
+    }
+}
+
+/**
+ * 字幕轨列表【用户定 2026-09-07】。
+ *
+ * ☠ **一条轨一行,不是一种语言一行。** 上一版按语言折叠 —— 而一部片常常挂着
+ *   「简中 / 繁中 / 简日双语 / 特效」四条中文轨,折起来之后它们在界面上是同一行,
+ *   用户根本看不出自己选中的是哪一条。第一行是轨道名,第二行小字写清
+ *   「格式 · 语言 · 内封还是外挂」。
+ * ☠ **落库的仍然是语言。** `prefs.setPrefs` 只认 `sub_lang`,核心层没有「记住某一条轨」
+ *   这回事 —— 同语言的两条轨在这里选谁,起播时由播放器按同一条规则挑。
+ *   播放中要精确换某一条,走播放页的字幕面板(那里是真的按轨切)。
+ */
+@Composable
+private fun SubDialog(
+    streams: List<Stream>,
+    current: String?,
+    onPick: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    LpDialog(onDismiss, "字幕轨") {
+        Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+            if (streams.isEmpty())
+                Dim3("这个版本里没有字幕轨。", Modifier.padding(Sp.x12), maxLines = 3)
+            streams.forEach { st ->
+                OptRow(
+                    st.label.ifBlank { langCn(st.lang) ?: "字幕轨 ${st.index}" },
+                    { onPick(st.lang.orEmpty()) },
+                    sub = listOfNotNull(
+                        st.codec.uppercase().takeIf { it.isNotBlank() },
+                        langCn(st.lang) ?: st.lang,
+                        if (st.isExternal) "外挂" else "内封",
+                    ).joinToString(" / "),
+                    // 只有语言能落库,所以选中态也只能按语言判 —— 同语言的几条会一起亮
+                    selected = !current.isNullOrEmpty() && st.lang == current,
+                )
+            }
+            OptRow("不显示字幕", { onPick("") }, selected = current == "")
             Spacer(Modifier.height(Sp.x8))
             LpButton("关闭", onDismiss, Modifier.fillMaxWidth(),
                 xyz.linplayer.app.ui.components.BtnKind.Secondary)

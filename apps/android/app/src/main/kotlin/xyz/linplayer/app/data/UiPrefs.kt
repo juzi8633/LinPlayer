@@ -19,6 +19,10 @@ object UiPrefs {
     private const val FILE = "lp_ui"
     private const val K_THEME = "theme"
     private const val K_ENGINE = "engine"
+    const val K_SHOT_TIME = "shot_time"
+    const val K_SHOT_LOGO = "shot_logo"
+    const val K_SHOT_TIME_POS = "shot_time_pos"
+    const val K_SHOT_LOGO_POS = "shot_logo_pos"
 
     /** `system` / `dark` / `light`。 */
     val theme = mutableStateOf("system")
@@ -33,10 +37,36 @@ object UiPrefs {
      */
     val engine = mutableStateOf("mpv")
 
+    /**
+     * 截屏叠加【用户定 2026-09-07】:要不要压上系统时间 / 条目艺术字,各自摆在哪一角。
+     *
+     * ★ 它们进这里的理由和主题一样:**核心层没有消费点**。截屏整条路
+     *   (PixelCopy → 叠字 → 写相册)都在 Kotlin 这一侧,核心层不知道也不需要知道。
+     * ★ 位置用四角的字母码 `tl/tr/bl/br` —— 存中文标签的话改一次文案就把用户的设置弄丢了。
+     */
+    val shotTime = mutableStateOf(true)
+    val shotLogo = mutableStateOf(false)
+    val shotTimePos = mutableStateOf("br")
+    val shotLogoPos = mutableStateOf("tl")
+
     fun load(ctx: Context) {
         val sp = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         theme.value = sp.getString(K_THEME, "system") ?: "system"
         engine.value = sp.getString(K_ENGINE, "mpv") ?: "mpv"
+        shotTime.value = sp.getBoolean(K_SHOT_TIME, true)
+        shotLogo.value = sp.getBoolean(K_SHOT_LOGO, false)
+        shotTimePos.value = sp.getString(K_SHOT_TIME_POS, "br") ?: "br"
+        shotLogoPos.value = sp.getString(K_SHOT_LOGO_POS, "tl") ?: "tl"
+    }
+
+    fun setShotFlag(ctx: Context, key: String, v: Boolean) {
+        (if (key == K_SHOT_TIME) shotTime else shotLogo).value = v
+        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(key, v).apply()
+    }
+
+    fun setShotPos(ctx: Context, key: String, v: String) {
+        (if (key == K_SHOT_TIME_POS) shotTimePos else shotLogoPos).value = v
+        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString(key, v).apply()
     }
 
     fun setTheme(ctx: Context, v: String) {

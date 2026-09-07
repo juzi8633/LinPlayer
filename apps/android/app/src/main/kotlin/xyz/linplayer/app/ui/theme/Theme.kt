@@ -15,9 +15,11 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -87,12 +89,24 @@ object Dim {
     val hairline = 1.dp
     /* 草稿里那几块「铺到屏幕顶」的图。它们不是间距,是**版面高度**,
        所以抽成具名常量 —— 改了 Hero 高度而没改让位高度的话,底下第一条轨会被压住。 */
-    val heroHome = 392.dp    // 首页 Hero(草稿 01)
     val coverLib = 212.dp    // 媒体库库头(草稿 02)
     val coverDetail = 236.dp // 剧/影详情页背景图(草稿 03)
 
     /** 底栏总高:三个 Tab + 手势条。**内容从它下面穿过去**,所以列表要按它留白。 */
     val tabClearance = 76.dp
+}
+
+/**
+ * 首页 Hero 的高度【用户定 2026-09-07:「占首屏的比例有点低,可以做大一点」】。
+ *
+ * ☠ **写成屏高的比例,不写死 dp。** 原来是固定 392dp —— 在 5 寸小屏上那已经过了半屏,
+ *   在 6.7 寸长屏上却只有三分之一。同一个数字在两台机器上是两种版面。
+ * ★ 上下都夹一下:再小也得放得下艺术字,再大也不能把下面那条轨整个推出首屏。
+ */
+@Composable
+fun heroHeight(): Dp {
+    val h = LocalConfiguration.current.screenHeightDp
+    return (h * 0.62f).dp.coerceIn(380.dp, 620.dp)
 }
 
 val LocalLpColors = staticCompositionLocalOf { Dark }

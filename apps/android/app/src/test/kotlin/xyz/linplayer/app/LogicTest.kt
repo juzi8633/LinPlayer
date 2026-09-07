@@ -14,10 +14,14 @@ import xyz.linplayer.app.ui.pages.Version
 import xyz.linplayer.app.ui.pages.defaultVersion
 import xyz.linplayer.app.ui.pages.fmtTime
 import xyz.linplayer.app.ui.pages.artLogoSize
+import xyz.linplayer.app.ui.pages.CORNER_LABELS
+import xyz.linplayer.app.ui.pages.cornerCode
+import xyz.linplayer.app.ui.pages.cornerLabel
 import xyz.linplayer.app.ui.pages.withScheme
 import xyz.linplayer.app.ui.player.VideoFit
 import xyz.linplayer.app.ui.player.assTimeMs
 import xyz.linplayer.app.ui.player.isAssMime
+import xyz.linplayer.app.ui.player.shotCorner
 import xyz.linplayer.app.ui.player.videoRect
 import xyz.linplayer.app.ui.player.splitMedia3Dialogue
 import xyz.linplayer.app.ui.theme.pickTone
@@ -335,5 +339,43 @@ class LogicTest {
         // 图还没解出来:给个中庸值,不许回 0(回 0 的表现是标题闪一下才出来)
         val (w3, h3) = artLogoSize(0f, 0f, 320f, 92f)
         assertTrue("未知尺寸也得有个占位,拿到的是 ${w3}x${h3}", w3 > 0f && h3 > 0f)
+    }
+
+    /* ───────────────── 截屏 ───────────────── */
+
+    /**
+     * 截屏水印的落点。
+     *
+     * ☠ 右侧和底侧要**减掉块自己的宽高**,减漏一次水印就整块跑到画面外面 ——
+     * 而那不报错,只有真机截一张出来才看得见。
+     */
+    @Test fun `截屏水印四个角都落在画面里`() {
+        val (w, h, edge) = Triple(200f, 60f, 40f)
+        val cw = 1920; val ch = 1080
+        for (pos in listOf("tl", "tr", "bl", "br")) {
+            val (x, y) = shotCorner(pos, cw, ch, w, h, edge)
+            assertTrue("$pos 的左上角出界了:($x, $y)", x >= 0f && y >= 0f)
+            assertTrue("$pos 的右下角出界了:(${x + w}, ${y + h})",
+                x + w <= cw && y + h <= ch)
+        }
+        // 四个角必须真的是四个不同的角,不是同一个
+        assertEquals(edge, shotCorner("tl", cw, ch, w, h, edge).first, 0.01f)
+        assertEquals(cw - edge - w, shotCorner("tr", cw, ch, w, h, edge).first, 0.01f)
+        assertEquals(ch - edge - h, shotCorner("bl", cw, ch, w, h, edge).second, 0.01f)
+    }
+
+    /**
+     * 截屏设置里的四个角:**存的是字母码,显示的是中文**。
+     *
+     * ☠ 两个方向必须互为反函数。错开一格的表现是「选了右下,下次进设置显示左上」——
+     * 而两个 `when` 各自看都完全正常,一句错都不报。
+     */
+    @Test fun `截屏位置的码和中文标签要能来回走`() {
+        CORNER_LABELS.forEach { label ->
+            assertEquals("『$label』走一圈变了样", label, cornerLabel(cornerCode(label)))
+        }
+        listOf("tl", "tr", "bl", "br").forEach { code ->
+            assertEquals("『$code』走一圈变了样", code, cornerCode(cornerLabel(code)))
+        }
     }
 }

@@ -19,8 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -186,14 +184,9 @@ data class CardAction(val label: String, val danger: Boolean = false, val onClic
 
 @Composable
 private fun CardMenu(open: Boolean, onDismiss: () -> Unit, actions: List<CardAction>) {
-    val c = Lp.colors
-    DropdownMenu(expanded = open, onDismissRequest = onDismiss,
-        modifier = Modifier.background(c.s3)) {
+    LpMenu(open, onDismiss) {
         actions.forEach { a ->
-            DropdownMenuItem(
-                text = { Text(a.label, color = if (a.danger) c.bad else c.fg, fontSize = 14.sp) },
-                onClick = { onDismiss(); a.onClick() },
-            )
+            LpMenuItem(a.label, { onDismiss(); a.onClick() }, danger = a.danger)
         }
     }
 }

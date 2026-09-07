@@ -26,6 +26,8 @@ fun VideoSurface(core: CoreClient, m: Modifier = Modifier) {
         modifier = m,
         factory = { ctx ->
             SurfaceView(ctx).apply {
+                // 截屏要从这块面上 PixelCopy 读回当前帧(见 [Shot])
+                Shot.bind(this)
                 holder.addCallback(object : SurfaceHolder.Callback {
                     override fun surfaceCreated(h: SurfaceHolder) {
                         // 这里不绑:尺寸要等 surfaceChanged 才有。
@@ -45,5 +47,5 @@ fun VideoSurface(core: CoreClient, m: Modifier = Modifier) {
     )
     // Activity 被杀时兜一次:surfaceDestroyed 在正常路径上一定会来,
     // 但「先 lp_set_surface(0) 再销毁」这条顺序不能只指望正常路径(U1.22 判据)
-    DisposableEffect(Unit) { onDispose { core.setSurface(null, 0, 0) } }
+    DisposableEffect(Unit) { onDispose { Shot.bind(null); core.setSurface(null, 0, 0) } }
 }

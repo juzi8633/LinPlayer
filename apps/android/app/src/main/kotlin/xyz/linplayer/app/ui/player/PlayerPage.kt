@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -60,6 +59,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import xyz.linplayer.app.data.LocalApp
+import xyz.linplayer.app.data.ToastKind
 import xyz.linplayer.app.data.arr
 import xyz.linplayer.app.data.bool
 import xyz.linplayer.app.data.dbl
@@ -68,8 +68,8 @@ import xyz.linplayer.app.data.obj
 import xyz.linplayer.app.data.str
 import xyz.linplayer.app.ui.Route
 import xyz.linplayer.app.ui.components.Dim3
+import xyz.linplayer.app.ui.components.GlassIcon
 import xyz.linplayer.app.ui.components.LpIconButton
-import xyz.linplayer.app.ui.components.OptRow
 import xyz.linplayer.app.ui.components.pressable
 import xyz.linplayer.app.ui.pages.args
 import xyz.linplayer.app.ui.pages.fmtTime
@@ -144,6 +144,14 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
     /* 画面比例【用户定 2026-09-07】。★ **不持久化** —— 和画质档位同一条口径:
        它是「这一片这一次这么看」,记住的话下一片莫名其妙就是 4:3。 */
     var videoFit by remember { mutableStateOf(VideoFit.Source) }
+    /** 片源比例,来自 `emby.itemMedia`(和判断横竖屏是同一份数据)。0 = 还没拿到。 */
+    var srcAr by remember(route.itemId) { mutableFloatStateOf(0f) }
+    /** 有没有「同一季的其它集」。**电影没有,所以电影不该有那颗「选集」**【用户定 2026-09-07】。 */
+    var hasEpisodes by remember(route.itemId) { mutableStateOf(false) }
+    LaunchedEffect(route.itemId) {
+        hasEpisodes = runCatching { app.call("emby.itemDetail", args("item_id" to route.itemId)) }
+            .getOrNull().obj().str("season_id") != null
+    }
 
     /* 沉浸式:**两个内核都要**【用户报 2026-09-07】。
        ☠ 隐藏的是 `systemBars()`,不能只隐藏 statusBars —— 手势条(navigationBars)
@@ -355,7 +363,14 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
             .firstOrNull { it.str("type_") == "Video" }
         val w = vid.long("width") ?: return@LaunchedEffect
         val h = vid.long("height") ?: return@LaunchedEffect
-        if (w > 0 && h > 0) wantLandscape = w > h
+        if (w > 0 && h > 0) {
+            wantLandscape = w > h
+            /* ★ 同一次请求顺手把比例留下来交给 [ExoSurface]。
+               它自己那两条(`videoSize` 事件 / 轮询)都要等首帧,而这里在**起播之前**
+               就已经拿到了 —— 用户报了三轮的「哪怕选原始比例也还是拉伸」,
+               根子就是首帧之前 ratio 恒 0,而 0 只能铺满。 */
+            srcAr = w.toFloat() / h
+        }
     }
     DisposableEffect(wantLandscape) {
         val a = activity
@@ -385,7 +400,8 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
         // 视频层:SurfaceView。Compose 内容天然画在它上面
         // ☠ 两条**互斥**:同时挂的话 mpv 和 ExoPlayer 会各画各的,上面那层赢
         if (exo != null)
-            ExoSurface(exo, subOff = subLangPref == "", fit = videoFit, m = Modifier.fillMaxSize())
+            ExoSurface(exo, subOff = subLangPref == "", fit = videoFit, hintAr = srcAr,
+                m = Modifier.fillMaxSize())
         else VideoSurface(app.core, Modifier.fillMaxSize())
 
 
@@ -408,7 +424,7 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
                    上一版那句话等于让用户去导诊断包,而他只想知道是不是自己的问题;
                    对我们这边也一样 —— 「有声音没画面」这类报告拿不到 vo / 解码器
                    的实际取值就只能靠猜,一来一回好几轮。 */
-                Dim3(failReason ?: "原因还没拿到。设置 → 关于 → 导出诊断信息。", maxLines = 6)
+                Dim3(failReason ?: "原因还没拿到。设置 → 存储与数据目录 → 导出日志。", maxLines = 6)
                 Spacer(Modifier.height(Sp.x16))
                 xyz.linplayer.app.ui.components.LpButton("返回", { nav.popBackStack() },
                     kind = xyz.linplayer.app.ui.components.BtnKind.Secondary)
@@ -480,20 +496,29 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
             Osd(
                 portrait = portrait,
                 title = route.title, position = seekPreview ?: position, duration = duration,
-                paused = paused, speed = speed, locked = locked,
+                paused = paused, speed = speed, hasEpisodes = hasEpisodes,
                 onBack = { nav.popBackStack() },
                 onToggle = { doPause(!paused) },
                 onSeek = { t -> doSeek(t) },
                 onSpeed = { v -> speed = v; doSpeed(v) },
-                onLock = { locked = !locked },
+                onLock = { locked = true },
+                onShot = {
+                    /* ☠ **截屏不开面板、不弹窗**【用户定 2026-09-07:「截屏就截屏,
+                       出现弹窗干什么呢」】。它是一个动作,不是一个要人回答的问题。 */
+                    scope.launch {
+                        val where = Shot.take(ctx, app, route.itemId)
+                        if (where != null) app.toast("已截屏 · $where", ToastKind.Ok)
+                        else app.toast("这一帧截不下来", ToastKind.Error)
+                    }
+                },
                 onPanel = { panel = it },
             )
         }
 
-        // 锁屏后只有解锁按钮
-        if (locked) LpIconButton(LpIcons.lock, "解锁",
-            Modifier.align(Alignment.CenterStart).padding(Sp.x16),
-            tint = Color.White, onClick = { locked = false })
+        // 锁屏后只有解锁按钮 —— 它就长在锁屏钮刚才那个位置上
+        if (locked) Box(Modifier.align(Alignment.CenterStart).padding(start = Sp.x12)) {
+            GlassIcon(LpIcons.lock, "解锁") { locked = false }
+        }
 
         panel?.let {
             PlayerPanel(
@@ -540,9 +565,10 @@ private val BottomVeil = Brush.verticalGradient(
 private fun Osd(
     portrait: Boolean,
     title: String, position: Double, duration: Double, paused: Boolean, speed: Double,
-    locked: Boolean,
+    hasEpisodes: Boolean,
     onBack: () -> Unit, onToggle: () -> Unit, onSeek: (Double) -> Unit,
-    onSpeed: (Double) -> Unit, onLock: () -> Unit, onPanel: (String) -> Unit,
+    onSpeed: (Double) -> Unit, onLock: () -> Unit, onShot: () -> Unit,
+    onPanel: (String) -> Unit,
 ) {
     Box(Modifier.fillMaxSize()) {
         Row(
@@ -552,10 +578,21 @@ private fun Osd(
         ) {
             LpIconButton(LpIcons.back, "返回", tint = Color.White, onClick = onBack)
             Marquee(title, Modifier.weight(1f))
-            LpIconButton(
-                if (locked) LpIcons.lock else LpIcons.unlock, if (locked) "解锁" else "锁屏",
-                tint = Color.White, onClick = onLock,
-            )
+            // ★ 「更多」在**右上角**【用户定 2026-09-07】。它是这一页的抽屉,
+            //   抽屉该在角上,不该混在底排那串常用动作里
+            Chip("更多") { onPanel("more") }
+        }
+
+        /* ★★ **锁屏和截屏回到左侧中间**【用户定 2026-09-07:「原本在屏幕左侧中间的
+           两个按钮…被放到别的地方了,放回去」】。它们是「随时可能按一下」的两颗,
+           不是「看完这一段再说」的那一类 —— 摆在拇指够得到、又不压住任何读数的地方。 */
+        Column(
+            Modifier.align(Alignment.CenterStart).padding(start = Sp.x12),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            GlassIcon(LpIcons.unlock, "锁屏", onClick = onLock)
+            Spacer(Modifier.height(Sp.x12))
+            GlassIcon(LpIcons.camera, "截屏", onClick = onShot)
         }
 
         Column(
@@ -581,8 +618,9 @@ private fun Osd(
                 // 横屏给「比例」一个自己的位置:埋在「更多」里用户找不到(报过一次)
                 if (!portrait) Chip("比例") { onPanel("ratio") }
                 Chip("字幕") { onPanel("subtitle") }
-                Chip("选集") { onPanel("episodes") }
-                Chip("更多") { onPanel("more") }
+                /* ☠ **电影不画「选集」**【用户定 2026-09-07】。它点开必然是一张空表 ——
+                   而一个「点开永远是空的」按钮比没有它更让人怀疑是不是坏了。 */
+                if (hasEpisodes) Chip("选集") { onPanel("episodes") }
             }
         }
     }

@@ -213,7 +213,14 @@ internal fun videoRect(boxW: Int, boxH: Int, videoAr: Float, fit: VideoFit): Int
  *   后者会被父约束夹回去,那一档就退化成和「原始」一模一样。
  */
 @Composable
-fun ExoSurface(player: ExoPlayer, subOff: Boolean, fit: VideoFit, m: Modifier = Modifier) {
+fun ExoSurface(
+    player: ExoPlayer,
+    subOff: Boolean,
+    fit: VideoFit,
+    /** 起播前就知道的片源比例(Emby 的 Video 流宽高)。0 = 不知道。见 [ratioOf]。 */
+    hintAr: Float = 0f,
+    m: Modifier = Modifier,
+) {
     var ratio by remember(player) { mutableFloatStateOf(0f) }
     var videoW by remember(player) { mutableIntStateOf(0) }
     var videoH by remember(player) { mutableIntStateOf(0) }
@@ -235,6 +242,10 @@ fun ExoSurface(player: ExoPlayer, subOff: Boolean, fit: VideoFit, m: Modifier = 
             override fun onVideoSizeChanged(size: VideoSize) { take(size) }
 
             override fun onTracksChanged(tracks: Tracks) {
+                /* ☠ 轨道表比 `videoSize` **早到**:解封装完就有了,而 videoSize 要等首帧
+                   (硬解冷启动实测好几秒)。这期间 ratio 是 0,而 0 的含义是「不知道比例」,
+                   [videoRect] 只能铺满 —— 那正是用户三轮都在报的「画面被拉伸」。 */
+                if (ratio <= 0f) ratioOf(tracks).takeIf { it > 0f }?.let { ratio = it }
                 pickSubtitleTrack(player, tracks, subOff)
                 syncLibassTrack(tracks, subOff)
             }
@@ -253,23 +264,45 @@ fun ExoSurface(player: ExoPlayer, subOff: Boolean, fit: VideoFit, m: Modifier = 
         }
     }
 
+    /* 最后一道:详情页那边早就从 `emby.itemMedia` 拿到过宽高(起播方向就是照它定的),
+       所以片源比例其实**在按下播放之前**就已知。播放器自己还没说话时先用它。 */
+    val ar = if (ratio > 0f) ratio else hintAr
     BoxWithConstraints(m.clipToBounds(), contentAlignment = Alignment.Center) {
-        val r = videoRect(constraints.maxWidth, constraints.maxHeight, ratio, fit)
+        val r = videoRect(constraints.maxWidth, constraints.maxHeight, ar, fit)
         LaunchedEffect(r, fit) {
             Logs.d(TAG_EXO, "画面 ${fit.name} 容器 ${constraints.maxWidth}×${constraints.maxHeight}" +
-                " → 画到 ${r.width}×${r.height}(比例 $ratio)")
+                " → 画到 ${r.width}×${r.height}(比例 $ar 播放器给的 $ratio 元数据给的 $hintAr)")
         }
         val box = with(LocalDensity.current) {
             Modifier.requiredSize(r.width.toDp(), r.height.toDp())
         }
         AndroidView(
             modifier = box,
-            factory = { ctx -> SurfaceView(ctx).also { player.setVideoSurfaceView(it) } },
+            // Shot.bind:截屏从这块面上 PixelCopy 读回当前帧(View.draw 只能拿到一个透明洞)
+            factory = { ctx ->
+                SurfaceView(ctx).also { player.setVideoSurfaceView(it); Shot.bind(it) }
+            },
         )
         LibassLayer(player, box, videoW, videoH)
         ExoSubtitles(player, box)
     }
-    DisposableEffect(player) { onDispose { player.clearVideoSurface() } }
+    DisposableEffect(player) { onDispose { Shot.bind(null); player.clearVideoSurface() } }
+}
+
+/**
+ * 从轨道表里读画面比例。
+ *
+ * `Format.width/height` 在解封装阶段就填好了,比 `videoSize`(要等首帧)早得多。
+ * 非方形像素要乘 `pixelWidthHeightRatio` —— 不乘的话 DVD 源和部分 1080i 会算出一个瘦长的画面。
+ * 读不出来返回 0,**不猜一个 16:9**。
+ */
+@OptIn(UnstableApi::class)
+private fun ratioOf(tracks: Tracks): Float {
+    val f = tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
+        .flatMap { g -> (0 until g.length).map { g.getTrackFormat(it) } }
+        .firstOrNull { it.width > 0 && it.height > 0 } ?: return 0f
+    val par = if (f.pixelWidthHeightRatio > 0f) f.pixelWidthHeightRatio else 1f
+    return f.width * par / f.height
 }
 
 /**
