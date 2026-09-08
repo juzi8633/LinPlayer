@@ -50,6 +50,7 @@ public static class LinPlayerCommandNames
         "emby.itemDetail",
         "emby.itemMedia",
         "emby.listCollections",
+        "emby.collectionItems",
         "emby.listFavorites",
         "emby.listItems",
         "emby.listItemsPage",
@@ -134,6 +135,7 @@ public static class LinPlayerCommandNames
         "player.setSpeed",
         "player.setSubDelay",
         "player.setSubStyle",
+        "player.getSubStyle",
         "player.setTrack",
         "player.setTrackRegexes",
         "player.setVolume",
@@ -231,6 +233,9 @@ public static class LinPlayerCommandNames
         "prefs.cfSpeedTest",
         "prefs.configExportQr",
         "prefs.configImportQr",
+        "prefs.backupExport",
+        "prefs.backupImport",
+        "prefs.backupPreview",
         "prefs.getHomeSettings",
         "prefs.getPrefetchSettings",
         "prefs.getPrefs",
@@ -269,7 +274,7 @@ public static class LinPlayerCommandNames
 
 public static class LinPlayerCommandsExtensions
 {
-    // ---- Emby 浏览与详情 · emby.* (42 条) ----
+    // ---- Emby 浏览与详情 · emby.* (43 条) ----
     public static Task<JsonElement> EmbyAggregateOverview(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("emby.aggregateOverview", args, ct);
     public static Task<JsonElement> EmbyAggregateSearch(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -292,6 +297,8 @@ public static class LinPlayerCommandsExtensions
         => c.CallAsync("emby.itemMedia", args, ct);
     public static Task<JsonElement> EmbyListCollections(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("emby.listCollections", args, ct);
+    public static Task<JsonElement> EmbyCollectionItems(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("emby.collectionItems", args, ct);
     public static Task<JsonElement> EmbyListFavorites(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("emby.listFavorites", args, ct);
     public static Task<JsonElement> EmbyListItems(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -399,7 +406,7 @@ public static class LinPlayerCommandsExtensions
     public static Task<JsonElement> AccountUpdateAccount(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("account.updateAccount", args, ct);
 
-    // ---- 播放器 · player.* (44 条) ----
+    // ---- 播放器 · player.* (45 条) ----
     public static Task<JsonElement> PlayerAddSubtitle(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("player.addSubtitle", args, ct);
     public static Task<JsonElement> PlayerChapterInfo(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -464,6 +471,8 @@ public static class LinPlayerCommandsExtensions
         => c.CallAsync("player.setSubDelay", args, ct);
     public static Task<JsonElement> PlayerSetSubStyle(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("player.setSubStyle", args, ct);
+    public static Task<JsonElement> PlayerGetSubStyle(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("player.getSubStyle", args, ct);
     public static Task<JsonElement> PlayerSetTrack(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("player.setTrack", args, ct);
     public static Task<JsonElement> PlayerSetTrackRegexes(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -657,7 +666,7 @@ public static class LinPlayerCommandsExtensions
     public static Task<JsonElement> TranslateWhisperModels(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("translate.whisperModels", args, ct);
 
-    // ---- 设置与偏好 · prefs.* (27 条) ----
+    // ---- 设置与偏好 · prefs.* (30 条) ----
     public static Task<JsonElement> PrefsApplyPrefs(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("prefs.applyPrefs", args, ct);
     public static Task<JsonElement> PrefsCfProxyDisable(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -672,6 +681,12 @@ public static class LinPlayerCommandsExtensions
         => c.CallAsync("prefs.configExportQr", args, ct);
     public static Task<JsonElement> PrefsConfigImportQr(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("prefs.configImportQr", args, ct);
+    public static Task<JsonElement> PrefsBackupExport(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("prefs.backupExport", args, ct);
+    public static Task<JsonElement> PrefsBackupImport(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("prefs.backupImport", args, ct);
+    public static Task<JsonElement> PrefsBackupPreview(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("prefs.backupPreview", args, ct);
     public static Task<JsonElement> PrefsGetHomeSettings(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("prefs.getHomeSettings", args, ct);
     public static Task<JsonElement> PrefsGetPrefetchSettings(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)

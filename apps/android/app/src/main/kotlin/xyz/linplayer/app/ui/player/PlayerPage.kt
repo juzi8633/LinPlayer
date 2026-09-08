@@ -193,6 +193,10 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
        —— 位置、时长、暂停三个值来源全变,而 ExoPlayer 手里根本没有这一片。
        所以设置页那一行明说「退出当前播放再进才生效」。 */
     val engine = remember { route.engine ?: xyz.linplayer.app.data.UiPrefs.engine.value }
+    /* 字幕样式要在**画第一句字幕之前**就位。晚一步的表现是「进来先按默认样式画几句,
+       打开一次面板才变过来」—— 而用户明明上一集就调好了。
+       只读一次:它落在核心层配置里,一次会话内不会自己变。 */
+    LaunchedEffect(Unit) { if (!SubStyle.loaded.value) SubStyle.load(app) }
     /* 字幕语言偏好。**要在建 ExoPlayer 之前读到** —— ExoPlayer 的轨道选择是
        「参数变了才重选」,建完再补一次也行,但首帧那几秒会没有字幕。
        `null` = 还没读到,`""` = 没有语言偏好(那是**默认状态**,不是「关了字幕」)。 */

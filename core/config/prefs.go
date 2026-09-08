@@ -42,6 +42,15 @@ const (
 	// WatchedMinPercent 观看阈值的下限。低于它就不是「看完」了 ——
 	// 看一半退出会被标成已看完,而那意味着续播位置直接丢掉。
 	WatchedMinPercent int64 = 50
+
+	// 字幕样式的合法区间。**和 mpv 认的一致** —— 超出去 mpv 只会静默拒绝,
+	// 表现是「拖到头就不动了」而没有任何提示。
+	SubScaleMin = 0.2
+	SubScaleMax = 4.0
+	// SubPosMax 150 而不是 100:>100 是把字幕压到画面下面那条黑边上,
+	// 宽银幕片子上这是最常用的一档(字不再挡画面)。
+	SubPosMax    = 150
+	SubBorderMax = 10.0
 )
 
 // Prefs 播放与全局偏好。
@@ -195,6 +204,35 @@ type Prefs struct {
 	//   各一份、不跨设备同步 —— 所以放这里不会串。
 	UiFont string `json:"ui_font"`
 
+	/* ---- 字幕样式(播放页「字幕」面板,用户 2026-09-08 点名的五项)----
+
+	   ☠ **必须存在核心层。** 这几项是 mpv 的运行时属性,而 mpv 每次冷启动
+	   都是新的 —— 不落库的表现是「调好了,关掉软件再打开又回默认」,
+	   用户会当成没生效。 */
+
+	// SubScale 字幕大小。**这才是那颗旋钮**,不是 sub-font-size ——
+	// ASS 字幕在 mpv 默认的 sub-ass-override=scale 下完全忽略 sub-font-size
+	// (实测记在 core/player/subtitle.go 的 setSubScale 上面)。0 = 用 mpv 默认。
+	SubScale float64 `json:"sub_scale"`
+
+	// SubPos 字幕竖直位置 0(顶)..150(底,>100 是压到画面外的黑边上)。
+	// -1 = 不动 mpv 的默认值(100)。
+	SubPos int `json:"sub_pos"`
+
+	// SubBorderSize 描边粗细(像素)。-1 = 不动。
+	// ★ 不给颜色开关:描边的用处是「压在雪地上和压在夜景上一样清楚」,
+	//   而能同时做到这两件事的只有黑边。给颜色等于给用户一个把它调坏的机会。
+	SubBorderSize float64 `json:"sub_border_size"`
+
+	// SubBold 粗体。
+	SubBold bool `json:"sub_bold"`
+
+	// SubScaleByWindow 字幕缩放:字号跟着**窗口**走(true,mpv 默认)还是跟着
+	// **片源分辨率**走(false)。这两者在全屏时一样,窗口化时差得很远 ——
+	// 关掉它,字幕在小窗里就不会大得盖住半个画面。
+	// nil = 不动 mpv 的默认值。
+	SubScaleByWindow *bool `json:"sub_scale_by_window"`
+
 	// 详情页背景图的模糊强度,0~100。默认 40。
 	// 归 Prefs 是因为它是**观感偏好**不是主题 —— 换主题不该把它重置。
 	DetailBlur int `json:"detail_blur"`
@@ -232,10 +270,14 @@ func DefaultPrefs() Prefs {
 		UpdateChannel:                "stable",
 		UpdateAutoCheck:              true,
 		DetailBlur:                   40,
-		WatchedThresholdPercent:      90,
-		PrefetchServers:              []string{},
-		HideCollectionServers:        []string{},
-		rest:                         map[string]json.RawMessage{},
+		// ★ 三个哨兵都是「不动 mpv 的默认值」,不是 0 —— 0 在这三项上分别是
+		//   「字幕缩到看不见」「字幕顶到画面最上沿」「一点描边都没有」。
+		SubPos:                  -1,
+		SubBorderSize:           -1,
+		WatchedThresholdPercent: 90,
+		PrefetchServers:         []string{},
+		HideCollectionServers:   []string{},
+		rest:                    map[string]json.RawMessage{},
 	}
 }
 
@@ -349,6 +391,18 @@ func (p Prefs) Clamped() Prefs {
 	   续播位置全部作废。所以 0 必须回默认值,不能当成用户的选择。 */
 	if p.WatchedThresholdPercent < WatchedMinPercent || p.WatchedThresholdPercent > 100 {
 		p.WatchedThresholdPercent = 90
+	}
+	/* 字幕样式:**越界一律回哨兵**,不夹到边界。
+	   夹的话老配置里那个不存在的键解出 0,会被当成用户选的「0 号字幕大小」——
+	   那是一屏看不见的字幕,而用户什么都没设过。 */
+	if p.SubScale != 0 && (p.SubScale < SubScaleMin || p.SubScale > SubScaleMax) {
+		p.SubScale = 0
+	}
+	if p.SubPos < 0 || p.SubPos > SubPosMax {
+		p.SubPos = -1
+	}
+	if p.SubBorderSize < 0 || p.SubBorderSize > SubBorderMax {
+		p.SubBorderSize = -1
 	}
 	return p
 }

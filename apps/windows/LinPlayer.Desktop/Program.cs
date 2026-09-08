@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Reflection;
 using System.IO;
 using Avalonia;
@@ -47,6 +47,45 @@ internal static class Program
             Console.WriteLine($"PROBE 装上了={ok} 家族={LinPlayer.Desktop.Core.UiFont.Current?.Name ?? "(无)"}");
             return;
         }
+        /* 选集栏卡死自检:`LP_SCROLLPROBE=1 LinPlayer.exe` 打一行就退,不开窗口。
+           判据是「目标去不了时,驱动器退不退得出来」—— 退不出来 = 之后每次点
+           左右翻页按钮 Run() 都当场 return,按钮从此是死的(用户 2026-09-08 报的
+           「有概率卡死」)。这类东西编译发现不了,只有把它逼进死角才看得见。 */
+        if (Environment.GetEnvironmentVariable("LP_SCROLLPROBE") is { Length: > 0 })
+        {
+            AppBuilder.Configure<App>().UsePlatformDetect().SetupWithoutStarting();
+            var sv = new Avalonia.Controls.ScrollViewer
+            {
+                Width = 200, Height = 100,
+                Content = new Avalonia.Controls.Border { Width = 400, Height = 100 },
+            };
+            /* 量一遍,让 Extent/Viewport 有真值。
+               ☠ **ApplyTemplate 不能省**:ScrollViewer 的 Extent 是它模板里那个
+                 ScrollContentPresenter 报上来的,没套模板就永远是 0×0 ——
+                 那样滚哪儿都一样,自检等于在一个滚不动的控件上跑,永远绿。 */
+            sv.ApplyTemplate();
+            sv.Measure(new Size(200, 100));
+            sv.Arrange(new Rect(0, 0, 200, 100));
+            sv.UpdateLayout();
+            /* 没有可视根,Extent 会是 0 —— 这**正好**是我们要的形状:
+               目标去不了、Offset 的 setter 把值压回原处。真机上造成同一个形状的是
+               虚拟化轨道估变的 Extent。 */
+            Console.WriteLine($"PROBE 滚动 · 量程 Extent={sv.Extent.Width:0.#}(0 = 目标去不了,正是要逼出来的死角)");
+            // 目标 9999:远超 Extent-Viewport(=200),ScrollViewer 会把 Offset 压回 200
+            var (stuck, frames) = Views.Smooth.SelfCheckStuck(sv, 9999);
+            Console.WriteLine(stuck
+                ? $"PROBE 滚动 ✗ 卡住了(跑满 {frames} 帧还没退出)—— 翻页按钮会变成死的"
+                : $"PROBE 滚动 ✓ 第 {frames} 帧退出,偏移停在 {sv.Offset.X:0.#}");
+            /* 第二道闸:窗口最小化时渲染循环停了,排进去的那一帧永远不会来。
+               只判 Running 一个字段的话它永远停在 true,之后每次点按钮都当场 return。 */
+            var fresh = Views.Smooth.StillAlive(true, DateTime.UtcNow);
+            var stale = Views.Smooth.StillAlive(true, DateTime.UtcNow.AddSeconds(-5));
+            Console.WriteLine(fresh && !stale
+                ? "PROBE 滚动 ✓ 帧停了 5 秒的那一轮会被判死并重启"
+                : $"PROBE 滚动 ✗ 停帧判定坏了(刚跑过={fresh} 停了5秒={stale})—— 最小化再还原后按钮会是死的");
+            return;
+        }
+
         Perf.Log("Main 入口");
         var exeDir = AppContext.BaseDirectory;
         /* 数据全在 exe 同级的 userdata/(绿色包单一数据根)。

@@ -59,7 +59,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import xyz.linplayer.app.BuildConfig
 import xyz.linplayer.app.core.Logs
 
@@ -365,8 +367,15 @@ private fun syncLibassTrack(tracks: Tracks, subOff: Boolean) {
 /**
  * libass 的画布。
  *
- * ☠ **只在 libass 说「这一帧变了」时才重画。** 对白字幕一秒才变几次,
- *   每帧无脑清屏 + 重画是纯烧电;而卡拉OK 那种逐帧变的,它自然每帧都返回 1。
+ * ☠☠ **渲染不许跑在主线程上。**「ASS 特效字幕跟着画面动就掉帧卡顿」
+ *   (用户 2026-09-08)的根因就是这个循环原来跑在 `LaunchedEffect` 默认的
+ *   主线程调度器上:字幕一动 libass 的 `detect_change` 恒 1,于是每 33ms
+ *   都要在 UI 线程上做一次「清整块画布 + 逐像素混合」——1080p 竖屏的画布是
+ *   2400×1080×4 ≈ 10MB。UI 线程被占掉十几毫秒,画面自然掉帧。
+ *   `Dispatchers.Default` + 双缓冲:后台画后备那张,画完才换给 Compose。
+ * ☠ **必须双缓冲。** 单张位图挪到后台线程画 = Skia 正在读的同时我们在写,
+ *   表现是字幕撕成两半(比掉帧更难看,而且看着像字幕本身坏了)。
+ * ★ 只在 libass 说「这一帧变了」时才重画:对白字幕一秒才变几次。
  * ★ 位图交给 native 直接 `AndroidBitmap_lockPixels` 写 —— 不走 JNI 拷贝。
  *   `unlockPixels` 会 bump 位图的 generation id,Skia 的纹理缓存据此失效;
  *   这里另外还读一次 `frame` 状态,双保险(少一层就是「字幕停在第一句不动」)。
@@ -376,16 +385,20 @@ private fun LibassLayer(player: ExoPlayer, m: Modifier, videoW: Int, videoH: Int
     if (!Libass.available) return
     var size by remember { mutableStateOf(IntSize.Zero) }
     var frame by remember { mutableIntStateOf(0) }
-    val bmp = remember(size, videoW, videoH) {
+    // 两张:一张给 Compose 画,一张给后台写。索引 0/1 轮换。
+    val buffers = remember(size, videoW, videoH) {
         if (size.width <= 0 || size.height <= 0) null
-        else Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888).also {
-            Logs.d(TAG_EXO, "libass 画布 ${size.width}×${size.height} 片源 ${videoW}×${videoH}")
-            Libass.setSize(size.width, size.height, videoW, videoH)
-        }
+        else Array(2) { Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888) }
+            .also {
+                Logs.d(TAG_EXO, "libass 画布 ${size.width}×${size.height} 片源 ${videoW}×${videoH} ×2")
+                Libass.setSize(size.width, size.height, videoW, videoH)
+            }
     }
+    var front by remember(buffers) { mutableIntStateOf(0) }
 
-    LaunchedEffect(bmp, player) {
-        val b = bmp ?: return@LaunchedEffect
+    LaunchedEffect(buffers, player) {
+        val bufs = buffers ?: return@LaunchedEffect
+        var back = 1
         var force = true      // 位图刚建出来,第一帧必须画
         var last = -1L
         while (true) {
@@ -393,16 +406,29 @@ private fun LibassLayer(player: ExoPlayer, m: Modifier, videoW: Int, videoH: Int
             // seek / 换片之后要强制重画:libass 的 detect_change 只比「上一次渲染」
             if (kotlin.math.abs(pos - last) > 1000) force = true
             last = pos
-            if (Libass.render(b, pos, force) > 0) frame++
+            /* 先问「变了没有」再决定画不画。
+               ☠ 画的时候**必须 force**:后备那张装的是上上帧,不整块清就会留着
+                 上上帧的残影(字幕拖出一条尾巴)。而没变的那些帧一个字节都不碰,
+                 对白字幕仍然是「一秒画几次」。 */
+            val paint = force || withContext(Dispatchers.Default) { Libass.changed(pos) }
             force = false
+            if (paint) {
+                val rc = withContext(Dispatchers.Default) { Libass.render(bufs[back], pos, true) }
+                if (rc > 0) {
+                    val show = back
+                    back = front
+                    front = show
+                    frame++
+                }
+            }
             delay(33)         // 30Hz。卡拉OK 够用,对白字幕靠 detect_change 直接跳过
         }
     }
 
     Canvas(m.onSizeChanged { size = it }) {
-        val b = bmp ?: return@Canvas
+        val bufs = buffers ?: return@Canvas
         @Suppress("UNUSED_EXPRESSION") frame    // 制造重绘依赖
-        drawIntoCanvas { it.nativeCanvas.drawBitmap(b, 0f, 0f, null) }
+        drawIntoCanvas { it.nativeCanvas.drawBitmap(bufs[front], 0f, 0f, null) }
     }
 }
 
@@ -457,9 +483,13 @@ fun ExoSubtitles(player: ExoPlayer, m: Modifier = Modifier) {
     BoxWithConstraints(m) {
         val texts = cues.filter { it.bitmap == null }
         cues.forEach { cue -> cue.bitmap?.let { BitmapCue(cue, it, maxWidth, maxHeight) } }
+        /* 竖直位置:100 = 画面下沿(默认),越小越往上。
+           ★ 换算成底部留白,按**画面高度**算而不是写死像素 ——
+             写死的话同一个设置在手机和平板上是两个位置。 */
+        val bottomPad = 40.dp + maxHeight * SubStyle.bottomPadFraction(SubStyle.position.intValue)
         if (texts.isNotEmpty()) Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                .padding(start = 24.dp, end = 24.dp, bottom = 40.dp),
+                .padding(start = 24.dp, end = 24.dp, bottom = bottomPad),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             texts.forEach { cue ->
@@ -480,15 +510,22 @@ fun ExoSubtitles(player: ExoPlayer, m: Modifier = Modifier) {
  */
 @Composable
 private fun TextCue(t: String) {
+    /* 字号 / 描边 / 粗体跟着字幕样式面板走(用户 2026-09-08)。
+       ★ 这三项**只在这一层生效** —— ASS 特效字幕走 libass,那边自带样式,
+         只有大小和位置盖得过去(见 [SubStyle] 类注释那张表)。 */
+    val scale = SubStyle.scale.doubleValue.toFloat()
     val base = TextStyle(
-        fontSize = 18.sp, lineHeight = 24.sp,
-        fontWeight = FontWeight.Medium, textAlign = TextAlign.Center,
+        fontSize = (18f * scale).sp, lineHeight = (24f * scale).sp,
+        fontWeight = if (SubStyle.bold.value) FontWeight.Bold else FontWeight.Medium,
+        textAlign = TextAlign.Center,
     )
+    val stroke = (SubStyle.border.doubleValue * 2).toFloat()
     Box(contentAlignment = Alignment.Center) {
-        Text(t, style = base.copy(
+        // 描边调到 0 就整层不画:画一条 0 宽的描边是白花一次文本布局
+        if (stroke > 0f) Text(t, style = base.copy(
             color = Color.Black,
             // Round 的接头:方角在笔画拐弯处会支出一个小尖角
-            drawStyle = Stroke(width = 6f, join = StrokeJoin.Round, cap = StrokeCap.Round),
+            drawStyle = Stroke(width = stroke, join = StrokeJoin.Round, cap = StrokeCap.Round),
         ))
         Text(t, style = base.copy(color = Color.White))
     }

@@ -73,6 +73,10 @@ extern void          ass_free_track(ASS_Track *);
 extern void          ass_process_codec_private(ASS_Track *, const char *, int);
 extern void          ass_process_chunk(ASS_Track *, const char *, int, long long, long long);
 extern ASS_Image    *ass_render_frame(ASS_Renderer *, ASS_Track *, long long, int *);
+// 字幕样式那两颗对 ASS **真的生效**的旋钮(播放页字幕面板要它们)。
+// 描边和粗体不在这里:ASS 自带样式,盖掉它就把特效字幕改成了另一份字幕。
+extern void          ass_set_font_scale(ASS_Renderer *, double);
+extern void          ass_set_line_position(ASS_Renderer *, double);
 
 extern int __android_log_print(int prio, const char *tag, const char *fmt, ...);
 #define LPA_LOG(...) __android_log_print(4, "lp-libass", __VA_ARGS__)
@@ -96,12 +100,50 @@ static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 // 见 lp_ass_render 的 force 参数。
 static int g_painted;
 
+// 上一帧真正被写过的那一块(脏矩形)。
+// ☠☠ **「ASS 字幕跟着画面动就掉帧」的一半在这里。** 原来每帧都
+// `memset(整块画布)` —— 1080p 竖屏是 2400×1080×4 ≈ 10MB,而字幕实际占的
+// 通常不到画布的 15%。对白字幕靠 detect_change 跳过了所以看不出来,
+// 一旦字幕带 \move / \pos 动起来,detect_change 恒 1,这 10MB 就变成每帧都清。
+// 只清「上一帧写过的地方」,把清屏成本压到和字幕面积同一个量级。
+static int g_dirty_x0, g_dirty_y0, g_dirty_x1, g_dirty_y1;
+
+static void lpa_dirty_reset(void) {
+    g_dirty_x0 = g_dirty_y0 = 0;
+    g_dirty_x1 = g_dirty_y1 = 0;
+}
+
+static void lpa_dirty_add(int x0, int y0, int x1, int y1) {
+    if (g_dirty_x1 <= g_dirty_x0 || g_dirty_y1 <= g_dirty_y0) {
+        g_dirty_x0 = x0; g_dirty_y0 = y0; g_dirty_x1 = x1; g_dirty_y1 = y1;
+        return;
+    }
+    if (x0 < g_dirty_x0) g_dirty_x0 = x0;
+    if (y0 < g_dirty_y0) g_dirty_y0 = y0;
+    if (x1 > g_dirty_x1) g_dirty_x1 = x1;
+    if (y1 > g_dirty_y1) g_dirty_y1 = y1;
+}
+
+// 记下来:渲染器可能还没建(尺寸/轨道/样式三者到达顺序是随机的),
+// 建好之后要把这两项补上去 —— 同 g_dirty 那一套的理由。
+static double g_font_scale = 1.0;
+static double g_line_pos;
+
+static void lpa_apply_style_locked(void) {
+    if (!g_rend) return;
+    ass_set_font_scale(g_rend, g_font_scale);
+    ass_set_line_position(g_rend, g_line_pos);
+    g_painted = 0;      // 样式变了,上一帧作废
+    lpa_dirty_reset();
+}
+
 static void lpa_free_locked(void) {
     if (g_track) { ass_free_track(g_track); g_track = NULL; }
     if (g_rend)  { ass_renderer_done(g_rend); g_rend = NULL; }
     // g_lib 留着不销毁:字体目录扫描是这一层最贵的一步(几十毫秒),
     // 换一集就重扫一次等于每次起播白等。库本身没有播放状态。
     g_painted = 0;
+    lpa_dirty_reset();
 }
 
 // lpa_init_locked 建库 + 渲染器。已经有了就直接用。
@@ -126,6 +168,9 @@ static int lpa_init_locked(const char *fontsDir) {
         // 没有 fontconfig,第四个参数(config)给 NULL;update=1 让它当场扫目录。
         ass_set_fonts(g_rend, NULL, "sans-serif", LPA_FONTPROVIDER_AUTODETECT, NULL, 1);
         ass_set_pixel_aspect(g_rend, 1.0);
+        // 渲染器是新的,把记着的样式补上去。不补的话:用户在上一集调好的
+        // 字幕大小,换一集就回默认 —— 而设置页里明明还写着他调的值。
+        lpa_apply_style_locked();
     }
     return 0;
 }
@@ -206,6 +251,7 @@ JNIEXPORT void JNICALL Java_xyz_linplayer_app_core_Native_assSetSize(
         ass_set_frame_size(g_rend, frameW, frameH);
         ass_set_storage_size(g_rend, videoW, videoH);
         g_painted = 0;   // 尺寸变了,上一帧的内容作废
+        lpa_dirty_reset();
     }
     pthread_mutex_unlock(&g_mu);
 }
@@ -234,6 +280,7 @@ static void lpa_blend(unsigned char *dst, int dstStride, int dstW, int dstH, ASS
     if (y0 + h > dstH) h = dstH - y0;
     if (w <= 0 || h <= 0) return;
 
+    lpa_dirty_add(x0, y0, x0 + w, y0 + h);
     unsigned char *row = dst + (ptrdiff_t)y0 * dstStride + (ptrdiff_t)x0 * 4;
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
@@ -249,6 +296,38 @@ static void lpa_blend(unsigned char *dst, int dstStride, int dstW, int dstH, ASS
         src += img->stride;
         row += dstStride;
     }
+}
+
+// 字幕样式:缩放 + 竖直位置。
+// ★ position 用的是 **mpv 的口径**(0 顶 .. 100 底),这里换算成 libass 的
+// line_position(0 = 底部默认,越大越往上)。两边口径反着来,不换算的表现是
+// 「往下拖字幕往上跑」。
+// ★ mpv 那条路的 100 以上(压进黑边)libass 表达不了,夹到 0。
+JNIEXPORT void JNICALL Java_xyz_linplayer_app_core_Native_assSetStyle(
+        JNIEnv *e, jclass c, jdouble scale, jint position) {
+    (void)e; (void)c;
+    pthread_mutex_lock(&g_mu);
+    g_font_scale = scale > 0 ? scale : 1.0;
+    double lp = 100.0 - (double)position;
+    g_line_pos = lp < 0 ? 0 : (lp > 100 ? 100 : lp);
+    lpa_apply_style_locked();
+    pthread_mutex_unlock(&g_mu);
+}
+
+// 这一帧的字幕内容变了没有 —— **一个字节的位图都不碰**。
+// 双缓冲要它:后备那张装的是上上帧,直接拿 force=0 去画的话
+// libass 会说「没变」而后备那张的内容是错的;拿 force=1 去画又等于
+// 每帧都整块清屏重画,对白字幕那点省电全没了。
+// 先问一句、变了才画,两头都保住。libass 内部有缓存,重复问不贵。
+JNIEXPORT jboolean JNICALL Java_xyz_linplayer_app_core_Native_assChanged(
+        JNIEnv *e, jclass c, jlong posMs) {
+    (void)e; (void)c;
+    pthread_mutex_lock(&g_mu);
+    if (!g_rend || !g_track) { pthread_mutex_unlock(&g_mu); return JNI_FALSE; }
+    int changed = 0;
+    ass_render_frame(g_rend, g_track, (long long)posMs, &changed);
+    pthread_mutex_unlock(&g_mu);
+    return changed ? JNI_TRUE : JNI_FALSE;
 }
 
 // 返回:-1 出错 / 0 这一帧和上一帧一样(调用方可以不重绘)/ 1 位图已更新。
@@ -275,7 +354,20 @@ JNIEXPORT jint JNICALL Java_xyz_linplayer_app_core_Native_assRender(
         pthread_mutex_unlock(&g_mu);
         return -1;
     }
-    memset(pixels, 0, (size_t)info.stride * info.height);
+    // 只清上一帧写过的那一块。字幕通常占画布不到 15%,
+// 整块清 = 每帧白搬 10MB(1080p 竖屏)。force 时整块清:
+// 位图刚建出来 / 尺寸刚变,里面是什么谁也不知道。
+    if (force || g_dirty_x1 <= g_dirty_x0) {
+        memset(pixels, 0, (size_t)info.stride * info.height);
+    } else {
+        int y1 = g_dirty_y1 > (int)info.height ? (int)info.height : g_dirty_y1;
+        int x1 = g_dirty_x1 > (int)info.width ? (int)info.width : g_dirty_x1;
+        for (int y = g_dirty_y0; y < y1; y++) {
+            memset((unsigned char *)pixels + (ptrdiff_t)y * info.stride + (ptrdiff_t)g_dirty_x0 * 4,
+                   0, (size_t)(x1 - g_dirty_x0) * 4);
+        }
+    }
+    lpa_dirty_reset();
     int n = 0;
     for (ASS_Image *p = img; p; p = p->next) {
         lpa_blend((unsigned char *)pixels, (int)info.stride, (int)info.width, (int)info.height, p);

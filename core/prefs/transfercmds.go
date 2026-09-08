@@ -7,6 +7,9 @@ package prefs
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"linplayer/core/bus"
@@ -44,4 +47,111 @@ func registerTransferCommands() {
 		}
 		return map[string]any{"imported": len(incoming), "total": len(c.AccountList)}, nil
 	})
+
+	/* ---- 备份与还原(用户 2026-09-08)----
+
+	   核心层只管**内容**,文件对话框归 UI:三端各有各的挑文件方式(SAF / 系统对话框),
+	   而「备份里装什么」必须只有一份实现,否则 PC 导出的手机读不了 —— 那正是
+	   这个功能唯一的验收点。 */
+	bus.Register("prefs.backupExport", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
+		withAccounts := boolArg(a, "accounts", true)
+		withSettings := boolArg(a, "settings", true)
+		if !withAccounts && !withSettings {
+			return nil, bus.NewErr(bus.EInvalid, "两样都不导出的话,导出来的是一个空文件")
+		}
+		c := config.Current()
+		b, err := config.EncodeBackup(c, time.Now().Unix(), withAccounts, withSettings)
+		if err != nil {
+			return nil, bus.NewErr(bus.EInternal, "备份编码失败: %v", err)
+		}
+		out := map[string]any{
+			"content": string(b), "bytes": len(b),
+			"filename": "LinPlayer-备份-" + time.Now().Format("20060102-150405") + ".lpbak",
+		}
+		if withAccounts {
+			out["accounts"] = len(c.AccountList)
+			// ★★ 文件里**带着 token 和密码**,而加密是混淆级(密钥随文件走)。
+			//   这句话必须交到 UI 手上 —— 用户会把备份发到群里。
+			out["warning"] = "这份备份里包含你所有服务器的登录凭据,别公开分享。"
+		}
+		// UI 可以直接落盘;给了 path 就核心层写,省掉一次大字符串跨 FFI
+		if p, ok := a["path"].(string); ok && strings.TrimSpace(p) != "" {
+			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+				return nil, bus.NewErr(bus.EInvalid, "这个目录建不出来: %v", err)
+			}
+			if err := os.WriteFile(p, b, 0o600); err != nil {
+				return nil, bus.NewErr(bus.EInvalid, "写不进去: %v", err)
+			}
+			out["path"] = p
+			delete(out, "content") // 已经落盘了,再回吐一份是白花
+		}
+		return out, nil
+	})
+
+	// backupPreview 只读不写 —— 导入前让用户看清楚要还原什么再点确认。
+	bus.Register("prefs.backupPreview", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
+		raw, err := backupBytes(strArg(a, "content"), strArg(a, "path"))
+		if err != nil {
+			return nil, err
+		}
+		container, e := config.DecodeBackup(raw)
+		if e != nil {
+			return nil, bus.NewErr(bus.EInvalid, "%v", e)
+		}
+		return config.PreviewBackup(container), nil
+	})
+
+	bus.Register("prefs.backupImport", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
+		raw, err := backupBytes(strArg(a, "content"), strArg(a, "path"))
+		if err != nil {
+			return nil, err
+		}
+		container, e := config.DecodeBackup(raw)
+		if e != nil {
+			return nil, bus.NewErr(bus.EInvalid, "%v", e)
+		}
+		c := config.Current()
+		n, restored := config.ApplyBackup(c, container,
+			boolArg(a, "accounts", true), boolArg(a, "settings", true))
+		if err := c.Save(); err != nil {
+			return nil, bus.NewErr(bus.EInternal, "配置保存失败: %v", err)
+		}
+		return map[string]any{
+			"imported": n, "total": len(c.AccountList), "settings_restored": restored,
+		}, nil
+	})
+}
+
+// backupBytes 备份内容从哪来:直接给 content,或者给一个 path 让核心层读。
+//
+// ★ 两个参数**在调用点读**,不在这里读 a[...] —— `check-android-args.py`
+// 跟不进助手函数,那样会报一条「传了 content,核心层从不读它」的假红。
+// 而假红比没有门禁更坏:它会训练人无视这个门禁。
+func backupBytes(content, path string) ([]byte, error) {
+	if strings.TrimSpace(content) != "" {
+		return []byte(content), nil
+	}
+	if strings.TrimSpace(path) == "" {
+		return nil, bus.NewErr(bus.EInvalid, "要么给 content,要么给 path")
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, bus.NewErr(bus.EInvalid, "读不出这个文件: %v", err)
+	}
+	return b, nil
+}
+
+// strArg 取一个字符串参数。没传 = 空串。
+func strArg(a map[string]any, k string) string {
+	v, _ := a[k].(string)
+	return v
+}
+
+// boolArg 没传就用默认值。**不能默认 false** —— 那会让「不传 = 什么都不导」,
+// 而调用方以为不传是「全都要」。
+func boolArg(a map[string]any, k string, def bool) bool {
+	if v, ok := a[k].(bool); ok {
+		return v
+	}
+	return def
 }

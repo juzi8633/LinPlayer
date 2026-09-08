@@ -217,6 +217,17 @@ object Libass {
         pendingForce = true
     }
 
+    /**
+     * 这一帧的字幕内容变了没有。**不碰位图。**
+     *
+     * ★ 双缓冲要它:后备那张装的是上上帧,拿 `force=false` 去画的话 libass 会说
+     *   「没变」而后备那张的内容是错的;拿 `force=true` 去画又等于每帧整块清屏重画,
+     *   对白字幕那点省电全没了。先问一句、变了才画。
+     */
+    fun changed(posMs: Long): Boolean = synchronized(lock) {
+        opened && (pendingForce || Native.assChanged(posMs))
+    }
+
     /** -1 出错 / 0 和上一帧一样 / 1 位图已更新。 */
     fun render(bmp: Bitmap, posMs: Long, force: Boolean): Int = synchronized(lock) {
         if (!opened) return -1

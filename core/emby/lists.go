@@ -404,3 +404,62 @@ func FilterBlockedLibraries(items []Item, includeBlocked bool) []Item {
 	}
 	return out
 }
+
+// CollectionItems 一个合集里的条目,**影片和剧集分开装**。
+type CollectionItems struct {
+	Movies []Item `json:"movies"`
+	Series []Item `json:"series"`
+	Others []Item `json:"others"`
+}
+
+// Collection 拉合集的成员。
+//
+// ☠ **合集详情页原来一个字都画不出来**:详情那条链只对 Series/Season 拉子项
+// (detail.go 的 withChildren 判断、两端 DetailPage 的 type 判断都一样),
+// 而合集本身没有简介、没有年份、没有演职员 —— 于是整页只剩一个标题。
+//
+// ★ 主查询**不带 Recursive**:合集的成员就是它的直接子项,递归下去会把
+// 成员剧里的季和集一起翻出来。空表时才退一步用 Recursive + 类型过滤 ——
+// 有的 fork 对 BoxSet 的非递归查询回空,而「回空」和「这个合集是空的」
+// 长得一模一样,不退这一步就永远查不出是哪一种。
+func (c *Client) Collection(ctx context.Context, s *Session, boxsetID string) (*CollectionItems, error) {
+	const fields = "&Fields=PrimaryImageAspectRatio,Genres,ProductionYear,CommunityRating" +
+		"&SortBy=SortName&SortOrder=Ascending"
+	base := fmt.Sprintf("%s/Users/%s/Items?ParentId=%s",
+		s.Server, url.PathEscape(s.UserID), url.QueryEscape(boxsetID))
+
+	items, err := c.fetchItems(ctx, s, base+fields+fmt.Sprintf("&Limit=%d", ServerPageCap))
+	if err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		items, err = c.fetchItems(ctx, s,
+			base+"&Recursive=true&IncludeItemTypes=Movie,Series"+fields+
+				fmt.Sprintf("&Limit=%d", ServerPageCap))
+		if err != nil {
+			return nil, err
+		}
+	}
+	return splitCollection(items), nil
+}
+
+// splitCollection 按类型分堆。拆出来是为了可测 —— 分堆规则就是这个函数的全部内容。
+//
+// ★ 三个字段都保证是**空切片而不是 nil**:nil 序列化成 JSON `null`,
+// 前端 `.map()` 当场抛错,而透明窗口下抛错就是一片黑且不报错。
+func splitCollection(items []Item) *CollectionItems {
+	out := &CollectionItems{Movies: []Item{}, Series: []Item{}, Others: []Item{}}
+	for _, it := range items {
+		switch it.Type {
+		case "Movie":
+			out.Movies = append(out.Movies, it)
+		case "Series":
+			out.Series = append(out.Series, it)
+		default:
+			// 合集里塞得进音乐视频、纪录片文件夹、甚至另一个合集。
+			// 归到「其它」而不是丢掉:丢掉的表现还是「显示不出来东西」。
+			out.Others = append(out.Others, it)
+		}
+	}
+	return out
+}

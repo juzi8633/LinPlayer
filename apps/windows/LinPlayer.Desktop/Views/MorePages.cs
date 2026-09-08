@@ -406,6 +406,9 @@ public sealed class SettingsPage : PageBase
                     if (Features.On("set.whisper") && trans is not null) Add(SettingsTranslate.Whisper(core));
                     if (Features.On("set.cfspeed")) Add(SettingsSections.CfSpeed(core));
                     if (Features.On("set.transfer")) Add(SettingsSections.Transfer(core));
+                    // 备份与还原和上面那张「搬迁」是两件事:那张出二维码只搬账号,
+                    // 这张出文件、带设置、和手机端互通(用户 2026-09-08)
+                    Add(SettingsSections.Backup(core));
                     Add(Storage(core, paths));
                     // 快捷键不挂 Features 开关:它是操作方式,不是一块可下线的功能
                     Add(SettingsKeys.Section(core));

@@ -98,6 +98,16 @@ func RegisterCommands(version string) {
 	list("emby.listCollections", func(ctx context.Context, s *Session, a map[string]any) (any, error) {
 		return defaultClient.Collections(ctx, s)
 	})
+	/* 合集的成员。**影片和剧集分开返回**(用户 2026-09-08:「合集要把影片和剧集
+	   分开,方便用户查找」)。分堆放核心层而不是各端各分一次:两端各写一份的话
+	   迟早会在「其它类型往哪儿归」这件事上分叉,而那种不一致没人会报上来。 */
+	list("emby.collectionItems", func(ctx context.Context, s *Session, a map[string]any) (any, error) {
+		id := str(a, "item_id")
+		if id == "" {
+			return nil, bus.NewErr(bus.EInvalid, "缺少 item_id")
+		}
+		return defaultClient.Collection(ctx, s, id)
+	})
 	list("emby.listItemsPage", func(ctx context.Context, s *Session, a map[string]any) (any, error) {
 		q := &ItemQuery{}
 		if raw, ok := a["query"]; ok {

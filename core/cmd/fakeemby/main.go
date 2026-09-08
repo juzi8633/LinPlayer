@@ -342,6 +342,18 @@ func main() {
 			}
 			writeJSON(w, page(sets...))
 
+		/* 合集的成员:/Users/{uid}/Items?ParentId=bs-1
+		   ★★ 夹具原来没有这个形状 —— 点进合集会掉进下面的兜底分支,
+		     而兜底给的是一把电影,于是「影片和剧集分开」这一段
+		     **在自检里永远只有影片那一堆**,分堆代码把剧集丢掉也照样绿。
+		     成员里**必须混着剧集**,想到了就得造。 */
+		case strings.HasPrefix(r.URL.Query().Get("ParentId"), "bs-"):
+			writeJSON(w, page(
+				item("mv-1", "某部电影", "Movie"),
+				item("mv-2", "另一部电影", "Movie"),
+				item("s1", "某部剧", "Series"),
+			))
+
 		// 剧的分集:/Users/{uid}/Items?ParentId=s1&IncludeItemTypes=Episode
 		case strings.Contains(p, "/Items") && r.URL.Query().Get("IncludeItemTypes") == "Episode":
 			/* ★★ **两季**,不是一季。
@@ -414,6 +426,14 @@ func main() {
 					d["ProductionLocations"] = []string{""}
 				}
 				writeJSON(w, d)
+				return
+			}
+			/* bs-* 是合集。★ 故意**不给简介、不给年份、不给演职员** ——
+			   真 Emby 上的合集就是这个形状,而它正是「合集页一片空白」的成因:
+			   页面上除了成员列表之外本来就没有别的东西可画。
+			   夹具给了简介的话,那一页看着就永远不空,bug 复现不出来。 */
+			if strings.HasPrefix(id, "bs-") {
+				writeJSON(w, item(id, "自检合集 1", "BoxSet"))
 				return
 			}
 			// s1 是剧,其余当电影 —— 详情页对这两种是**两张不同的版式**

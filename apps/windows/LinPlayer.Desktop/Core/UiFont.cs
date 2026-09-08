@@ -13,7 +13,7 @@ namespace LinPlayer.Desktop.Core;
 ///
 /// <para>☠ Avalonia 只从 <c>avares:</c> 里读字体,磁盘上的字体只能自己实现一个
 /// <see cref="IFontCollection"/>;粗体斜体走 <see cref="FontSimulations"/> 模拟。
-/// 实测依据与升 Avalonia 时的自检办法见 <c>docs/lessons/windows.md</c>。</para>
+/// 实测依据与升 Avalonia 时的自检办法见 <c>docs/lessons/ui-desktop.md</c>。</para>
 /// </summary>
 public sealed class FileFontCollection : IFontCollection
 {

@@ -19,16 +19,36 @@ import (
 
 // registerSubtitleCommands 由 RegisterCommands 调用。
 func registerSubtitleCommands() {
-	// setSubStyle 字幕样式。每一项都是「没传就不动」。
+	/* setSubStyle 字幕样式。每一项都是「没传就不动」。
+	   ★ **设上就落库。** 这几项是 mpv 的运行时属性,mpv 每次冷启动都是新的 ——
+	     不落库的表现是「调好了,关掉软件再打开又回默认」,用户会当成没生效。
+	     UI 那边要在**松手时**调,不是每挪一像素调一次(每次都写一遍配置文件)。 */
 	bus.Register("player.setSubStyle", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
+		c := config.Current()
+		p := c.PrefsOf()
+		touched := false
 		if v, ok := a["font"].(string); ok {
 			setSubFont(v)
 		}
 		if v, ok := a["scale"].(float64); ok {
 			setSubScale(v)
+			p.SubScale, touched = clampSubScale(v), true
 		}
 		if v, ok := a["position"].(float64); ok {
 			setSubPosition("sub-pos", v)
+			p.SubPos, touched = clampSubPos(v), true
+		}
+		if v, ok := a["border_size"].(float64); ok {
+			setSubBorder(v)
+			p.SubBorderSize, touched = clampSubBorder(v), true
+		}
+		if v, ok := a["bold"].(bool); ok {
+			setSubBold(v)
+			p.SubBold, touched = v, true
+		}
+		if v, ok := a["scale_by_window"].(bool); ok {
+			setSubScaleByWindow(v)
+			p.SubScaleByWindow, touched = &v, true
 		}
 		if v, ok := a["background"].(bool); ok {
 			// 半透明黑底 vs 全透明;ASS 自带样式的字幕不受此影响
@@ -41,7 +61,19 @@ func registerSubtitleCommands() {
 		if v, ok := a["blend_mode"].(string); ok {
 			setProp("blend-subtitles", v)
 		}
+		if touched {
+			if err := savePrefs(c, p); err != nil {
+				return nil, err
+			}
+		}
 		return map[string]any{"ok": true}, nil
+	})
+
+	/* getSubStyle 读回落库的那份。
+	   ★ UI **必须**有这条:没有的话面板每次打开都从写死的默认值起手,
+	     滑块位置和画面上的字幕对不上 —— 那比不给这个面板更糟。 */
+	bus.Register("player.getSubStyle", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
+		return subStyleOf(config.Current().PrefsOf()), nil
 	})
 
 	// setSecondarySub 次字幕(双字幕)。id 为空 = 关。
@@ -212,9 +244,12 @@ func clampSubScale(scale float64) float64 {
 	return scale
 }
 
-// setSubPosition 字幕竖直位置 0(顶)..100(底)。
+// setSubPosition 字幕竖直位置 0(顶)..150。
 //
 // ★ mpv 只收**整数** —— 给小数它会静默拒绝,而调用方以为设上了。
+// ★ 上限 150 不是 100:100 是画面下沿,再往下是黑边。宽银幕片子上
+//
+//	「把字压到黑边里、一点画面都不挡」是最常用的一档,封在 100 就永远到不了。
 func setSubPosition(prop string, pos float64) {
 	setProp(prop, subPositionValue(pos))
 }
@@ -224,10 +259,100 @@ func subPositionValue(pos float64) string {
 	if pos < 0 {
 		pos = 0
 	}
-	if pos > 100 {
-		pos = 100
+	if pos > config.SubPosMax {
+		pos = config.SubPosMax
 	}
 	return strconv.FormatInt(int64(pos+0.5), 10)
+}
+
+func clampSubPos(pos float64) int {
+	v, _ := strconv.Atoi(subPositionValue(pos))
+	return v
+}
+
+/*
+setSubBorder 描边粗细。
+
+	☠ **属性名在 mpv 0.38 改过。** 老名 `sub-border-size` / 新名 `sub-outline-size`,
+	而 mpv 对不认识的属性只回一个错误码就完事 —— 写死哪一个都会在另一半的
+	构建上静默失效(N13 记的就是这类)。两个都发,谁在就谁生效。
+*/
+func setSubBorder(px float64) {
+	v := strconv.FormatFloat(clampSubBorder(px), 'f', 2, 64)
+	setProp("sub-outline-size", v)
+	setProp("sub-border-size", v)
+	// 颜色钉死黑色:描边的用处是「压在雪地上和压在夜景上一样清楚」,
+	// 只有黑边同时做得到这两件事。
+	setProp("sub-outline-color", "#FF000000")
+	setProp("sub-border-color", "#FF000000")
+}
+
+func clampSubBorder(px float64) float64 {
+	if px < 0 {
+		return 0
+	}
+	if px > config.SubBorderMax {
+		return config.SubBorderMax
+	}
+	return px
+}
+
+// setSubBold 粗体。对 ASS 字幕**不生效** —— ASS 自带样式,mpv 默认的
+// sub-ass-override=scale 只让缩放穿过去。面板上要写清这一条,别让用户
+// 拧一个在番剧上永远没反应的开关。
+func setSubBold(on bool) { setProp("sub-bold", boolProp(on)) }
+
+// setSubScaleByWindow 字号跟窗口走(true,mpv 默认)还是跟片源分辨率走(false)。
+// 全屏时两者一样,窗口化时差得很远。
+func setSubScaleByWindow(on bool) { setProp("sub-scale-by-window", boolProp(on)) }
+
+func boolProp(on bool) string {
+	if on {
+		return "yes"
+	}
+	return "no"
+}
+
+// subStyleOf 把落库的那份翻成 UI 认的形状。
+//
+// ★ 哨兵(0 / -1 / nil)原样透出去,让 UI 知道「这一项用的是 mpv 默认值」——
+// 翻成具体数字的话,面板一打开就把默认值当成用户的选择写回去了。
+func subStyleOf(p config.Prefs) map[string]any {
+	m := map[string]any{
+		"scale": p.SubScale, "position": p.SubPos,
+		"border_size": p.SubBorderSize, "bold": p.SubBold,
+		"scale_max": config.SubScaleMax, "scale_min": config.SubScaleMin,
+		"position_max": config.SubPosMax, "border_max": config.SubBorderMax,
+	}
+	if p.SubScaleByWindow != nil {
+		m["scale_by_window"] = *p.SubScaleByWindow
+	}
+	return m
+}
+
+/*
+applySubStyle 把落库的字幕样式重新压给刚起来的 mpv。
+
+	☠ 没有这一步的话整个功能是**半个** —— 设置当场生效、下次冷启动全回默认,
+	而配置文件里明明存着用户的值。调用点在 ensureMpv 之后(属性得在 mpv 起来了才设)。
+*/
+func applySubStyle() {
+	p := config.Current().PrefsOf()
+	if p.SubScale != 0 {
+		setSubScale(p.SubScale)
+	}
+	if p.SubPos >= 0 {
+		setSubPosition("sub-pos", float64(p.SubPos))
+	}
+	if p.SubBorderSize >= 0 {
+		setSubBorder(p.SubBorderSize)
+	}
+	if p.SubBold {
+		setSubBold(true)
+	}
+	if p.SubScaleByWindow != nil {
+		setSubScaleByWindow(*p.SubScaleByWindow)
+	}
 }
 
 // resolveScreenshotDir 截图落在哪。

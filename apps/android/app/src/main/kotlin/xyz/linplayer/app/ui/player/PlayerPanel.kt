@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import xyz.linplayer.app.data.Item
 import xyz.linplayer.app.data.LocalApp
@@ -40,6 +41,7 @@ import xyz.linplayer.app.data.str
 import xyz.linplayer.app.ui.components.Dim3
 import xyz.linplayer.app.ui.components.glass
 import xyz.linplayer.app.ui.components.OptRow
+import xyz.linplayer.app.ui.components.pressable
 import xyz.linplayer.app.data.ToastKind
 import xyz.linplayer.app.ui.pages.args
 import xyz.linplayer.app.ui.theme.Lp
@@ -174,16 +176,20 @@ fun PlayerPanel(
                        一颗「点开永远没效果」的按钮比没有它更糟。 */
                     if (exo == null) Triple("quality", null, "画面增强") else null,
                     Triple("danmaku", null, "弹幕"),
+                    Triple("substyle", null, "字幕样式"),
                 )
             }
         }
         loading = false
     }
 
+    // 字幕样式不是「一列选项」,是几个步进器 —— 它不进上面那套 options 模型
+    LaunchedEffect(kind) { if (kind == "substyle" && !SubStyle.loaded.value) SubStyle.load(app) }
+
     val title = when (kind) {
         "source" -> "版本与线路"; "audio" -> "音轨"; "subtitle" -> "字幕"
         "episodes" -> "选集"; "quality" -> "画面增强"; "danmaku" -> "弹幕"
-        "ratio" -> "画面比例"; else -> "更多"
+        "ratio" -> "画面比例"; "substyle" -> "字幕样式"; else -> "更多"
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -210,12 +216,18 @@ fun PlayerPanel(
             Dim3(title)
             Spacer(Modifier.height(Sp.x6))
             when {
+                kind == "substyle" -> SubStylePanel(app, scope)
                 loading -> Dim3("正在取…")
                 options.isEmpty() -> Dim3("这里没有可选项", maxLines = 2)
                 else -> LazyColumn(Modifier.fillMaxWidth(), list) {
+                    // 字幕面板顶上挂一个「字幕样式…」的跳板:调样式和选轨是同一件事的两步,
+                    // 让用户退出去再从「更多」进一遍等于把它藏起来
+                    if (kind == "subtitle") item("substyle") {
+                        OptRow("字幕样式…", { onOpen("substyle") }, selected = false)
+                    }
                     items(options, key = { it.first }) { (id, badge, label) ->
                         OptRow(label, {
-                            if (kind == "more") onOpen(id)
+                            if (kind == "more" || id == "substyle") onOpen(id)
                             else if (kind == "ratio") { onFit(VideoFit.of(id)); onClose() }
                             else {
                                 scope.launch { pick(app, kind, id, itemId, exo) }
@@ -233,6 +245,90 @@ fun PlayerPanel(
         val i = options.indexOfFirst { it.first == current }
         if (i >= 0) list.scrollToItem(i)
     }
+}
+
+/**
+ * 字幕样式面板:大小 / 位置 / 描边 / 粗体 / 随窗口缩放。
+ *
+ * ☠ **用步进器不用滑块。** 滑块拖一次会往核心层灌上百次落库(每一次都写配置文件);
+ *   而这几项的实际分辨率就是一档一档的 —— 谁也不会去追求 1.37 倍的字号。
+ * ★ 面板底下那行说明**必须留着**:描边和粗体对 ASS 特效字幕不生效,
+ *   不写的话用户会以为那两项坏了(见 [SubStyle] 类注释)。
+ */
+@Composable
+private fun SubStylePanel(
+    app: xyz.linplayer.app.data.AppState,
+    scope: kotlinx.coroutines.CoroutineScope,
+) {
+    LazyColumn(Modifier.fillMaxWidth()) {
+        item("scale") {
+            StepRow("字幕大小", "%.2f×".format(SubStyle.scale.doubleValue)) { up ->
+                scope.launch {
+                    SubStyle.set(app, "scale", SubStyle.stepScale(SubStyle.scale.doubleValue, up))
+                }
+            }
+        }
+        // 步长 5:1 个单位是画面高度的 1%,一格一格挪要按几十下
+        item("pos") {
+            StepRow("字幕位置", SubStyle.position.intValue.toString()) { up ->
+                scope.launch {
+                    SubStyle.set(app, "position", SubStyle.stepPos(SubStyle.position.intValue, up))
+                }
+            }
+        }
+        item("border") {
+            StepRow("字幕描边", "%.1f".format(SubStyle.border.doubleValue)) { up ->
+                scope.launch {
+                    SubStyle.set(app, "border_size", SubStyle.stepBorder(SubStyle.border.doubleValue, up))
+                }
+            }
+        }
+        item("bold") {
+            OptRow("粗体", { scope.launch { SubStyle.set(app, "bold", !SubStyle.bold.value) } },
+                selected = SubStyle.bold.value)
+        }
+        item("bywin") {
+            OptRow("字号跟窗口缩放",
+                { scope.launch { SubStyle.set(app, "scale_by_window", !SubStyle.scaleByWindow.value) } },
+                selected = SubStyle.scaleByWindow.value)
+        }
+        item("note") {
+            Dim3("100 = 画面下沿。描边和粗体对 ASS 特效字幕不生效 —— 那种字幕自带样式。",
+                maxLines = 4)
+        }
+    }
+}
+
+/**
+ * 一行步进器:标签 + 读数 + 两个键。
+ *
+ * ★ 两个键的命中区拉到 36dp:面板本身只有 236dp 宽,按 12sp 的字面大小去点
+ *   在播放页(手指、还常常在动)上是点不中的。
+ */
+@Composable
+private fun StepRow(label: String, readout: String, onStep: (Boolean) -> Unit) {
+    androidx.compose.foundation.layout.Row(
+        Modifier.fillMaxWidth().padding(vertical = Sp.x2),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Dim3(label, Modifier.weight(1f))
+        StepKey("−") { onStep(false) }
+        androidx.compose.material3.Text(
+            readout, Modifier.width(56.dp),
+            color = Lp.colors.fg, fontSize = 13.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+        StepKey("+") { onStep(true) }
+    }
+}
+
+@Composable
+private fun StepKey(glyph: String, onClick: () -> Unit) = Box(
+    // pressable 是全站统一的那个(带按压反馈),不自己再搭一套
+    Modifier.width(36.dp).height(36.dp).pressable(onClick, null),
+    contentAlignment = Alignment.Center,
+) {
+    androidx.compose.material3.Text(glyph, color = Lp.colors.fg, fontSize = 16.sp)
 }
 
 private suspend fun pick(

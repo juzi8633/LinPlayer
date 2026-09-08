@@ -725,6 +725,9 @@ func playFile(path string) error {
 	if !waitRenderCtx(5 * time.Second) {
 		return errors.New("视频通道未就绪:UI 还没调 lp_gl_init。起播必须排在它之后(SPEC §7.2 约束 6)")
 	}
+	/* 把落库的字幕样式压回刚起来的 mpv。**放在这里不放 ensureMpv 里**:
+	   ensureMpv 全程持着 mpvMu,而 setProp 自己也要拿这把锁 —— 在里面调是死锁。 */
+	applySubStyle()
 	mpvMu.Lock()
 	h := mpvH
 	mpvMu.Unlock()

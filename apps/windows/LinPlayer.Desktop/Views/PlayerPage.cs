@@ -569,8 +569,13 @@ public sealed class PlayerPage : UserControl
            它本来就是「这条轨对不上」的补救动作,和选轨是同一件事的两步。 */
         _audioBtn = Osd("音轨", "音轨 / 音频延迟");
         _audioBtn.Click += (_, _) => Pick(_audioBtn, _audio, "音轨", Labeled("音频延迟", audDelayRow), false);
-        var subsBtn = Osd("字幕", "字幕 / 字幕延迟");
-        subsBtn.Click += (_, _) => Pick(subsBtn, _subs, "字幕", Labeled("字幕延迟", subDelayRow), false);
+        var subsBtn = Osd("字幕", "字幕 / 字幕延迟 / 字幕样式");
+        subsBtn.Click += (_, _) => Pick(subsBtn, _subs, "字幕",
+            new StackPanel
+            {
+                Spacing = 2,
+                Children = { Labeled("字幕延迟", subDelayRow), SubStyleBlock() },
+            }, false);
 
         /* 弹幕开关。
             ☠ 这个入口以前三端发的都是 `danmaku.setDanmakuConfig` —— 而那条命令收的是
@@ -2605,6 +2610,121 @@ public sealed class PlayerPage : UserControl
             Orientation = Orientation.Horizontal, Spacing = 6,
             VerticalAlignment = VerticalAlignment.Center,
             Children = { Key("−", -0.1), readout, Key("+", +0.1), Key("归零", 0) },
+        };
+    }
+
+    /// <summary>字幕样式的当前值。<c>player.getSubStyle</c> 回来之前用哨兵占位。</summary>
+    private double _subScale = 1.0;
+    private int _subPos = 100;
+    private double _subBorder = 3.0;
+    private bool _subBold;
+    private bool _subScaleByWindow = true;
+
+    /// <summary>
+    /// 字幕样式:大小 / 位置 / 描边 / 粗体 / 随窗口缩放(用户 2026-09-08 点名的五项)。
+    ///
+    /// <para><b>大小走 <c>sub-scale</c> 不是 <c>sub-font-size</c></b>,而「缩放」的含义是
+    /// 跟不跟窗口走 —— 哪一项对谁生效见 <c>docs/lessons/player-mpv.md</c>。</para>
+    /// <para>步进器不用滑块:每一下都是一次提交,滑块拖一次会灌上百次落库。</para>
+    /// </summary>
+    private Control SubStyleBlock()
+    {
+        var scaleText = new TextBlock { Foreground = Brushes.White, FontSize = 13 };
+        var posText = new TextBlock { Foreground = Brushes.White, FontSize = 13 };
+        var borderText = new TextBlock { Foreground = Brushes.White, FontSize = 13 };
+        var boldRow = MenuRow("");
+        var byWinRow = MenuRow("");
+
+        void Refresh()
+        {
+            scaleText.Text = $"{_subScale:0.00}×";
+            posText.Text = _subPos.ToString();
+            borderText.Text = $"{_subBorder:0.0}";
+            boldRow.Content = (_subBold ? "● " : "○ ") + "粗体";
+            byWinRow.Content = (_subScaleByWindow ? "● " : "○ ") + "字号跟窗口缩放";
+        }
+        Refresh();
+
+        // 读回落库的那一份。没有这一步的话面板每次打开都从写死的默认值起手,
+        // 滑块位置和画面上的字幕对不上 —— 那比不给这个面板更糟。
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var r = await _core.PlayerGetSubStyle();
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (r.TryGetProperty("scale", out var sc) && sc.GetDouble() > 0) _subScale = sc.GetDouble();
+                    if (r.TryGetProperty("position", out var po) && po.GetInt32() >= 0) _subPos = po.GetInt32();
+                    if (r.TryGetProperty("border_size", out var bo) && bo.GetDouble() >= 0) _subBorder = bo.GetDouble();
+                    if (r.TryGetProperty("bold", out var bd)) _subBold = bd.ValueKind == JsonValueKind.True;
+                    if (r.TryGetProperty("scale_by_window", out var bw))
+                        _subScaleByWindow = bw.ValueKind == JsonValueKind.True;
+                    Refresh();
+                });
+            }
+            catch { /* 读不到就用默认值起手 —— 面板不该因为读不回上一次的设置而消失 */ }
+        });
+
+        Control Row(string label, TextBlock readout, double step, Action<double> apply, Action reset)
+        {
+            Button Key(string text, double delta)
+            {
+                var b = new Button
+                {
+                    Content = text, Classes = { "osdstep" },
+                    Width = delta == 0 ? 40 : 28, Height = 28,
+                    HorizontalContentAlignment = HorizontalAlignment.Center,
+                    VerticalContentAlignment = VerticalAlignment.Center,
+                };
+                b.Click += (_, _) => { if (delta == 0) reset(); else apply(delta); Refresh(); };
+                return b;
+            }
+            readout.Width = 46;
+            readout.TextAlignment = TextAlignment.Center;
+            return Labeled(label, new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 6,
+                VerticalAlignment = VerticalAlignment.Center,
+                Children = { Key("−", -step), readout, Key("+", step), Key("默认", 0) },
+            });
+        }
+
+        boldRow.Click += (_, _) =>
+        {
+            _subBold = !_subBold; Refresh();
+            _ = Send("player.setSubStyle", new { bold = _subBold });
+        };
+        byWinRow.Click += (_, _) =>
+        {
+            _subScaleByWindow = !_subScaleByWindow; Refresh();
+            _ = Send("player.setSubStyle", new { scale_by_window = _subScaleByWindow });
+        };
+
+        return new StackPanel
+        {
+            Spacing = 2,
+            Children =
+            {
+                PopupTitle("字幕样式"),
+                Row("字幕大小", scaleText, 0.1,
+                    d => { _subScale = Math.Clamp(Math.Round((_subScale + d) * 100) / 100, 0.2, 4.0);
+                           _ = Send("player.setSubStyle", new { scale = _subScale }); },
+                    () => { _subScale = 1.0; _ = Send("player.setSubStyle", new { scale = 1.0 }); }),
+                // 位置步长 5:1 个单位是画面高度的 1%,一格一格挪要按几十下
+                Row("字幕位置", posText, 5,
+                    d => { _subPos = Math.Clamp(_subPos + (int)d, 0, 150);
+                           _ = Send("player.setSubStyle", new { position = (double)_subPos }); },
+                    () => { _subPos = 100; _ = Send("player.setSubStyle", new { position = 100.0 }); }),
+                Row("字幕描边", borderText, 0.5,
+                    d => { _subBorder = Math.Clamp(Math.Round((_subBorder + d) * 10) / 10, 0, 10);
+                           _ = Send("player.setSubStyle", new { border_size = _subBorder }); },
+                    () => { _subBorder = 3.0; _ = Send("player.setSubStyle", new { border_size = 3.0 }); }),
+                boldRow,
+                byWinRow,
+                Dimmed("100 = 画面下沿,再往下是黑边。**描边和粗体对 ASS 特效字幕不生效**"
+                    + " —— 那种字幕自带样式,只有大小和位置盖得过去。"),
+            },
         };
     }
 

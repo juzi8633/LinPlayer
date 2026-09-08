@@ -335,6 +335,100 @@ public static class SettingsSections
     }
 
     /// <summary>
+    /// 备份与还原(用户 2026-09-08)。**文件档**,不是上面那张二维码卡。
+    ///
+    /// <para>区别:二维码只装账号、只在两台设备当面搬;这里出一个 <c>.lpbak</c>,
+    /// 装账号 <b>+ 设置</b>,PC 和手机读同一份格式,也能交给第三方播放器
+    /// (<c>docs/backup-format.md</c>)。「只导设置」那一档给的是
+    /// 「把设置发给别人而不发凭据」。</para>
+    /// </summary>
+    public static Control Backup(CoreClient core)
+    {
+        var hint = Hint();
+        var withAccounts = new CheckBox { Content = "包含服务器地址与账号密码", IsChecked = true };
+        var withSettings = new CheckBox { Content = "包含软件设置", IsChecked = true };
+
+        async Task<IStorageProvider?> Sp() =>
+            await Task.FromResult(TopLevel.GetTopLevel(hint)?.StorageProvider);
+
+        var export = new Button { Classes = { "ghost" }, Content = "导出到文件…" };
+        export.Click += async (_, _) =>
+        {
+            try
+            {
+                if (await Sp() is not { } sp) return;
+                var name = "LinPlayer-备份-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".lpbak";
+                var f = await sp.SaveFilePickerAsync(new FilePickerSaveOptions
+                {
+                    Title = "导出备份", SuggestedFileName = name,
+                    FileTypeChoices = [new FilePickerFileType("LinPlayer 备份") { Patterns = ["*.lpbak", "*.json"] }],
+                });
+                if (f?.TryGetLocalPath() is not { } path) return;
+                // 让核心层直接落盘:内容里带着凭据,少一次跨 FFI 的大字符串就少一处泄漏面
+                var r = await core.PrefsBackupExport(new
+                {
+                    path,
+                    accounts = withAccounts.IsChecked == true,
+                    settings = withSettings.IsChecked == true,
+                });
+                hint.Text = $"已导出到 {Str(r, "path")}({Num(r, "bytes")} 字节)。{Str(r, "warning")}";
+            }
+            catch (Exception e) { hint.Text = LibraryPage.Advice(e); }
+        };
+
+        var import = new Button { Classes = { "ghost" }, Content = "从文件还原(合并)…" };
+        import.Click += async (_, _) =>
+        {
+            try
+            {
+                if (await Sp() is not { } sp) return;
+                var files = await sp.OpenFilePickerAsync(new FilePickerOpenOptions
+                {
+                    Title = "选择备份文件", AllowMultiple = false,
+                    FileTypeFilter = [new FilePickerFileType("LinPlayer 备份") { Patterns = ["*.lpbak", "*.json", "*.txt"] }],
+                });
+                if (files.FirstOrDefault()?.TryGetLocalPath() is not { } path) return;
+                /* 先看清楚再写。**没有这一步的话「还原」是一个不可逆的盲操作** ——
+                   用户点错一个文件,合并进来的账号只能一台一台删回去。 */
+                var pv = await core.PrefsBackupPreview(new { path });
+                hint.Text = $"这份备份来自 {Str(pv, "from")},{Num(pv, "accounts")} 台服务器"
+                    + (pv.TryGetProperty("has_settings", out var hs) && hs.ValueKind == JsonValueKind.True
+                        ? "、含软件设置" : "、不含软件设置") + " —— 正在还原…";
+                var r = await core.PrefsBackupImport(new
+                {
+                    path,
+                    accounts = withAccounts.IsChecked == true,
+                    settings = withSettings.IsChecked == true,
+                });
+                hint.Text = $"还原 {Num(r, "imported")} 台,现在共 {Num(r, "total")} 台;"
+                    + (r.TryGetProperty("settings_restored", out var sr) && sr.ValueKind == JsonValueKind.True
+                        ? "软件设置已还原,重启后全部生效。" : "这份备份里没有软件设置。");
+            }
+            catch (Exception e) { hint.Text = LibraryPage.Advice(e); }
+        };
+
+        return Group("备份与还原", new StackPanel
+        {
+            Spacing = 10,
+            Children =
+            {
+                Note("⚠ 勾了「包含账号密码」的备份文件里有你所有服务器的登录凭据,"
+                    + "只做了混淆加密,别公开分享。想把设置发给别人就取消那个勾。"),
+                withAccounts,
+                withSettings,
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal, Spacing = 10,
+                    Children = { export, import },
+                },
+                Note("还原是合并:同一台服务器会被更新,这台机器上原有的其它服务器保留。"
+                    + "手机端读的是同一份文件,格式说明在 docs/backup-format.md。"),
+                hint,
+            },
+        });
+    }
+
+    /// <summary>
     /// CF 优选测速(UI_PC §6)。
     ///
     /// <para>这条命令要跑几十秒(256 个候选 IP × 4 次握手 + 若干次下载测速)。

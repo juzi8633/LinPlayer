@@ -163,9 +163,14 @@ func commonToAccount(j map[string]any) (Account, bool) {
 	return a, true
 }
 
-// EncodeTransfer 把账号列表编码成可放进二维码的字符串。
-func EncodeTransfer(accounts []Account, exportTimeUnix int64) string {
-	configs := make([]string, 0, len(accounts))
+// buildContainer 装出 CommonConfig 容器。**二维码和备份文件共用它** ——
+// 各拼一份的话两条路迟早在字段上分叉,而分叉的表现是「PC 导出的文件手机读不了」。
+func buildContainer(accounts []Account, exportTimeUnix int64) map[string]any {
+	/* ☠ 元素类型是 `any` 不是 `string`。容器会被**原地**交给
+	   accountsFromContainer(备份文件那条路),而它按 JSON 解出来的形状
+	   取 `[]any` —— 给 `[]string` 的话类型断言失败、一个账号都解不出来,
+	   而且**不报错**:导入回来「成功,0 个账号」。 */
+	configs := make([]any, 0, len(accounts))
 	for _, a := range accounts {
 		b, err := json.Marshal(accountToCommon(a))
 		if err != nil {
@@ -173,12 +178,16 @@ func EncodeTransfer(accounts []Account, exportTimeUnix int64) string {
 		}
 		configs = append(configs, encryptConfig(string(b), builtinKey))
 	}
-	container := map[string]any{
+	return map[string]any{
 		"from": transferClient, "version": transferVersion,
 		"export_time": exportTimeUnix, "configs": configs,
 		"_key": base64.StdEncoding.EncodeToString(builtinKey[:]),
 	}
-	raw, err := json.Marshal(container)
+}
+
+// EncodeTransfer 把账号列表编码成可放进二维码的字符串。
+func EncodeTransfer(accounts []Account, exportTimeUnix int64) string {
+	raw, err := json.Marshal(buildContainer(accounts, exportTimeUnix))
 	if err != nil {
 		return ""
 	}
@@ -213,6 +222,11 @@ func DecodeTransfer(raw string) ([]Account, error) {
 	if json.Unmarshal(jsonb, &container) != nil {
 		return nil, fmt.Errorf("载荷 JSON 非法")
 	}
+	return accountsFromContainer(container), nil
+}
+
+// accountsFromContainer 从 CommonConfig 容器里解出账号。二维码和备份文件共用。
+func accountsFromContainer(container map[string]any) []Account {
 	// 优先用容器里的 `_key`,否则回退内置密钥。
 	key := builtinKey
 	if ks, ok := container["_key"].(string); ok {
@@ -241,7 +255,7 @@ func DecodeTransfer(raw string) ([]Account, error) {
 			out = append(out, a)
 		}
 	}
-	return out, nil
+	return out
 }
 
 // MergeAccounts 按 server 合并:导入项覆盖同 server 的旧项,其余保留,新项追加。

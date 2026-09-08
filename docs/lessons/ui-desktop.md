@@ -2402,3 +2402,45 @@ Avalonia 的 Button 在 `OnPointerPressed` 里要 `e.Pointer.Capture(this)`,
   `LP_FONTPROBE=<字体文件> LinPlayer.exe` —— `SetupWithoutStarting()` 起平台但不开窗口,
   打一行「装上了=True 家族=Microsoft YaHei」就退。实测 `C:/Windows/Fonts/msyh.ttc`
   是 True、拿一个非字体文件是 False。**升级 Avalonia 之后跑一次这个。**
+
+## 2026-09-08 · 「点左右翻页按钮有概率卡死」的根因是一个只进不出的闩
+
+`Views/Smooth.cs` 的 `Driver.Running` 原来只有两条复位路径:动画走到目标、
+或者 TopLevel 没了。两条都可能永远走不到,而 `Run()` 开头 `if (d.Running) return;`
+—— 一旦卡住,之后每次点按钮都当场返回,**按钮从此是死的,且不报错**。
+
+两条把它卡住的路,都是「有概率」的来源:
+
+1. **虚拟化轨道的 Extent 会变小。** 分集轨是 `Carousel.Rail`(`VirtualizingStackPanel`),
+   `Extent.Width` 是按已实例化的那几张卡**估**出来的。目标只在点击那一刻 `Clamp` 过一次,
+   之后 Extent 一缩,目标就落在 `ScrollViewer.Offset` 的 setter 拒绝去的位置 ——
+   每帧 `dx` 一样大,循环永远不收敛。
+2. **窗口最小化 / 被完全遮住时渲染循环停了**,`RequestAnimationFrame` 排进去的那一帧不会来。
+
+修法是三道闸,缺一条都还会卡:**每帧重新 `Clamp`**、**一步都没挪就收尾**
+(`(sv.Offset - cur).Length < 0.01`)、**帧停了 250ms 就换代重启**(`StillAlive`,
+代次判据让上一轮回调自己退场,免得两条循环同时改 Offset)。
+
+自检:`LP_SCROLLPROBE=1 LinPlayer.exe`,打两行就退、不开窗口。
+第一行把驱动器逼进「目标去不了」的死角(离屏 ScrollViewer 的 Extent 恒 0,
+正好是同一个形状),第二行验停帧判定。**反向注入验过**:摘掉三道闸后
+「跑满 60 帧还没退出」。
+
+`Smooth.SelfCheckWheel` 是上一轮留下的**零调用**方法 —— 没有任何自检在用它。
+
+## 2026-09-08 · 合集详情页一个字都画不出来
+
+`emby.itemDetail` 的 `withChildren` 和两端 DetailPage 的类型判断都只认
+`Series` / `Season`。而合集(BoxSet)本身**没有简介、没有年份、没有演职员** ——
+于是整页只剩一个标题。新增 `emby.collectionItems`,影片 / 剧集 / 其它分三堆返回。
+
+两条实测约束:
+
+- 主查询**不带 `Recursive`**:合集的成员就是它的直接子项,递归会把成员剧里的
+  季和集一起翻出来 —— 3 部片的合集显示成上百条。
+- 回空时**再试一次 `Recursive=true&IncludeItemTypes=Movie,Series`**:有的 fork
+  对 BoxSet 的非递归查询恒回空,而「回空」和「这个合集是空的」长得一模一样。
+
+假服务器(`core/cmd/fakeemby`)原来没有 `ParentId=bs-*` 这个形状,也没有 BoxSet 的
+详情形状 —— 补上了,且成员里**故意混着剧集**:全是电影的话「影片剧集分开」
+这一段在自检里永远只有一堆,分堆代码把剧集丢掉也照样绿。

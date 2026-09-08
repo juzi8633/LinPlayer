@@ -69,6 +69,7 @@
 | [x] | `emby.itemDetail` | `item_detail` | `item_id: String, // 缺省 = true（桌面/TV 的旧调用点不传，行为不变）。 // 手机端传 false：它按季分页拉集，不需要这一坨。 with_children: Option<bool>` | `Result<emby::ItemDetail, String>` | ✅ |
 | [x] | `emby.itemMedia` | `item_media` | `item_id: String` | `Result<Vec<emby::MediaVersion>, String>` | ✅ |
 | [x] | `emby.listCollections` | `list_collections` | `—` | `Result<Vec<Item>, String>` | ✅ |
+| [x] | `emby.collectionItems` | **新增** | `item_id: String` | `{movies,series,others}` | — | <!-- 合集成员，影片/剧集分开（合集页原来一个字都画不出来） -->
 | [x] | `emby.listFavorites` | `list_favorites` | `—` | `Result<Vec<Item>, String>` | ✅ |
 | [x] | `emby.listItems` | `list_items` | `parent_id: String` | `Result<Vec<Item>, String>` | ✅ |
 | [x] | `emby.listItemsPage` | `list_items_page` | `parent_id: String, start_index: Option<u32>, limit: Option<u32>, sort_by: Option<String>, sort_order: Option<String>, genres: Option<Vec<String>>, tags: Option<Vec<String>>, years: Option<Vec<i32>>, studios: Option<Vec<String>>, rating_min: Option<f64>, rating_max: Option<f64>` | `Result<emby::ItemPage, String>` | ✅ |
@@ -163,6 +164,7 @@
 | [x] | `player.setSpeed` | `set_speed` | `speed: f64` | `Result<(), String>` | ✅ |
 | [x] | `player.setSubDelay` | `set_sub_delay` | `secs: f64` | `Result<(), String>` | ✅ |
 | [x] | `player.setSubStyle` | `set_sub_style` | `font: Option<String>, scale: Option<f64>, position: Option<f64>, background: Option<bool>, blend_mode: Option<String>` | `Result<(), String>` | ✅ |
+| [x] | `player.getSubStyle` | **新增** | `-` | `{scale,position,border_size,bold,scale_by_window}` | — | <!-- 读回落库的字幕样式，面板打开时用 -->
 | [x] | `player.setTrack` | `set_track` | `kind: String, id: String` | `Result<(), String>` | ✅ |
 | [x] | `player.setTrackRegexes` | `set_track_regexes` | `version_regex: String, sub_regex: String, audio_regex: String` | `Result<(), String>` | ✅ |
 | [x] | `player.setVolume` | `set_volume` | `volume: f64` | `Result<(), String>` | ✅ |
@@ -295,6 +297,9 @@
 | [x] | `prefs.cfSpeedTest` | `cf_speed_test` | `validate_host: Option<String>, test_url: Option<String>` | `Result<Vec<linplayer_core::net::cf::CfTestResult>, String>` | ✅ |
 | [x] | `prefs.configExportQr` | `config_export_qr` | `—` | `String` | ✅ |
 | [x] | `prefs.configImportQr` | `config_import_qr` | `payload: String` | `Result<usize, String>` | ✅ |
+| [x] | `prefs.backupExport` | **新增** | `accounts: Option<bool>, settings: Option<bool>, path: Option<String>` | `{content?,path?,filename,bytes,accounts?,warning?}` | — | <!-- 备份与还原：导出 -->
+| [x] | `prefs.backupImport` | **新增** | `content: Option<String>, path: Option<String>, accounts: Option<bool>, settings: Option<bool>` | `{imported,total,settings_restored}` | — | <!-- 备份与还原：导入（合并不覆盖） -->
+| [x] | `prefs.backupPreview` | **新增** | `content: Option<String>, path: Option<String>` | `{from,export_time,accounts,has_settings}` | — | <!-- 导入前看清楚要还原什么 -->
 | [x] | `prefs.getHomeSettings` | **新增** | `-` | `HomeSettings` | — | <!-- 首页栏目设置(合集栏按服开关等) -->
 | [x] | `prefs.getPrefetchSettings` | `get_prefetch_settings` | `—` | `PrefetchSettings` | ✅ |
 | [x] | `prefs.getPrefs` | `get_prefs` | `—` | `Prefs` | ✅ |

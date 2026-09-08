@@ -1046,3 +1046,44 @@ per-track 事件缓存和 8MB 闸门整套可以删掉。
 还留着上一次那份 storage,libass 会当成非方像素去补偿,字被横向拉宽。
 裁过就传 `0` 明确告诉它按方像素算,而且**必须无条件下发**
 (`if (w>0&&h>0)` 那种写法根本清不掉旧值)。
+
+## 2026-09-08 · Exo 内核画 ASS 特效字幕掉帧:两处都在,只修一处不够
+
+用户报「ASS 字幕随着屏幕移动而移动时掉帧卡顿」。两个原因叠在一起,
+对白字幕看不出来(靠 `detect_change` 跳过了),字幕一动就同时爆发:
+
+1. **渲染循环跑在主线程上。** `ExoEngine.kt` 的 `LibassLayer` 用
+   `LaunchedEffect` 起循环 —— 它的默认调度器就是主线程。字幕一动
+   `detect_change` 恒 1,于是每 33ms 在 UI 线程上做一次完整的软件渲染。
+   改 `Dispatchers.Default`。
+2. **每帧 `memset` 整块画布。** `core/ffi/libass_android.go` 的 `lp_ass_render`
+   无条件清整张位图 —— 1080p 竖屏是 2400×1080×4 ≈ **10MB**,而字幕实际
+   占不到画布的 15%。改成只清「上一帧写过的那一块」(`g_dirty_*`,
+   由 `lpa_blend` 累积)。
+
+挪到后台线程**必须配双缓冲**:单张位图在 Skia 读的同时写,表现是字幕撕成两半
+(比掉帧更难看,而且看着像字幕本身坏了)。
+
+☠ 双缓冲带来一个不显眼的连锁:后备那张装的是**上上帧**。
+- 拿 `force=false` 去画 → libass 说「没变」→ 后备那张的内容是错的,屏幕在两帧之间跳。
+- 拿 `force=true` 去画 → 每帧整块清屏重画,对白字幕那点省电全没了。
+
+解法是把「变了没有」和「画」拆成两次调用:新增 `assChanged(posMs)`
+(只跑 `ass_render_frame` 读 `changed`,**一个字节的位图都不碰**),
+变了才画、画就 `force`。libass 内部有缓存,重复问不贵。
+
+### 字幕样式在安卓这边有三个消费者
+
+| 内核 | 谁画 | 认哪几项 |
+|---|---|---|
+| mpv | libmpv | 五项全认(核心层设 mpv 属性) |
+| Exo · ASS | libass(`Native.assSetStyle`) | 只有大小和位置 |
+| Exo · SRT/VTT | Compose 的 `TextCue` | 大小 / 描边 / 粗体 |
+
+☠ **libass 的 `ass_set_line_position` 和 mpv 的 `sub-pos` 方向是反的**:
+mpv 是 0 顶 / 100 底,libass 是 0 = 底部默认、越大越往上。换算写在
+`assSetStyle` 里(`100 - position`)。两端各错一次会互相抵消,
+所以文本字幕那一侧的 `bottomPadFraction` 单独有测试钉住方向。
+
+`SubStyle.set()` **必须两边都推**:只落库的话 Exo 内核下一点反应都没有,
+而 ASS 特效字幕走的正是那条路。

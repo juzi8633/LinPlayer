@@ -40,6 +40,7 @@ object LinPlayerCommandNames {
         "emby.itemDetail",
         "emby.itemMedia",
         "emby.listCollections",
+        "emby.collectionItems",
         "emby.listFavorites",
         "emby.listItems",
         "emby.listItemsPage",
@@ -124,6 +125,7 @@ object LinPlayerCommandNames {
         "player.setSpeed",
         "player.setSubDelay",
         "player.setSubStyle",
+        "player.getSubStyle",
         "player.setTrack",
         "player.setTrackRegexes",
         "player.setVolume",
@@ -221,6 +223,9 @@ object LinPlayerCommandNames {
         "prefs.cfSpeedTest",
         "prefs.configExportQr",
         "prefs.configImportQr",
+        "prefs.backupExport",
+        "prefs.backupImport",
+        "prefs.backupPreview",
         "prefs.getHomeSettings",
         "prefs.getPrefetchSettings",
         "prefs.getPrefs",
@@ -257,7 +262,7 @@ object LinPlayerCommandNames {
     )
 }
 
-// ---- Emby 浏览与详情 · emby.* (42 条) ----
+// ---- Emby 浏览与详情 · emby.* (43 条) ----
 suspend fun LinPlayerCommands.embyAggregateOverview(args: Map<String, Any?>? = null): JsonElement =
     call("emby.aggregateOverview", args)
 suspend fun LinPlayerCommands.embyAggregateSearch(args: Map<String, Any?>? = null): JsonElement =
@@ -280,6 +285,8 @@ suspend fun LinPlayerCommands.embyItemMedia(args: Map<String, Any?>? = null): Js
     call("emby.itemMedia", args)
 suspend fun LinPlayerCommands.embyListCollections(args: Map<String, Any?>? = null): JsonElement =
     call("emby.listCollections", args)
+suspend fun LinPlayerCommands.embyCollectionItems(args: Map<String, Any?>? = null): JsonElement =
+    call("emby.collectionItems", args)
 suspend fun LinPlayerCommands.embyListFavorites(args: Map<String, Any?>? = null): JsonElement =
     call("emby.listFavorites", args)
 suspend fun LinPlayerCommands.embyListItems(args: Map<String, Any?>? = null): JsonElement =
@@ -387,7 +394,7 @@ suspend fun LinPlayerCommands.accountTestConnection(args: Map<String, Any?>? = n
 suspend fun LinPlayerCommands.accountUpdateAccount(args: Map<String, Any?>? = null): JsonElement =
     call("account.updateAccount", args)
 
-// ---- 播放器 · player.* (44 条) ----
+// ---- 播放器 · player.* (45 条) ----
 suspend fun LinPlayerCommands.playerAddSubtitle(args: Map<String, Any?>? = null): JsonElement =
     call("player.addSubtitle", args)
 suspend fun LinPlayerCommands.playerChapterInfo(args: Map<String, Any?>? = null): JsonElement =
@@ -452,6 +459,8 @@ suspend fun LinPlayerCommands.playerSetSubDelay(args: Map<String, Any?>? = null)
     call("player.setSubDelay", args)
 suspend fun LinPlayerCommands.playerSetSubStyle(args: Map<String, Any?>? = null): JsonElement =
     call("player.setSubStyle", args)
+suspend fun LinPlayerCommands.playerGetSubStyle(args: Map<String, Any?>? = null): JsonElement =
+    call("player.getSubStyle", args)
 suspend fun LinPlayerCommands.playerSetTrack(args: Map<String, Any?>? = null): JsonElement =
     call("player.setTrack", args)
 suspend fun LinPlayerCommands.playerSetTrackRegexes(args: Map<String, Any?>? = null): JsonElement =
@@ -645,7 +654,7 @@ suspend fun LinPlayerCommands.translateWhisperDownloadFfmpeg(args: Map<String, A
 suspend fun LinPlayerCommands.translateWhisperModels(args: Map<String, Any?>? = null): JsonElement =
     call("translate.whisperModels", args)
 
-// ---- 设置与偏好 · prefs.* (27 条) ----
+// ---- 设置与偏好 · prefs.* (30 条) ----
 suspend fun LinPlayerCommands.prefsApplyPrefs(args: Map<String, Any?>? = null): JsonElement =
     call("prefs.applyPrefs", args)
 suspend fun LinPlayerCommands.prefsCfProxyDisable(args: Map<String, Any?>? = null): JsonElement =
@@ -660,6 +669,12 @@ suspend fun LinPlayerCommands.prefsConfigExportQr(args: Map<String, Any?>? = nul
     call("prefs.configExportQr", args)
 suspend fun LinPlayerCommands.prefsConfigImportQr(args: Map<String, Any?>? = null): JsonElement =
     call("prefs.configImportQr", args)
+suspend fun LinPlayerCommands.prefsBackupExport(args: Map<String, Any?>? = null): JsonElement =
+    call("prefs.backupExport", args)
+suspend fun LinPlayerCommands.prefsBackupImport(args: Map<String, Any?>? = null): JsonElement =
+    call("prefs.backupImport", args)
+suspend fun LinPlayerCommands.prefsBackupPreview(args: Map<String, Any?>? = null): JsonElement =
+    call("prefs.backupPreview", args)
 suspend fun LinPlayerCommands.prefsGetHomeSettings(args: Map<String, Any?>? = null): JsonElement =
     call("prefs.getHomeSettings", args)
 suspend fun LinPlayerCommands.prefsGetPrefetchSettings(args: Map<String, Any?>? = null): JsonElement =

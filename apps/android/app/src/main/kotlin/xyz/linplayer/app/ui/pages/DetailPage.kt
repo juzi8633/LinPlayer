@@ -271,6 +271,23 @@ fun DetailPage(nav: NavController, entry: NavBackStackEntry) {
     val title = d.str("name") ?: ""
     val isEpisode = route.type == "Episode"
     val isSeries = route.type == "Series" || route.type == "Season"
+    /* ☠ **合集原来一个字都画不出来。** 详情那条链只对 Series/Season 拉子项,
+       而合集本身没有简介、没有年份、没有演职员 —— 整页只剩一个标题
+       (用户 2026-09-08:「合集无法正确显示,显示不出来任何的东西」)。
+       它也不该有播放按钮:合集不是一部片,点了核心层只会报错。 */
+    val isBoxSet = route.type == "BoxSet"
+    var boxMovies by remember(route.itemId) { mutableStateOf<List<Item>>(emptyList()) }
+    var boxSeries by remember(route.itemId) { mutableStateOf<List<Item>>(emptyList()) }
+    var boxOthers by remember(route.itemId) { mutableStateOf<List<Item>>(emptyList()) }
+    var boxLoading by remember(route.itemId) { mutableStateOf(isBoxSet) }
+    LaunchedEffect(route.itemId, isBoxSet) {
+        if (!isBoxSet) return@LaunchedEffect
+        val r = app.block("emby.collectionItems", args("item_id" to route.itemId)).valueOrNull.obj()
+        boxMovies = Item.list(r?.get("movies"))
+        boxSeries = Item.list(r?.get("series"))
+        boxOthers = Item.list(r?.get("others"))
+        boxLoading = false
+    }
     /* ☠☠ **展示用的版本和「发给核心层的版本 id」是两回事,以前混成了一个。**
        `defaultVersion` 只认核心层标的 `preferred`,标不出来时返回 null —— 那是对的,
        因为**不许替核心层挑一个 id 发过去**(版本正则会被整个跳过)。
@@ -338,7 +355,7 @@ fun DetailPage(nav: NavController, entry: NavBackStackEntry) {
                     ) { tags.forEach { Tag(it) } }
                 }
 
-                item("actions") {
+                if (!isBoxSet) item("actions") {
                     val resume = d.dbl("resume_secs") ?: 0.0
                     val runtime = d.dbl("runtime_secs") ?: 0.0
                     val nextEp = episodes.firstOrNull { !it.played } ?: episodes.firstOrNull()
@@ -439,6 +456,31 @@ fun DetailPage(nav: NavController, entry: NavBackStackEntry) {
                         app, episodes, currentId = route.itemId,
                         onOpen = { ep -> nav.navigate(Route.Detail(ep.id, "Episode")) },
                     )
+                }
+
+                /* 合集的成员。**影片和剧集分成两段**(用户 2026-09-08:
+                   「合集要把影片和剧集分开,方便用户查找」)。
+                   分堆在核心层做(`emby.collectionItems`)—— 两端各分一次的话,
+                   迟早在「其它类型往哪儿归」上分叉,而那种不一致没人会报上来。 */
+                if (isBoxSet) {
+                    if (boxLoading) item("boxbusy") { SectionTitle("正在取合集内容…") }
+                    else if (boxMovies.isEmpty() && boxSeries.isEmpty() && boxOthers.isEmpty()) {
+                        // 说清是「空的」而不是「没拉到」。空着的话和还在加载长得一样。
+                        item("boxempty") { SectionTitle("这个合集里没有内容") }
+                    }
+                    listOf("影片" to boxMovies, "剧集" to boxSeries, "其它" to boxOthers)
+                        .forEach { (label, list2) ->
+                            if (list2.isEmpty()) return@forEach   // 一部都没有就整段不画
+                            item("box-$label") {
+                                // 用全站那条横滑轨道,不另搭一套(高度是常量,见 LpRow 的注释)
+                                LpRow(
+                                    "$label · ${list2.size}", list2,
+                                    { app.imageUrl(it.id, "Primary", 330) },
+                                    { it2 -> nav.navigate(
+                                        Route.Detail(it2.id, it2.type.ifEmpty { "Movie" })) },
+                                )
+                            }
+                        }
                 }
 
                 d.str("overview")?.takeIf { it.isNotBlank() }?.let { ov ->

@@ -96,6 +96,11 @@ fun SettingsPage(nav: NavController) {
                         nav.navigate(Route.SettingsSub("blocked"))
                     }
                     Hairline()
+                    // 和 PC 端读写同一份文件格式(docs/backup-format.md)
+                    LpCell("备份与还原", icon = LpIcons.folder) {
+                        nav.navigate(Route.SettingsSub("backup"))
+                    }
+                    Hairline()
                     LpCell("插件", icon = LpIcons.plugin) { nav.navigate(Route.Plugins) }
                     Hairline()
                     LpCell("文件浏览", icon = LpIcons.folder) { nav.navigate(Route.Browse) }
@@ -126,6 +131,7 @@ fun SettingsSubPage(nav: NavController, entry: NavBackStackEntry) {
     val title = when (route.group) {
         "appearance" -> "外观"; "player" -> "播放器"; "shot" -> "截屏"
         "mpvconf" -> "mpv 配置"
+        "backup" -> "备份与还原"
         "prefetch" -> "多线程加载"
         "blocked" -> "已屏蔽的内容"; "storage" -> "存储与数据目录"; else -> "关于"
     }
@@ -139,6 +145,7 @@ fun SettingsSubPage(nav: NavController, entry: NavBackStackEntry) {
                     "player" -> PlayerPrefsPanel()
                     "shot" -> ShotPanel()
                     "mpvconf" -> MpvConfPanel()
+                    "backup" -> BackupPanel()
                     "prefetch" -> PrefetchPanel()
                     "blocked" -> BlockedPanel()
                     "storage" -> StoragePanel()
@@ -313,6 +320,95 @@ private fun patch(o: JsonObject?, key: String, v: JsonPrimitive): JsonObject =
  * ★ 里面几行会被我们摘掉(vo / wid / config-dir 那几个:它们决定画面往哪儿画,
  *   放过去就是一片黑还不报错)。核心层会把摘掉的行写进日志。
  */
+/**
+ * 备份与还原(用户 2026-09-08)。
+ *
+ * ★ 和 PC 端**读写同一份文件**:格式、加密、合并规则全在核心层
+ * (`prefs.backupExport` / `backupImport`),两端只负责挑文件。
+ * 各写一份的话「互通」这件事就没有验收点了。
+ * ★ 文件也能交给第三方播放器 —— 容器就是 Richasy/Rodel 的 CommonConfig,
+ * 说明在 `docs/backup-format.md`。
+ *
+ * ☠ **导出必须让用户自己挑位置。** 写进应用私有目录再弹一句「已导出」的话,
+ * 那个目录任何文件管理器都进不去 —— 用户看见成功提示、然后什么也拿不到
+ * (导出日志那一栏踩过这一跤)。
+ */
+@Composable
+private fun BackupPanel() {
+    val app = LocalApp.current
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var withAccounts by remember { mutableStateOf(true) }
+    var withSettings by remember { mutableStateOf(true) }
+    var note by remember { mutableStateOf<String?>(null) }
+
+    val save = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            runCatching {
+                val r = app.call("prefs.backupExport", args(
+                    "accounts" to withAccounts, "settings" to withSettings)).obj()
+                val text = r.str("content") ?: error("核心层没有给出内容")
+                withContext(Dispatchers.IO) {
+                    ctx.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
+                }
+                note = "已导出 ${r.long("bytes") ?: 0} 字节。" + (r.str("warning") ?: "")
+            }.onSuccess { app.toast("备份已导出", ToastKind.Ok) }.onFailure { app.report(it) }
+        }
+    }
+
+    val open = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            runCatching {
+                /* 备份文件几十 KB 量级,整份读进来没问题;但还是要设上限 ——
+                   用户选错一个几百 MB 的文件时,不该是 OOM 崩掉。 */
+                val text = withContext(Dispatchers.IO) {
+                    ctx.contentResolver.openInputStream(uri)?.use {
+                        String(it.readBytes().let { b ->
+                            if (b.size > 4 * 1024 * 1024) error("这个文件太大,不像备份文件") else b
+                        })
+                    }
+                } ?: error("读不出这个文件")
+                // 先看清楚再写:还原是不可逆的,选错一个文件只能一台一台删回去
+                val pv = app.call("prefs.backupPreview", args("content" to text)).obj()
+                val r = app.call("prefs.backupImport", args(
+                    "content" to text,
+                    "accounts" to withAccounts, "settings" to withSettings)).obj()
+                note = "这份备份来自 ${pv.str("from") ?: "?"};还原 ${r.long("imported") ?: 0} 台," +
+                    "现在共 ${r.long("total") ?: 0} 台。" +
+                    if (r.bool("settings_restored")) "软件设置已还原,重启后全部生效。"
+                    else "这份备份里没有软件设置。"
+            }.onSuccess { app.toast("已还原", ToastKind.Ok) }.onFailure { app.report(it) }
+        }
+    }
+
+    Panel(Modifier.padding(Sp.x16)) {
+        LpCell("包含服务器地址与账号密码", value = if (withAccounts) "是" else "否",
+            onClick = { withAccounts = !withAccounts })
+        Hairline()
+        LpCell("包含软件设置", value = if (withSettings) "是" else "否",
+            onClick = { withSettings = !withSettings })
+        Hairline()
+        LpCell("导出到文件", sub = "选个位置存下来,PC 端能直接读", onClick = {
+            save.launch("LinPlayer-备份-" + System.currentTimeMillis() + ".lpbak")
+        })
+        Hairline()
+        LpCell("从文件还原", sub = "合并:这台机器上原有的服务器保留", onClick = {
+            open.launch(arrayOf("*/*"))
+        })
+        Hairline()
+        // ☠ 这句必须显眼:备份文件里带着 token 和密码,加密只是混淆级(密钥随文件走)
+        LpCell("勾了账号的备份文件里有你所有服务器的登录凭据,只做了混淆,别公开分享。",
+            arrow = false)
+        note?.let { Hairline(); LpCell(it, arrow = false) }
+    }
+}
+
 @Composable
 private fun MpvConfPanel() {
     val app = LocalApp.current

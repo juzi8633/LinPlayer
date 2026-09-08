@@ -11,6 +11,7 @@ import xyz.linplayer.app.data.Item
 import xyz.linplayer.app.data.Page
 import xyz.linplayer.app.data.Session
 import xyz.linplayer.app.data.UiPrefs
+import xyz.linplayer.app.ui.player.SubStyle
 import xyz.linplayer.app.ui.pages.Stream
 import xyz.linplayer.app.ui.pages.Version
 import xyz.linplayer.app.ui.pages.defaultVersion
@@ -515,5 +516,30 @@ class LogicTest {
         assertEquals("mpv", UiPrefs.otherEngine("exo"))
         // 存了个不认识的值时保守回到 exo(短按那边的 when 也把非 exo 当 mpv)
         assertEquals("exo", UiPrefs.otherEngine("垃圾值"))
+    }
+
+    /**
+     * 字幕位置的口径:**100 = 画面底边**(和 mpv 的 sub-pos 一致)。
+     *
+     * ☠ 写成 `position / 100f` 的话方向是反的 —— 表现是「往下拖字幕往上跑」。
+     *   这类错误在两端各犯一次会互相抵消,所以必须在**这一端**单独钉住。
+     */
+    @Test fun `字幕位置一百是底边越小越靠上`() {
+        assertEquals(0f, SubStyle.bottomPadFraction(100))
+        assertEquals(0.5f, SubStyle.bottomPadFraction(50))
+        assertEquals(1f, SubStyle.bottomPadFraction(0))
+        // >100 是压进画面下面的黑边,文本字幕这一层表达不了,夹回 0
+        assertEquals(0f, SubStyle.bottomPadFraction(150))
+    }
+
+    /** 字幕样式的步进要**夹在 mpv 认的区间里** —— 超出去 mpv 只会静默拒绝。 */
+    @Test fun `字幕样式步进夹在合法区间`() {
+        assertEquals(1.1, SubStyle.stepScale(1.0, true), 1e-9)
+        assertEquals(0.2, SubStyle.stepScale(0.2, false), 1e-9)   // 到底了不再往下
+        assertEquals(4.0, SubStyle.stepScale(4.0, true), 1e-9)
+        assertEquals(150, SubStyle.stepPos(150, true))
+        assertEquals(0, SubStyle.stepPos(0, false))
+        assertEquals(10.0, SubStyle.stepBorder(10.0, true), 1e-9)
+        assertEquals(0.0, SubStyle.stepBorder(0.0, false), 1e-9)
     }
 }

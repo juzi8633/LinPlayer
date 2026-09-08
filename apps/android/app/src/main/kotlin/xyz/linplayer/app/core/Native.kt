@@ -68,6 +68,17 @@ internal object Native {
     /** 返回 -1 出错 / 0 和上一帧一样(不必重绘)/ 1 位图已更新。 */
     external fun assRender(bitmap: android.graphics.Bitmap, posMs: Long, force: Boolean): Int
 
+    /** 这一帧的字幕内容变了没有。**不碰位图** —— 双缓冲用它决定要不要画。 */
+    external fun assChanged(posMs: Long): Boolean
+
+    /**
+     * 字幕样式:缩放 + 竖直位置。`position` 用 **mpv 的口径**(0 顶 .. 100 底)。
+     *
+     * ★ 只有这两项对 ASS 生效。描边和粗体不在这里 —— ASS 自带样式,
+     *   盖掉它就是把特效字幕改成了另一份字幕。
+     */
+    external fun assSetStyle(scale: Double, position: Int)
+
     external fun assClose()
 
     /**

@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -37,7 +37,20 @@ public static class Smooth
     {
         public double TargetX, TargetY;
         public bool Running;
+        /// <summary>这一轮动画的代次。换代 = 让上一轮的帧回调自己退场,见 <see cref="Run"/>。</summary>
+        public int Gen;
+        /// <summary>上一帧是什么时候跑的。用来认出「帧不再来了」。</summary>
+        public DateTime LastFrame = DateTime.MinValue;
     }
+
+    /// <summary>
+    /// 多久没来帧就当这一轮动画已经死了。
+    ///
+    /// <para><see cref="TopLevel.RequestAnimationFrame"/> 挂在渲染循环上 ——
+    /// 窗口最小化 / 被完全遮住时渲染循环会停,排进去的那一帧**永远不会来**。
+    /// 250ms 是 15 帧,正常动画每帧都在刷新,不可能误判。</para>
+    /// </summary>
+    private static readonly TimeSpan FrameStall = TimeSpan.FromMilliseconds(250);
 
     /// <summary>
     /// 全应用装一次。用类级处理器,不是逐个 ScrollViewer 去 Attach。
@@ -138,14 +151,31 @@ public static class Smooth
         d.TargetY = Math.Clamp(d.TargetY, 0, Math.Max(0, sv.Extent.Height - sv.Viewport.Height));
     }
 
+    /// <summary>
+    /// 跑动画。<b>「点左右翻页按钮有概率卡死」的根因就在这里</b>:
+    /// <c>Running</c> 原来是个只进不出的闩,卡住之后每次点按钮都当场 return。
+    ///
+    /// <para>三道闸缺一不可:每帧重夹目标、一步都没挪就收尾、帧停了就换代重启。
+    /// 两条把它卡住的路(虚拟化轨道的 Extent 会缩、最小化时渲染循环停)
+    /// 见 <c>docs/lessons/ui-desktop.md</c>。自检 <c>LP_SCROLLPROBE=1</c>。</para>
+    /// </summary>
     private static void Run(ScrollViewer sv, Driver d)
     {
-        if (d.Running) return; // 已经在跑了,它每帧会读最新的目标
+        // 还在正常跑就让它接着跑(它每帧会读最新的目标);帧停了就换代重启
+        if (StillAlive(d.Running, d.LastFrame)) return;
         if (TopLevel.GetTopLevel(sv) is not { } top) { sv.Offset = new Vector(d.TargetX, d.TargetY); return; }
 
         d.Running = true;
+        d.LastFrame = DateTime.UtcNow;
+        var gen = ++d.Gen;
         void Frame(TimeSpan _)
         {
+            // 上一轮的帧回调在这里退场 —— 不判的话换代之后会有两条循环同时改 Offset
+            if (gen != d.Gen) return;
+            d.LastFrame = DateTime.UtcNow;
+
+            // 每帧重夹:虚拟化面板的 Extent 会变,点击那一刻夹过的值可能已经不合法了
+            Clamp(sv, d);
             var cur = sv.Offset;
             var dx = d.TargetX - cur.X;
             var dy = d.TargetY - cur.Y;
@@ -158,6 +188,16 @@ public static class Smooth
             }
             sv.Offset = new Vector(cur.X + dx * Approach, cur.Y + dy * Approach);
 
+            /* 要挪的距离 ≥ Snap,那这一步至少该挪 Snap×Approach。一点都没挪
+               = ScrollViewer 把我们要去的位置拒了,再排下一帧也是同样的结果。 */
+            if ((sv.Offset - cur).Length < 0.01)
+            {
+                d.TargetX = sv.Offset.X;
+                d.TargetY = sv.Offset.Y;
+                d.Running = false;
+                return;
+            }
+
             /* 每帧都要重新挂:RequestAnimationFrame 是**一次性**的。
                而且要重新取 TopLevel —— 页面换掉之后原来那个可能已经不在树上了,
                继续往一个卸载了的窗口上排帧是一条永远不会停的循环。 */
@@ -165,5 +205,43 @@ public static class Smooth
             else d.Running = false;
         }
         top.RequestAnimationFrame(Frame);
+    }
+
+    /// <summary>
+    /// 上一轮动画还活着吗。
+    ///
+    /// <para>抽出来是因为<b>自检要走这一句</b>,而不是走一份抄本 ——
+    /// 抄本测的是抄本(本仓栽过两次)。判 <c>Running</c> 一个字段是不够的:
+    /// 它在窗口最小化时会永远停在 true。</para>
+    /// </summary>
+    internal static bool StillAlive(bool running, DateTime lastFrame) =>
+        running && DateTime.UtcNow - lastFrame < FrameStall;
+
+    /// <summary>
+    /// 自检:让驱动器进「目标去不了」的死角,再看它退不退得出来。
+    ///
+    /// <para>返回 <c>(卡住没有, 试了几帧)</c>。<c>LP_SCROLLPROBE=1</c> 走这一条,
+    /// 见 <c>Program.cs</c> —— 不开窗口,所以能在 CI 里跑。</para>
+    /// </summary>
+    internal static (bool Stuck, int Frames) SelfCheckStuck(ScrollViewer sv, double impossibleTarget)
+    {
+        var d = Drivers.GetValue(sv, _ => new Driver());
+        d.TargetX = impossibleTarget;
+        d.TargetY = 0;
+        d.Running = true;               // 装成「上一轮还在跑」
+        d.LastFrame = DateTime.MinValue; // 而且它的帧早就不来了
+        var gen = ++d.Gen;
+        // 手动跑帧循环:自检环境里没有渲染循环,RequestAnimationFrame 永远不回调
+        for (var i = 1; i <= 60; i++)
+        {
+            if (gen != d.Gen) return (false, i);
+            Clamp(sv, d);
+            var cur = sv.Offset;
+            var dx = d.TargetX - cur.X;
+            if (Math.Abs(dx) < Snap) return (false, i);
+            sv.Offset = new Vector(cur.X + dx * Approach, cur.Y);
+            if ((sv.Offset - cur).Length < 0.01) return (false, i);
+        }
+        return (true, 60);
     }
 }

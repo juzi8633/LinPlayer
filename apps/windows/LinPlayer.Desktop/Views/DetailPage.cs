@@ -139,6 +139,7 @@ public sealed class DetailPage : PageBase
                 if (cached is { ValueKind: JsonValueKind.Object } c0)
                 {
                     if (Str(c0, "type_") is "Series" or "Season") _episodesTask = LoadEpisodes(itemId);
+                    else if (Str(c0, "type_") == "BoxSet") _ = FillCollection(itemId);
                     Dispatcher.UIThread.Post(() => Paint(c0));
                     if (_episodesTask is not null)
                     {
@@ -163,6 +164,11 @@ public sealed class DetailPage : PageBase
                 // 是剧 / 季才有分集。 在渲染之前就发出去,让它和布局并行跑。
                 var type = Str(d, "type_");
                 if (type is "Series" or "Season") _episodesTask = LoadEpisodes(itemId);
+                /* ☠ **合集原来一个字都画不出来。** 这条判断和 core 的 withChildren
+                   判断一样只认 Series/Season,而合集本身没有简介、没有年份、
+                   没有演职员 —— 整页就只剩一个标题(用户 2026-09-08:
+                   「合集无法正确显示,显示不出来任何的东西」)。 */
+                else if (type == "BoxSet") _ = FillCollection(itemId);
 
                 Dispatcher.UIThread.Post(() => Paint(d));
                 if (_episodesTask is not null)
@@ -251,6 +257,64 @@ public sealed class DetailPage : PageBase
                 return old.Select(CardItem.From).ToList();
         }
         return all;
+    }
+
+    /// <summary>
+    /// 合集的成员。**影片和剧集分成两段**(用户 2026-09-08:「合集要把影片和剧集分开,
+    /// 方便用户查找」)。
+    ///
+    /// <para>分堆在核心层做(<c>emby.collectionItems</c>)——两端各分一次的话,
+    /// 迟早会在「其它类型往哪儿归」上分叉,而那种不一致没人会报上来。</para>
+    /// </summary>
+    private async Task FillCollection(string itemId)
+    {
+        var s = Nav.Session;
+        if (s is null) return;
+        var key = MetaCache.Key("emby.collectionItems", new { s.server, item_id = itemId });
+        // 缓存先行,和详情主体同一条口径:合集页也是会被反复进出的
+        if (MetaCache.Peek(key) is { ValueKind: JsonValueKind.Object } hit)
+            Dispatcher.UIThread.Post(() => PaintCollection(hit));
+        try
+        {
+            var r = await _core.EmbyCollectionItems(new
+            {
+                s.server, s.token, s.user_id, s.device_id, item_id = itemId,
+            });
+            MetaCache.Put(key, r);
+            Dispatcher.UIThread.Post(() => PaintCollection(r));
+        }
+        catch (Exception e)
+        {
+            // 已经有缓存就别用报错盖掉它 —— 那是「本来看得见,刷新一下没了」
+            if (MetaCache.Peek(key) is { ValueKind: JsonValueKind.Object }) return;
+            Dispatcher.UIThread.Post(() =>
+                _episodesHost.Content = Dim($"这个合集拉不出来:{LibraryPage.Advice(e)}"));
+        }
+    }
+
+    private void PaintCollection(JsonElement r)
+    {
+        var host = new StackPanel { Spacing = 18 };
+        void Section(string title, string field, bool wide)
+        {
+            var items = r.TryGetProperty(field, out var arr) && arr.ValueKind == JsonValueKind.Array
+                ? arr.EnumerateArray().Select(CardItem.From).ToList() : [];
+            if (items.Count == 0) return;   // 一部电影都没有的合集,不画一行空标题
+            host.Children.Add(H2($"{title} · {items.Count}"));
+            host.Children.Add(Carousel.Rail(items,
+                it => new Card(_core, _server, it, wide,
+                    x => Nav.Push(new DetailPage(_core, _server, x.Id)),
+                    width: wide ? EpisodeCardWidth : 168),
+                wide ? EpisodeCardWidth * 9 / 16 : 168 * 3 / 2, out _));
+        }
+        // 影片在前:合集绝大多数是电影系列,把它排在剧集后面等于每次都要多滚一屏
+        Section("影片", "movies", false);
+        Section("剧集", "series", false);
+        Section("其它", "others", false);
+        _episodesHost.Content = host.Children.Count > 0
+            ? host
+            // 说清是「空的」而不是「没拉到」。空着的话和还在加载长得一样。
+            : Dim("这个合集里没有内容(或者服务器没有返回)。");
     }
 
     /// <summary>分集列表最近一次画出来的那一份(原文)。用来判「真数据和缓存一个字没变」。</summary>
@@ -372,6 +436,13 @@ public sealed class DetailPage : PageBase
         if (isShow)
         {
             _episodesHost.Content = Skeleton.Grid(true, 8, 214);
+            body.Children.Add(Loose(_episodesHost));
+        }
+        // 合集的成员和分集共用这个挂点:两者是同一件事(「这个条目下面有什么」),
+        // 各挂一个的话重画时要记得清两处,而漏清的表现是内容叠两份。
+        else if (type == "BoxSet")
+        {
+            _episodesHost.Content = Skeleton.Grid(false, 8, 168);
             body.Children.Add(Loose(_episodesHost));
         }
 
