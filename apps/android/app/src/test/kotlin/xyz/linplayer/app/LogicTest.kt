@@ -20,7 +20,9 @@ import xyz.linplayer.app.ui.pages.cornerCode
 import xyz.linplayer.app.ui.pages.cornerLabel
 import xyz.linplayer.app.ui.pages.withScheme
 import xyz.linplayer.app.ui.player.VideoFit
+import xyz.linplayer.app.ui.player.assCarrier
 import xyz.linplayer.app.ui.player.assHeaderOf
+import xyz.linplayer.app.ui.player.assPayload
 import xyz.linplayer.app.ui.player.assTimeMs
 import xyz.linplayer.app.ui.player.isAssMime
 import xyz.linplayer.app.ui.player.shotCorner
@@ -244,14 +246,14 @@ class LogicTest {
      * 切错的表现是「字幕出来了但样式全丢」—— 编译绿、不报错、只能靠肉眼。
      */
     @Test fun `media3 的 Dialogue 行要切成 libass 的 chunk 口径`() {
-        // 原始字符串:ASS 满是反斜杠,转义写法一眼看不出对不对
-        val line = """Dialogue: 0:00:12:34,0:00:15:00,7,0,OP-CN,,0,0,0,,{\pos(640,80)\fad(300,300)}风吹过的夏天"""
+        // 原始字符串:ASS 满是反斜杠,转义写法一眼看不出对不对。
+        // 第一格恒是 media3 前缀里那个常量 0,第二格是**时长**不是结束时刻。
+        val line = """Dialogue: 0:00:00:00,0:00:02:66,7,0,OP-CN,,0,0,0,,{\pos(640,80)\fad(300,300)}风吹过的夏天"""
         val ev = splitMedia3Dialogue(line)
         assertNotNull("这一行就是 media3 的真实形状,拆不出来等于整条路不通", ev)
         ev!!
-        // 0:00:12:34 = 12 秒 34 百分秒
-        assertEquals("起点算错了 —— 最后一段是**百分秒**不是毫秒", 12_340L, ev.startMs)
-        assertEquals("时长算错了", 2_660L, ev.durMs)
+        // 0:00:02:66 = 2 秒 66 百分秒
+        assertEquals("时长算错了 —— 最后一段是**百分秒**不是毫秒", 2_660L, ev.durMs)
         assertEquals(
             "正文必须是 ReadOrder 打头的 Matroska 口径,前两段时间要切掉",
             """7,0,OP-CN,,0,0,0,,{\pos(640,80)\fad(300,300)}风吹过的夏天""",
@@ -440,6 +442,22 @@ class LogicTest {
         // 只给一条(别的解封装器)时原样用它
         assertEquals(String(real), String(assHeaderOf(listOf(real))!!))
         assertNull(assHeaderOf(emptyList()))
+    }
+
+    /**
+     * ASS 事件搭 media3 的 cue 便车回来,时间到了才落地 —— 因为解析那一侧
+     * 拿不到样本时间(media3 把 `Dialogue:` 的开始时间写死成 0)。
+     * 包和拆必须严丝合缝,漏一点就是「一条字幕都不出」或者「屏幕上冒出乱码」。
+     */
+    @Test fun `ASS 事件搭便车回来时时长和正文都还在`() {
+        val body = "0,0,默认,,0,0,0,,{\\pos(960,1000)}你好，世界"
+        val (dur, got) = assPayload(assCarrier(4200, body))!!
+        assertEquals(4200L, dur)
+        assertEquals(body, got)
+
+        // 普通字幕不能被当成便车:那会让真字幕凭空消失
+        assertNull(assPayload("普通字幕"))
+        assertNull(assPayload(null))
     }
 
     private fun sub(

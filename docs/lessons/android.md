@@ -1014,3 +1014,35 @@ Emby 的 `MediaStream.DisplayTitle` 是**服务器自己拼的**「语言 + 格�
 
 同一份日志里画面是 `2460×1046`(片源 3840×1632)而字幕平面是 `1920×1080` ——
 两者比例 2.35 vs 1.78,竖向差 24%。这不是推测,是打出来的数。
+
+#### media3 的 `Dialogue:` 行里**没有**开始时间
+
+`MatroskaExtractor` 拼的前缀是常量 `Dialogue: 0:00:00:00,0:00:00:00,`,
+之后只回填**第二格**、填的还是 `blockDurationUs`
+(1.11.0 字节码:`setSubtitleEndTime(codecId, blockDurationUs, data)` 往偏移 21 写)。
+所以那一行的形状是「**0,时长,正文**」,第一格从头到尾是那个常量 0。
+
+真正的播放时刻在**样本**上,由 `SubtitleTranscodingTrackOutput` 按
+`timeUs + CuesWithTiming.startTimeUs` 定位;而 `SubtitleParser.parse()` 收到的
+`OutputOptions` 是 `allCues()`,**一个时间戳都不带**。也就是说解析器那一侧
+根本不可能知道这条什么时候播。
+
+上一版把第一格那个 0 当成事件起点喂给 `ass_process_chunk` —— 整片字幕全排在片头,
+播到哪儿都是空的。指纹是日志里那句 `第一条事件进 libass @0ms`(当时播到 730s)。
+
+**解法:让事件搭 media3 的 cue 便车。** 解析器输出一条带记号的 cue
+(`startTimeUs=0`,时长照填),media3 自己加上样本时间;`onCues` 在**播到那一刻**
+收下、拆出正文喂 libass、再把这条从可见 cue 里摘掉。
+副作用全是好的:切轨不用自己重放(media3 会从当前位置重新派发),
+per-track 事件缓存和 8MB 闸门整套可以删掉。
+
+#### 「自适应」档会把字幕一起裁出屏幕,还会让 libass 拉宽字
+
+`画面 Cover 容器 2460×1080 → 画到 2460×1384`:画面矩形比容器**大**。
+字幕层跟着用这块矩形,底部那行就摆到屏幕外面 —— 这一档下字幕整条不见。
+字幕的可视范围要取「画面矩形 ∩ 容器」。
+
+裁完还有第二层:`ass_set_storage_size` 是**粘的**,画布和片源不再等比时
+还留着上一次那份 storage,libass 会当成非方像素去补偿,字被横向拉宽。
+裁过就传 `0` 明确告诉它按方像素算,而且**必须无条件下发**
+(`if (w>0&&h>0)` 那种写法根本清不掉旧值)。

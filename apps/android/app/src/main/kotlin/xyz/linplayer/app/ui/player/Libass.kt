@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.annotation.OptIn
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.text.Cue
 import androidx.media3.common.util.Consumer
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.extractor.text.CuesWithTiming
@@ -27,43 +28,35 @@ import xyz.linplayer.app.core.Native
  * 那等于把包里已有的东西再编一遍,还多一份要跟着升级的依赖。
  * 桥在 `core/ffi/libass_android.go`。
  *
- * ## 事件从哪来
+ * ## 事件从哪来,时间又从哪来
  *
  * media3 1.11 的字幕解析发生在**解封装阶段**(`TextRenderer` 已经没有
- * `SubtitleParser.Factory` 这个构造参数了,只剩消费解析好的样本),
- * 所以唯一的入口是 `DefaultMediaSourceFactory.setSubtitleParserFactory`。
- * 那一层会把**所有**文本轨都解一遍,不只是选中的那条 —— 所以这里按
- * `Format.id` 分桶存,切轨时重放,而不是一股脑喂给 libass。
+ * `SubtitleParser.Factory` 这个构造参数了),所以唯一的入口是
+ * `DefaultMediaSourceFactory.setSubtitleParserFactory`。
+ *
+ * ☠☠ 但**解析器拿不到这条样本的播放时间**:`parse()` 收到的 `OutputOptions`
+ * 是 `allCues()`,而 media3 重写过的 `Dialogue:` 行里开始时间**恒 0**
+ * (`MatroskaExtractor.setSubtitleEndTime` 只回填结束那一格,起始那格一直是
+ * `SSA_PREFIX` 里的 `0:00:00:00`)。真正的时间在样本上,由
+ * `SubtitleTranscodingTrackOutput` 按 `timeUs + startTimeUs` 定位。
+ *
+ * 所以事件**搭 media3 的 cue 便车**回去(见 [assCarrier]),由 `ExoSubtitles`
+ * 在播到那一刻收下、喂给 libass、再把它从可见 cue 里摘掉。
+ * 顺带的好处:切轨不用重放 —— media3 自己会从当前位置重新派发。
  *
  * ## 开轨的时机不由我们定
  *
- * `onTracksChanged`(切轨请求)和第一批字幕样本(数据)**谁先到是不定的**,
- * 而轨道表往往先到 —— 那一刻缓存是空的。上一版在那里开不起来就直接放弃、
- * 再没有人重试:事件一路被解析器吃掉、libass 一次都没开过,一句错都不报。
- * 现在两边都会触发开轨([activateTrack] 记下要哪条,`header`/`chunk` 到了补开)。
+ * `onTracksChanged`(切轨请求)和 ASS 头(解封装)谁先到是不定的,
+ * 两边都会触发开轨:[activateTrack] 记下要哪条,[header] 到了补开。
  */
 @OptIn(UnstableApi::class)
 object Libass {
 
-    /** 一条事件:Matroska 口径的正文 + 起止(毫秒)。 */
-    private class Ev(val body: ByteArray, val startMs: Long, val durMs: Long)
-
-    private class Buf(var header: ByteArray?) {
-        val events = ArrayList<Ev>()
-        var bytes = 0
-    }
-
-    /* ☠ 单条轨最多留 8MB / 4 万条。正常一集 ASS 是几十到两百 KB ——
-       这道闸挡的是「某个文件把一整部剧的事件塞进一条轨」那种病态输入,
-       不设的话表现是切一次轨就 OOM。到闸之后**只停止留存,不停止直通**:
-       当前正在放的那条照样是全的。 */
-    private const val MAX_BYTES = 8 shl 20
-    private const val MAX_EVENTS = 40_000
-
     private const val TAG = "lp-libass-kt"
 
     private val lock = Any()
-    private val bufs = LinkedHashMap<String, Buf>()
+    /** 每条轨的 ASS 头。解封装时就到了,比切轨请求早 —— 所以先存下来。 */
+    private val heads = LinkedHashMap<String, ByteArray?>()
     private var active: String? = null
     private var opened = false
     /** 想放的那条轨。数据还没到就先记下来,等第一批数据到了自己开 —— 见 [activateTrack]。 */
@@ -96,30 +89,26 @@ object Libass {
     // ------------------------------------------------------------ 喂数据
 
     fun header(id: String, header: ByteArray?) = synchronized(lock) {
-        bufs.getOrPut(id) { Buf(header) }.header = header ?: bufs[id]?.header
-        openWantedLocked(id)
+        heads[id] = header ?: heads[id]
+        // 切轨请求先到、头后到:头到了自己补开
+        if (!opened && id == wanted) openLocked(id, wantedFonts)
+        Unit
     }
 
-    fun chunk(id: String, body: ByteArray, startMs: Long, durMs: Long) = synchronized(lock) {
-        val b = bufs.getOrPut(id) { Buf(null) }
-        if (b.bytes < MAX_BYTES && b.events.size < MAX_EVENTS) {
-            b.events.add(Ev(body, startMs, durMs))
-            b.bytes += body.size
-        }
-        // 正在放的这条直通。libass 自己按 ReadOrder 去重,seek 之后重复喂不会画两遍
-        if (id == active && opened) {
-            Native.assChunk(body, startMs, durMs)
-            if (fed++ == 0) Logs.d(TAG, "第一条事件进 libass id=$id @${startMs}ms ${body.size} 字节")
-        } else openWantedLocked(id)
+    /**
+     * 一条事件。**时间由调用方给**,因为解析器那一侧根本拿不到 —— 见 [assCarrier]。
+     *
+     * libass 按 ReadOrder 去重,所以同一条重复喂(seek、cue 反复派发)不会画两遍。
+     */
+    fun chunk(body: ByteArray, startMs: Long, durMs: Long): Unit = synchronized(lock) {
+        if (!opened) return
+        Native.assChunk(body, startMs, durMs)
+        if (fed++ == 0) Logs.d(TAG, "第一条事件进 libass @${startMs}ms ${body.size} 字节")
     }
 
     // ------------------------------------------------------------ 切轨
 
-    /**
-     * 切到某条内封 ASS 轨。**重放它的全部事件** ——
-     * 解封装阶段早就把每条轨都解过一遍了,不重放的话切过去是一片空白,
-     * 而且不会有任何东西再来触发它。
-     */
+    /** 切到某条内封 ASS 轨。事件由 media3 按播放时间派发过来,这里只管开。 */
     fun activateTrack(id: String, fontsDir: String): Boolean = synchronized(lock) {
         if (!available) return false
         wanted = id
@@ -128,25 +117,18 @@ object Libass {
         return openLocked(id, fontsDir)
     }
 
-    /** 数据先到、切轨请求后到,或者反过来 —— 两种顺序都要能开起来。 */
-    private fun openWantedLocked(id: String) {
-        if (!opened && id == wanted) openLocked(id, wantedFonts)
-    }
-
     private fun openLocked(id: String, fontsDir: String): Boolean {
-        val b = bufs[id] ?: return false
-        val rc = Native.assOpen(b.header, fontsDir)
-        Logs.d(TAG, "开轨 $id rc=$rc 头 ${b.header?.size ?: 0} 字节" +
-            " 样式 ${b.header?.let { h -> String(h, Charsets.UTF_8).split("Style:").size - 1 } ?: 0} 条" +
-            " 事件 ${b.events.size} 条")
+        if (!heads.containsKey(id)) return false      // 头还没到,等 header() 来补开
+        val h = heads[id]
+        val rc = Native.assOpen(h, fontsDir)
+        val styles = h?.let { String(it, Charsets.UTF_8).split("Style:").size - 1 } ?: 0
+        Logs.d(TAG, "开轨 $id rc=$rc 头 ${h?.size ?: 0} 字节 样式 $styles 条")
         if (rc != 0) {
             // 开不起来是硬失败(建轨/建渲染器失败),重试只会每来一条字幕就再失败一次
             opened = false; active = null; wanted = null
             return false
         }
-        for (e in b.events) Native.assChunk(e.body, e.startMs, e.durMs)
-        fed = b.events.size
-        drawn = 0
+        fed = 0; drawn = 0
         active = id
         opened = true
         applySizeLocked()
@@ -186,7 +168,7 @@ object Libass {
         opened = false
         active = null
         wanted = null
-        bufs.clear()
+        heads.clear()
         // ★ 字体名单跟着清,但**已经灌进 libass 库里的字体不撤** ——
         //   撤要销毁整个 ASS_Library(字体目录重扫几十毫秒),而多留几份
         //   上一集的字体只是占点内存,libass 按名字查,不会画错。
@@ -297,8 +279,13 @@ private class LibassParser(private val id: String, format: Format) : SubtitlePar
         output: Consumer<CuesWithTiming>,
     ) {
         val ev = splitMedia3Dialogue(String(data, offset, length, Charsets.UTF_8)) ?: return
-        Libass.chunk(id, ev.body.toByteArray(Charsets.UTF_8), ev.startMs, ev.durMs)
-        // 故意什么都不 output:这一条已经交给 libass 了
+        /* 起点填 0 是**对的**:`SubtitleTranscodingTrackOutput` 会把它加到样本时间上,
+           我们要的正是「这条样本自己的时刻」。真正的 ASS 事件到 [assPayload] 才落地。 */
+        output.accept(CuesWithTiming(
+            listOf(Cue.Builder().setText(assCarrier(ev.durMs, ev.body)).build()),
+            0L,
+            ev.durMs * 1000,
+        ))
     }
 
     override fun getCueReplacementBehavior() = Format.CUE_REPLACEMENT_BEHAVIOR_MERGE
@@ -323,11 +310,44 @@ internal fun assHeaderOf(data: List<ByteArray>): ByteArray? =
     data.lastOrNull { String(it, Charsets.UTF_8).contains("[Script Info]", true) }
         ?: data.lastOrNull()
 
-/** 一条切好的事件。`body` 已经是 `ass_process_chunk` 要的 Matroska 口径。 */
-data class AssEvent(val startMs: Long, val durMs: Long, val body: String)
+/**
+ * 一条切好的事件。`body` 已经是 `ass_process_chunk` 要的 Matroska 口径。
+ *
+ * **没有起始时间**,因为那一格里根本没有信息:见 [splitMedia3Dialogue]。
+ */
+data class AssEvent(val durMs: Long, val body: String)
+
+/** 便车的记号。用控制字符是因为它**不可能**出现在真字幕文本里。 */
+private const val MARK = "lp-ass"
 
 /**
- * 把 media3 重写过的那行 `Dialogue:` 拆成 libass 要的三样东西。
+ * 把事件包成一条 cue 交回 media3,让它按**样本时间**派发。
+ *
+ * ☠☠ 这是「libass 开得起来、样式也对,就是一个字不出」的最后一层:
+ * 解析器那一侧只知道时长、不知道这条什么时候播(media3 把开始时间写死成 0),
+ * 上一版把那个 0 当成事件起点喂给 `ass_process_chunk` —— 于是**整片字幕全排在片头**,
+ * 播到哪儿都是空的。真机日志里那句「第一条事件进 libass @0ms」就是指纹。
+ */
+internal fun assCarrier(durMs: Long, body: String): String = "$MARK$durMs$MARK$body"
+
+/** 从 cue 文本里取回 `(时长, 正文)`。不是我们塞的就返回 null,照常当普通字幕画。 */
+internal fun assPayload(text: CharSequence?): Pair<Long, String>? {
+    val s = text?.toString() ?: return null
+    if (!s.startsWith(MARK)) return null
+    val end = s.indexOf(MARK, MARK.length)
+    if (end < 0) return null
+    val dur = s.substring(MARK.length, end).toLongOrNull() ?: return null
+    return dur to s.substring(end + MARK.length)
+}
+
+/**
+ * 把 media3 重写过的那行 `Dialogue:` 拆成 libass 要的两样东西。
+ *
+ * ☠☠ **第二格是「时长」,第一格是废的。** media3 拼的前缀是常量
+ * `Dialogue: 0:00:00:00,0:00:00:00,`,之后只回填**第二格**、填的是 `blockDurationUs`
+ * (1.11.0 字节码:`setSubtitleEndTime(codecId, blockDurationUs, data)` 往偏移 21 写)。
+ * 第一格从头到尾是那个常量 0 —— 这条样本什么时候播,信息在样本上,不在这行里。
+ * 上一版把它当成事件起点,于是整片字幕全排在片头(见 [assCarrier])。
  *
  * 抽成顶层函数不是为了好看,是**为了能在 JVM 上测** ——
  * 这一步错了不会报错,只会「字幕出来了但样式全丢」或者「时间全偏」,
@@ -342,10 +362,9 @@ internal fun splitMedia3Dialogue(line: String): AssEvent? {
     if (c1 < 0) return null
     val c2 = body.indexOf(',', c1 + 1)
     if (c2 < 0) return null
-    val start = assTimeMs(body.substring(0, c1))
-    val end = assTimeMs(body.substring(c1 + 1, c2))
-    if (start < 0 || end < 0) return null
-    return AssEvent(start, (end - start).coerceAtLeast(0), body.substring(c2 + 1))
+    val dur = assTimeMs(body.substring(c1 + 1, c2))
+    if (dur < 0) return null
+    return AssEvent(dur, body.substring(c2 + 1))
 }
 
 /**

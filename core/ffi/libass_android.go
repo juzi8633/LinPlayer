@@ -194,13 +194,17 @@ JNIEXPORT void JNICALL Java_xyz_linplayer_app_core_Native_assChunk(
 
 // frame = 位图尺寸(字幕画在多大的画布上);storage = 视频本身的分辨率。
 // storage 不给的话,按 PlayResX/Y 定位的特效字幕会整体错位 —— mpv 也是分开设的。
+//
+// storage 传 0 = 明确告诉 libass「按方像素算」。这个值是**粘的**,所以必须无条件下发:
+// 「自适应」档裁过画面之后画布和片源不再等比,还留着上一次那份 storage 的话
+// libass 会当成非方像素去补偿,字被横向拉宽一截。
 JNIEXPORT void JNICALL Java_xyz_linplayer_app_core_Native_assSetSize(
         JNIEnv *e, jclass c, jint frameW, jint frameH, jint videoW, jint videoH) {
     (void)e; (void)c;
     pthread_mutex_lock(&g_mu);
     if (g_rend) {
         ass_set_frame_size(g_rend, frameW, frameH);
-        if (videoW > 0 && videoH > 0) ass_set_storage_size(g_rend, videoW, videoH);
+        ass_set_storage_size(g_rend, videoW, videoH);
         g_painted = 0;   // 尺寸变了,上一帧的内容作废
     }
     pthread_mutex_unlock(&g_mu);

@@ -290,6 +290,15 @@ fun ExoSurface(
         val box = with(LocalDensity.current) {
             Modifier.requiredSize(r.width.toDp(), r.height.toDp())
         }
+        /* ☠ 字幕层**不跟着「自适应」一起被裁出屏幕**。Cover 档的画面矩形比容器大
+           (实测 2460×1384 塞进 2460×1080),字幕按画面底边摆就摆到屏幕外面去了 ——
+           表现是这一档下字幕整条不见。坐标系跟画面走,可视范围取两者的交。 */
+        val subBox = with(LocalDensity.current) {
+            Modifier.requiredSize(
+                minOf(r.width, constraints.maxWidth).toDp(),
+                minOf(r.height, constraints.maxHeight).toDp(),
+            )
+        }
         AndroidView(
             modifier = box,
             // Shot.bind:截屏从这块面上 PixelCopy 读回当前帧(View.draw 只能拿到一个透明洞)
@@ -297,8 +306,11 @@ fun ExoSurface(
                 SurfaceView(ctx).also { player.setVideoSurfaceView(it); Shot.bind(it) }
             },
         )
-        LibassLayer(player, box, videoW, videoH)
-        ExoSubtitles(player, box)
+        /* 裁过之后画布和片源不再等比,这时**不能**再把片源尺寸报给 libass ——
+           它会当成非方像素去补偿,字被横向拉宽。传 0 = 按方像素算。 */
+        val cropped = r.width > constraints.maxWidth || r.height > constraints.maxHeight
+        LibassLayer(player, subBox, if (cropped) 0 else videoW, if (cropped) 0 else videoH)
+        ExoSubtitles(player, subBox)
     }
     DisposableEffect(player) { onDispose { Shot.bind(null); player.clearVideoSurface() } }
 }
@@ -415,7 +427,17 @@ fun ExoSubtitles(player: ExoPlayer, m: Modifier = Modifier) {
     var cues by remember(player) { mutableStateOf<List<Cue>>(emptyList()) }
     DisposableEffect(player) {
         val l = object : Player.Listener {
-            override fun onCues(cueGroup: CueGroup) { cues = cueGroup.cues }
+            /* ★ 特效字幕在这一站下车。它是搭 media3 的 cue 便车过来的([assCarrier]),
+               **到了这里才知道真正该在第几毫秒播** —— 解析那一侧拿不到时间。
+               时刻用 `currentPosition`:渲染循环读的也是它,同一把尺才不会错位。 */
+            override fun onCues(cueGroup: CueGroup) {
+                val nowMs = player.currentPosition
+                cues = cueGroup.cues.filter { c ->
+                    val p = assPayload(c.text) ?: return@filter true
+                    Libass.chunk(p.second.toByteArray(Charsets.UTF_8), nowMs, p.first)
+                    false
+                }
+            }
         }
         player.addListener(l)
         onDispose { player.removeListener(l) }
