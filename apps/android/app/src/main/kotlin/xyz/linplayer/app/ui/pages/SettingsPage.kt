@@ -76,6 +76,8 @@ fun SettingsPage(nav: NavController) {
                     Hairline()
                     LpCell("播放器", icon = LpIcons.play) { nav.navigate(Route.SettingsSub("player")) }
                     Hairline()
+                    LpCell("mpv 配置", icon = LpIcons.file) { nav.navigate(Route.SettingsSub("mpvconf")) }
+                    Hairline()
                     LpCell("截屏", icon = LpIcons.camera) { nav.navigate(Route.SettingsSub("shot")) }
                 }
             }
@@ -123,6 +125,7 @@ fun SettingsSubPage(nav: NavController, entry: NavBackStackEntry) {
 
     val title = when (route.group) {
         "appearance" -> "外观"; "player" -> "播放器"; "shot" -> "截屏"
+        "mpvconf" -> "mpv 配置"
         "prefetch" -> "多线程加载"
         "blocked" -> "已屏蔽的内容"; "storage" -> "存储与数据目录"; else -> "关于"
     }
@@ -135,6 +138,7 @@ fun SettingsSubPage(nav: NavController, entry: NavBackStackEntry) {
                     "appearance" -> AppearancePanel()
                     "player" -> PlayerPrefsPanel()
                     "shot" -> ShotPanel()
+                    "mpvconf" -> MpvConfPanel()
                     "prefetch" -> PrefetchPanel()
                     "blocked" -> BlockedPanel()
                     "storage" -> StoragePanel()
@@ -161,13 +165,72 @@ private fun AppearancePanel() {
     val theme = when (xyz.linplayer.app.data.UiPrefs.theme.value) {
         "dark" -> "深色"; "light" -> "浅色"; else -> "跟随系统"
     }
+    val app = LocalApp.current
+    val font = xyz.linplayer.app.data.UiPrefs.uiFont.value
+    /* 字体导入【用户定 2026-09-08】。
+       ★ 文件类型过滤放到最宽,不按字体 MIME 筛:实测各家文件管理器给 .ttf 的
+         MIME 五花八门(application/octet-stream 最常见),按字体类型筛的表现是
+         「文件选择器里一个字体都看不见」—— 一个打不开的入口。
+         是不是真字体由复制完那次 createFromFile 判。 */
+    val pick = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val path = importFont(ctx, uri)
+        if (path == null) app.toast("这个文件不是能用的字体", ToastKind.Error)
+        else {
+            xyz.linplayer.app.data.UiPrefs.setFont(ctx, path)
+            app.toast("字体已换", ToastKind.Ok)
+        }
+    }
     Panel(Modifier.padding(Sp.x16)) {
         SegRow("主题", listOf("跟随系统", "深色", "浅色"), theme, { v ->
             xyz.linplayer.app.data.UiPrefs.setTheme(ctx, when (v) {
                 "深色" -> "dark"; "浅色" -> "light"; else -> "system"
             })
         }, sub = "深浅两套都调过。跟随系统时晚上自动变暗;这一项只影响这台设备")
+        Hairline()
+        LpCell(
+            "界面字体",
+            sub = if (font.isBlank()) "系统默认。选一个 .ttf / .otf 换掉全局字体"
+            else "已换成 " + font.substringAfterLast('/'),
+            onClick = { pick.launch(arrayOf("*/*")) },
+        )
+        // ★ 没换过就不画「恢复默认」—— 一个点了什么都不会发生的按钮
+        if (font.isNotBlank()) {
+            Hairline()
+            LpCell("恢复默认字体", arrow = false, onClick = {
+                xyz.linplayer.app.data.UiPrefs.setFont(ctx, "")
+                clearFonts(ctx)
+            })
+        }
     }
+}
+
+/**
+ * 把选中的字体复制进应用私有目录并返回落点。不是字体就返回 null。
+ *
+ * ☠ **必须复制一份。** SAF 给的 Uri 重启之后多半就没权限了,而字体是每次冷启动
+ *   第一帧就要读的东西 —— 存 Uri 的表现是「今天好好的,明天开机字体没了」。
+ * ☠ 文件名带时间戳:覆盖同一个路径的话,偏好里那个字符串没变,
+ *   界面上那层 `remember(path)` 不会重算 —— 换了字体却一点变化都没有。
+ * ★ 复制完当场 `createFromFile` 验一次。不验的话用户选了张图片进来,
+ *   得到的是「设置显示已换、界面还是老样子」。
+ */
+private fun importFont(ctx: android.content.Context, uri: android.net.Uri): String? = runCatching {
+    clearFonts(ctx)
+    val dst = java.io.File(ctx.filesDir, "ui-font-" + System.currentTimeMillis() + ".ttf")
+    ctx.contentResolver.openInputStream(uri)!!.use { i -> dst.outputStream().use { o -> i.copyTo(o) } }
+    if (android.graphics.Typeface.createFromFile(dst) == null) {
+        dst.delete()
+        return null
+    }
+    dst.absolutePath
+}.getOrNull()
+
+/** 旧字体不留 —— 每换一次留一份的话,私有目录里会攒一堆几十 MB 的中文字体。 */
+private fun clearFonts(ctx: android.content.Context) {
+    ctx.filesDir.listFiles { f -> f.name.startsWith("ui-font-") }?.forEach { it.delete() }
 }
 
 @Composable
@@ -202,17 +265,19 @@ private fun PlayerPrefsPanel() {
     }
 
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    val engine = if (xyz.linplayer.app.data.UiPrefs.engine.value == "exo") "ExoPlayer" else "mpv"
+    val short = if (xyz.linplayer.app.data.UiPrefs.engine.value == "exo") "ExoPlayer" else "mpv"
+    val long = if (short == "mpv") "ExoPlayer" else "mpv"
     Panel(Modifier.padding(Sp.x16)) {
-        /* 内核切换【用户定 2026-09-06】。
-           ★ 换内核**要退出播放页重进才生效** —— 正在播的那一片不会当场换过去。
-             当场换等于中途拆掉解码器再重建,seek 位置、上报会话、Surface 三样都要重来,
-             为一个一年按一次的开关背这套复杂度不值。这句话必须写在界面上,
-             不写的话用户会以为开关没生效。 */
-        SegRow("播放内核", listOf("mpv", "ExoPlayer"), engine, { v ->
+        /* 播放键【用户定 2026-09-08:「短按 MPV、长按 EXO,允许调换位置」】。
+           ★ 只给**短按**一个开关,长按恒是另一个 —— 两个各自能选的话会出现
+             「短按长按都是 mpv」,那时长按就是坏的,而界面上看不出来。
+           ★ 内核跟着**这一次起播**走,不改全局:长按试一次不该把设置也改掉。
+           ★ 播放中不换内核 —— 当场换等于拆掉解码器再重建,seek 位置、上报会话、
+             Surface 三样全要重来,为一个一年按一次的开关背这套复杂度不值。 */
+        SegRow("播放键短按", listOf("mpv", "ExoPlayer"), short, { v ->
             xyz.linplayer.app.data.UiPrefs.setEngine(ctx, if (v == "ExoPlayer") "exo" else "mpv")
-        }, sub = "mpv 认的格式多、字幕全;ExoPlayer 走安卓自带解码,更省电也更稳。" +
-            "换完要退出当前播放再进才生效")
+        }, sub = "长按播放键用另一个内核(现在是 " + long + ")。" +
+            "mpv 认的格式多、字幕全;ExoPlayer 走安卓自带解码,更省电也更稳")
         Hairline()
         /* ★ 这一栏只放**核心层真的读**的那几项。上一版的「后台播放」「播完自动下一集」
            在核心层里连字段都没有:拨了返回成功、配置一个字没变,而且下次进来还是关着。
@@ -239,6 +304,78 @@ private fun PlayerPrefsPanel() {
 /** 把一个键就地换掉,别的原样留着。乐观更新要的就是这一步。 */
 private fun patch(o: JsonObject?, key: String, v: JsonPrimitive): JsonObject =
     JsonObject((o ?: JsonObject(emptyMap())).toMutableMap().apply { put(key, v) })
+
+/**
+ * mpv 配置【用户定 2026-09-08:「允许导入用户自己的 mpv.conf」】。
+ *
+ * ★ **只对 mpv 内核有效**,这句话必须写在界面上 —— 用 ExoPlayer 的人导入完
+ *   什么都不会发生,不说清就是一个「设了没反应」的入口。
+ * ★ 里面几行会被我们摘掉(vo / wid / config-dir 那几个:它们决定画面往哪儿画,
+ *   放过去就是一片黑还不报错)。核心层会把摘掉的行写进日志。
+ */
+@Composable
+private fun MpvConfPanel() {
+    val app = LocalApp.current
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var conf by remember { mutableStateOf<JsonObject?>(null) }
+    var reload by remember { mutableStateOf(0) }
+    LaunchedEffect(reload) {
+        conf = runCatching { app.call("player.getMpvConf") }.getOrNull().obj()
+    }
+    val text = conf.str("text").orEmpty()
+    val active = conf.bool("active")
+
+    suspend fun push(body: String) {
+        runCatching { app.call("player.setMpvConf", args("text" to body)) }
+            .onSuccess { r -> conf = r.obj() }
+            .onFailure { app.report(it) }
+    }
+
+    val pick = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val body = withContext(Dispatchers.IO) {
+                runCatching {
+                    ctx.contentResolver.openInputStream(uri)!!.use { it.readBytes() }
+                }.getOrNull()
+            }
+            // 256KB 封顶:mpv.conf 再长也到不了,到了多半是选错了文件
+            if (body == null || body.size > (256 shl 10)) {
+                app.toast("这个文件读不了,或者根本不是配置文件", ToastKind.Error)
+                return@launch
+            }
+            push(String(body, Charsets.UTF_8))
+            app.toast("已导入,下次起播生效", ToastKind.Ok)
+        }
+    }
+
+    Panel(Modifier.padding(Sp.x16)) {
+        LpCell(
+            "当前配置",
+            sub = if (active) "已导入 · " + text.lineSequence().count() + " 行" else "没有导入过",
+            arrow = false,
+        )
+        Hairline()
+        LpCell("导入 mpv.conf", sub = "选一个文本文件;换成新的会整份覆盖",
+            onClick = { pick.launch(arrayOf("*/*")) })
+        if (active) {
+            Hairline()
+            LpCell("清除", sub = "删掉配置,回到出厂状态", arrow = false, onClick = {
+                scope.launch { push("") }
+            })
+        }
+        Hairline()
+        LpCell("只对 mpv 内核有效", sub = "ExoPlayer 走安卓自带解码,不读这份配置;" +
+            "改动要退出当前播放再进才生效", arrow = false)
+    }
+    if (active && text.isNotBlank()) Panel(Modifier.padding(horizontal = Sp.x16)) {
+        Text(text.lineSequence().take(20).joinToString("\n"),
+            Modifier.padding(Sp.x12), color = Lp.colors.fg2, fontSize = 12.sp)
+    }
+}
 
 /**
  * 截屏【用户定 2026-09-07】。

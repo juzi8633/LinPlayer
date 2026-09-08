@@ -381,7 +381,10 @@ public sealed class SettingsPage : PageBase
                     // 两处都设的话卡与卡之间是 16+18=34,而设计上只该有一个数
                     void Add(Control c) => groups.Children.Add(c);
                     Add(TrackPrefs(core, p));
+                    Add(SettingsSections.UiFontSection(core, p));
                     Add(Playback(core, p));
+                    // mpv 配置排在播放那组后面:它是同一件事的「高级」那一档
+                    Add(SettingsSections.MpvConf(core));
                     Add(SettingsSections.SkipSegments(core, p));
                     if (home is { } hm) Add(SettingsSections.Home(core, hm));
                     if (prefetch is { } pf) Add(SettingsSections.Prefetch(core, pf));

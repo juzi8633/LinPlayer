@@ -10,6 +10,7 @@ import xyz.linplayer.app.data.Capabilities
 import xyz.linplayer.app.data.Item
 import xyz.linplayer.app.data.Page
 import xyz.linplayer.app.data.Session
+import xyz.linplayer.app.data.UiPrefs
 import xyz.linplayer.app.ui.pages.Stream
 import xyz.linplayer.app.ui.pages.Version
 import xyz.linplayer.app.ui.pages.defaultVersion
@@ -26,7 +27,10 @@ import xyz.linplayer.app.ui.player.assPayload
 import xyz.linplayer.app.ui.player.assTimeMs
 import xyz.linplayer.app.ui.player.isAssMime
 import xyz.linplayer.app.ui.player.shotCorner
+import xyz.linplayer.app.ui.player.DragAxis
 import xyz.linplayer.app.ui.player.cueRect
+import xyz.linplayer.app.ui.player.fmtSpeed
+import xyz.linplayer.app.ui.player.lockAxis
 import xyz.linplayer.app.ui.player.videoRect
 import xyz.linplayer.app.ui.player.splitMedia3Dialogue
 import xyz.linplayer.app.ui.theme.pickTone
@@ -469,4 +473,47 @@ class LogicTest {
         width = null, height = null, bitrate = null, channels = null,
         layout = null, fps = null, range = null, isDefault = false, isExternal = false,
     )
+
+    /**
+     * ☠ 方向要**攒够再定**,而且定了不许改。
+     *
+     * 上一版的判据是「这一帧 |dx| 和 |dy| 谁大」—— 手指稍斜,两个分量在每一帧上
+     * 互相超过,一次左右滑里就夹着几十帧被判成上下:用户报的
+     * 「左右滑顺带把上下也滑了」就是它。这条钉住三件事:没攒够不定、
+     * 斜着划不定、主方向必须明显压过副方向。
+     */
+    @Test fun `手势方向要攒够才定并且斜划不算`() {
+        val slop = 28f
+        assertNull("没攒够就定方向 = 一碰就窜", lockAxis(10f, 4f, slop))
+        assertNull("没攒够就定方向 = 一碰就窜", lockAxis(3f, 20f, slop))
+        assertEquals(DragAxis.H, lockAxis(60f, 12f, slop))
+        assertEquals(DragAxis.H, lockAxis(-60f, 12f, slop))
+        assertEquals(DragAxis.V, lockAxis(10f, 40f, slop))
+        // 45° 斜划:两边都够长,但谁也不占优 —— 什么都不该触发
+        assertNull("斜着划必须什么都不做,不能随机落到一边", lockAxis(50f, 48f, slop))
+    }
+
+    /** 网速读数。取不到就**返回空串**(界面上那一格整个不画),不摆一个恒为 0 的数。 */
+    @Test fun `网速读数按量级换单位取不到就空`() {
+        val sec = 1_000_000_000L
+        assertEquals("2.0 MB/s", fmtSpeed(2L * 1024 * 1024, sec))
+        assertEquals("500 KB/s", fmtSpeed(512_000, sec))
+        assertEquals("0 KB/s", fmtSpeed(100, sec))
+        assertEquals("", fmtSpeed(1024, 0))
+        // 计数器回绕 / 换网卡时差值会是负数 —— 那时宁可不画
+        assertEquals("", fmtSpeed(-1, sec))
+    }
+
+    /**
+     * 长按播放键用**另一个**内核。
+     *
+     * ☠ 两个方向必须互为反函数。同向的表现是「短按长按都是 mpv」——
+     * 那时长按等于坏了,而界面上一点看不出来。
+     */
+    @Test fun `长按播放键换的是另一个内核`() {
+        assertEquals("exo", UiPrefs.otherEngine("mpv"))
+        assertEquals("mpv", UiPrefs.otherEngine("exo"))
+        // 存了个不认识的值时保守回到 exo(短按那边的 when 也把非 exo 当 mpv)
+        assertEquals("exo", UiPrefs.otherEngine("垃圾值"))
+    }
 }

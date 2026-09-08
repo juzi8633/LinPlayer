@@ -188,6 +188,13 @@ type Prefs struct {
 	// 而那意味着**续播位置直接丢掉**。
 	WatchedThresholdPercent int64 `json:"watched_threshold_percent"`
 
+	// UiFont 界面字体文件的绝对路径(用户自己导入的 .ttf/.otf)。空 = 用系统默认字体。
+	//
+	// ★ 存**路径**不是字体名:用户导入的字体多半没装进系统,按名字找不到它。
+	// ★ 它是**这台机器**的东西(路径在别的机器上不存在),但配置本来就是每份安装
+	//   各一份、不跨设备同步 —— 所以放这里不会串。
+	UiFont string `json:"ui_font"`
+
 	// 详情页背景图的模糊强度,0~100。默认 40。
 	// 归 Prefs 是因为它是**观感偏好**不是主题 —— 换主题不该把它重置。
 	DetailBlur int `json:"detail_blur"`

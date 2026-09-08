@@ -185,15 +185,25 @@ var (
 // magicyuv 防护)已经因为一次重构静默丢过一回 —— 丢了之后编译绿、单测绿、
 // 运行时也不报错,只是那条防护没了。文档提醒防不住重构,只有测试能。
 // 见 player_options_test.go。
-func baseOptions(hwdec, shaderCacheDir string) [][2]string {
-	opts := [][2]string{
-		{"vo", "libmpv"},
-		{"hwdec", hwdec},
-		{"terminal", "no"},
-		{"keep-open", "yes"},
-		// N1:CVE-2026-8461。迁移必带清单的第一条,在这里就带上,别等以后补
-		{"vd", "-magicyuv"},
+func baseOptions(hwdec, shaderCacheDir, confDir string) [][2]string {
+	opts := [][2]string{}
+	if confDir != "" {
+		/* ☠☠ **不给 config-dir,用户那份 mpv.conf 就是一张废纸。** libmpv 默认
+		   `config=no`:设置页写完文件、返回成功,而 mpv 从头到尾没读过它 ——
+		   一个装成功能的入口。
+		   ★ 排在最前面是**故意**的:mpv 解析配置文件时带 PRESERVE_CMDLINE,
+		     我们在 init 之前设的选项赢(probeConfDirPrecedence 实测钉住)。
+		     顺序在这里不改变结果,但读代码的人得知道谁盖谁。 */
+		opts = append(opts, [2]string{"config", "yes"}, [2]string{"config-dir", confDir})
 	}
+	opts = append(opts,
+		[2]string{"vo", "libmpv"},
+		[2]string{"hwdec", hwdec},
+		[2]string{"terminal", "no"},
+		[2]string{"keep-open", "yes"},
+		// N1:CVE-2026-8461。迁移必带清单的第一条,在这里就带上,别等以后补
+		[2]string{"vd", "-magicyuv"},
+	)
 	if shaderCacheDir != "" {
 		// libmpv 没有配置目录,这两项不显式给就**不缓存**:每次起播重编整条
 		// Anime4K CNN 链,表现是开着超分时第一秒卡一下(mpv 发行版卫生那条)。
@@ -228,6 +238,46 @@ func checkOptionNames(opts [][2]string) []string {
 	return bad
 }
 
+// probeConfDirPrecedence 实测:用户的 mpv.conf 会不会顶掉我们在 init 之前设的选项。
+//
+// ★★ 这不是好奇心。开了 config-dir 之后,一份写着 `vo=gpu` 的 mpv.conf 如果能盖掉
+// `vo=libmpv`,桌面端就是**全程黑屏且一条错都不报**。所以「谁盖谁」必须是实测事实,
+// 不是从文档推的。和 checkOptionNames 一样住在非测试文件里:`_test.go` 不能 import "C"。
+//
+// ours 为空 = 我们不设这一项(用来反向确认探针**真的**读到了配置文件)。
+// 返回 init 之后 key 的实际取值(取不到返回空串)。
+func probeConfDirPrecedence(confDir, key, ours string) string {
+	h := C.mpv_create()
+	if h == nil {
+		return ""
+	}
+	defer C.mpv_terminate_destroy(h)
+	set := func(k, v string) {
+		ck, cv := C.CString(k), C.CString(v)
+		C.mpv_set_option_string(h, ck, cv)
+		C.free(unsafe.Pointer(ck))
+		C.free(unsafe.Pointer(cv))
+	}
+	set("terminal", "no")
+	set("config", "yes")
+	set("config-dir", confDir)
+	set("vo", "null")
+	if ours != "" {
+		set(key, ours)
+	}
+	if rc := C.mpv_initialize(h); rc < 0 {
+		return ""
+	}
+	ck := C.CString(key)
+	defer C.free(unsafe.Pointer(ck))
+	got := C.mpv_get_property_string(h, ck)
+	if got == nil {
+		return ""
+	}
+	defer C.mpv_free(unsafe.Pointer(got))
+	return C.GoString(got)
+}
+
 // ensureMpv 起 mpv 但**不起播**。
 //
 // ★ 起播必须排在 lp_gl_init 之后(SPEC §7.2 约束 6):`vo=libmpv` 在 render context
@@ -256,7 +306,7 @@ func ensureMpv() int32 {
 	}
 	// 平台专属选项追加在后面(后写的赢)。桌面返回 nil,所以 baseOptions 的
 	// 输出一字不变;安卓在这里换 vo 并带上软解调优与字幕字体目录。
-	opts := append(baseOptions(hw, sc), platformOptions()...)
+	opts := append(baseOptions(hw, sc, ensureConfDir()), platformOptions()...)
 	// 日志走 LP_MPV_LOG 门控:log-file 会把 mpv+ffmpeg 钉在 debug 级
 	if lp := os.Getenv("LP_MPV_LOG"); lp != "" {
 		opts = append(opts, [2]string{"log-file", lp}, [2]string{"msg-level", "all=v"})

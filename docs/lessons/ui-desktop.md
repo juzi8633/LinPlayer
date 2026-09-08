@@ -2381,3 +2381,24 @@ Avalonia 的 Button 在 `OnPointerPressed` 里要 `e.Pointer.Capture(this)`,
 
 ★ 关一个开关之前先数一遍**谁挂在它下面**。这次是「砍网盘顺手砍掉了播放器的基础能力」,
   而 AGENTS.md §0 白纸黑字写着 local 不算网盘。
+
+## Avalonia 加载磁盘上的字体只能自己写 FontCollection(2026-09-08)
+
+「导入字体换掉应用内字体」在 Avalonia 11.3 上没有现成路子,踩到底才知道:
+
+1. `EmbeddedFontCollection(key, source)` 看着像那条路,但它的 `Initialize` 走
+   `AssetLoader`,而 `StandardAssetLoader.GetAssets` 只认 `avares:` 和 `resm:` ——
+   给一个 `file://` 直接返回空表。表现是**静默加载 0 个字体**:不报错,字体没换。
+2. 自己实现 `IFontCollection` 是可行的,但造字体那一步
+   (`IFontManagerImpl.TryCreateGlyphTypeface(Stream, FontSimulations, out …)`)
+   **是 internal** —— 接口本身公开,成员全 internal。只能反射调。
+3. 一个字体文件通常只有一种字重。不按 `FontSimulations` 分四档(常规/粗/斜/粗斜)
+   各造一份的话,全站的加粗标题会变成常规体 ——「换了字体之后加粗全没了」。
+4. `TryMatchCharacter` 要**返回 false**。在里面硬报「认识」的话,字体缺的字会画成
+   豆腐块,而不是回落到系统字体:导一份只有拉丁字母的字体进来,整个中文界面变方块。
+
+★ 反射调 internal 方法 = 升 Avalonia 时这一处第一个坏,而坏了的样子是
+  「设置里显示已换、界面一点没变」。所以留了自检:
+  `LP_FONTPROBE=<字体文件> LinPlayer.exe` —— `SetupWithoutStarting()` 起平台但不开窗口,
+  打一行「装上了=True 家族=Microsoft YaHei」就退。实测 `C:/Windows/Fonts/msyh.ttc`
+  是 True、拿一个非字体文件是 False。**升级 Avalonia 之后跑一次这个。**

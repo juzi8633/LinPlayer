@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using LinPlayer.Core;
 using LinPlayer.Desktop.Core;
@@ -641,6 +642,165 @@ public static class SettingsSections
                 Note("章节和第三方库都对不上的片子,可以在播放页的设置抽屉里手动量一次 ——"
                      + "手动设的按剧存,同一部剧只用设一遍。"),
                 hint,
+            },
+        });
+    }
+
+    // ---------------------------------------------------------------- 界面字体
+
+    /// <summary>
+    /// 界面字体【用户定 2026-09-08:「让用户可以导入字体更改应用内字体」】。
+    ///
+    /// <para>存的是**路径**不是字体名:用户导入的字体多半没装进系统,按名字找不到它。</para>
+    /// <para>换完**当场生效**,不要求重启 —— 重启才生效的设置,用户第一反应是「没生效」。</para>
+    /// </summary>
+    public static Control UiFontSection(CoreClient core, JsonElement p)
+    {
+        var hint = Hint();
+        var cur = new TextBlock { Classes = { "dim" }, TextWrapping = TextWrapping.Wrap };
+        var pick = new Button { Classes = { "primary" }, Content = "选择字体文件…" };
+        var clear = new Button { Classes = { "ghost" }, Content = "恢复默认" };
+
+        void Show(string path)
+        {
+            cur.Text = path.Length == 0 ? "当前:系统默认字体" : $"当前:{path}";
+            clear.IsVisible = path.Length > 0;
+        }
+        Show(Str(p, "ui_font"));
+
+        async Task Set(string path)
+        {
+            try
+            {
+                /* ☠ 先装再存。装不上就**不落库** —— 存了一个装不上的路径,
+                   下次开机它会安静地失败,而设置页显示「已换成 xxx」。 */
+                if (path.Length > 0 && !UiFont.Apply(path))
+                {
+                    hint.Text = "这个文件读不了,或者根本不是字体。";
+                    return;
+                }
+                if (path.Length == 0) UiFont.Apply("");
+                await core.PrefsSetPrefs(new { ui_font = path });
+                Show(path);
+                hint.Text = path.Length == 0 ? "已回到默认字体。" : "已换上。";
+            }
+            catch (Exception e) { hint.Text = LibraryPage.Advice(e); }
+        }
+
+        pick.Click += async (_, _) =>
+        {
+            var top = TopLevel.GetTopLevel(pick);
+            if (top is null) return;
+            var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "选择界面字体", AllowMultiple = false,
+                FileTypeFilter = [new FilePickerFileType("字体文件") { Patterns = ["*.ttf", "*.otf", "*.ttc"] }],
+            });
+            if (files.Count > 0) await Set(files[0].Path.LocalPath);
+        };
+        clear.Click += async (_, _) => await Set("");
+
+        return Group("界面字体", new StackPanel
+        {
+            Spacing = 10,
+            Children =
+            {
+                Note("换掉整个界面的字体。选一个 .ttf / .otf 就行,不需要先装进系统。"),
+                cur,
+                Row(pick, clear),
+                hint,
+            },
+        });
+    }
+
+    // ---------------------------------------------------------------- mpv.conf
+
+    /// <summary>
+    /// 用户自己的 mpv.conf【用户定 2026-09-08】。
+    ///
+    /// <para>直接给一个可编辑的文本框,不做「一行一个开关」的表单:mpv 的选项有上千个,
+    /// 会来导 conf 的人本来就知道自己在写什么,而做成表单只会盖住其中十几个。</para>
+    /// <para>☠ 决定画面往哪儿画的那几行(<c>vo</c> / <c>wid</c> / <c>gpu-context</c> ……)
+    /// <b>会被核心层摘掉</b>。放过去就是全程黑屏且一条错都不报 —— 这句话得写在界面上,
+    /// 否则用户会以为是我们没读他的配置。</para>
+    /// </summary>
+    public static Control MpvConf(CoreClient core)
+    {
+        var hint = Hint();
+        var where = new TextBlock { Classes = { "dim" }, TextWrapping = TextWrapping.Wrap };
+        var box = new TextBox
+        {
+            Classes = { "field" }, AcceptsReturn = true, TextWrapping = TextWrapping.NoWrap,
+            MinHeight = 160, MaxHeight = 320, FontFamily = new FontFamily("Consolas, monospace"),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+
+        void Fill(JsonElement r)
+        {
+            box.Text = Str(r, "text");
+            var path = Str(r, "path");
+            where.Text = Bool(r, "active") ? $"文件:{path}" : $"还没有配置文件(将写到 {path})";
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var r = await core.PlayerGetMpvConf(new { });
+                Dispatcher.UIThread.Post(() => Fill(r));
+            }
+            catch (Exception e)
+            {
+                Dispatcher.UIThread.Post(() => hint.Text = LibraryPage.Advice(e));
+            }
+        });
+
+        var save = new Button { Classes = { "primary" }, Content = "保存" };
+        save.Click += async (_, _) =>
+        {
+            try
+            {
+                Fill(await core.PlayerSetMpvConf(new { text = box.Text ?? "" }));
+                hint.Text = "已保存。下次起播生效。";
+            }
+            catch (Exception e) { hint.Text = LibraryPage.Advice(e); }
+        };
+
+        var import = new Button { Classes = { "ghost" }, Content = "从文件导入…" };
+        import.Click += async (_, _) =>
+        {
+            var top = TopLevel.GetTopLevel(import);
+            if (top is null) return;
+            var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "选择 mpv.conf", AllowMultiple = false,
+                FileTypeFilter = [new FilePickerFileType("配置文件") { Patterns = ["*.conf", "*.txt", "*"] }],
+            });
+            if (files.Count == 0) return;
+            try
+            {
+                // 导入只是**把文本填进框里**,存不存由用户按保存 —— 选错文件时
+                // 还能直接改回来,不用去数据目录里翻
+                box.Text = await File.ReadAllTextAsync(files[0].Path.LocalPath);
+                hint.Text = "已读入,按「保存」才生效。";
+            }
+            catch (Exception e) { hint.Text = LibraryPage.Advice(e); }
+        };
+
+        var clear = new Button { Classes = { "ghost" }, Content = "清空" };
+        clear.Click += (_, _) => { box.Text = ""; hint.Text = "按「保存」后回到出厂状态。"; };
+
+        return Group("mpv 配置", new StackPanel
+        {
+            Spacing = 10,
+            Children =
+            {
+                Note("你自己的 mpv.conf。整份存下来,交给 mpv 解析(profile、include 都照常)。"),
+                Note("决定画面往哪儿画的那几行(vo / wid / gpu-context / config-dir / include)"
+                     + "会被摘掉 —— 它们能让画面整个没掉,而且一条错都不报。被摘掉的行会写进日志。"),
+                where,
+                box,
+                Row(save, import, clear, hint),
             },
         });
     }

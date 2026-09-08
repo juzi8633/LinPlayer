@@ -21,6 +21,10 @@ public partial class App : Application
            LP_NOSMOOTH=1 关掉,用来做 A/B。 */
         if (Environment.GetEnvironmentVariable("LP_NOSMOOTH") != "1") Views.Smooth.Install();
 
+        /* 界面字体在**建窗口之前**装好。之后装的话已经建出来的控件不会补上,
+           表现是「设了要重启两次才生效」。 */
+        LinPlayer.Desktop.Core.UiFont.ApplyAtStartup(Program.Core);
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.MainWindow = new MainWindow();

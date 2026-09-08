@@ -82,6 +82,61 @@ import xyz.linplayer.app.ui.theme.Sp
 
 private const val OSD_HIDE_MS = 5000L
 
+/**
+ * 定方向要攒够的距离。
+ *
+ * ★ 比系统的 touchSlop(约 8dp,那是「算不算拖动」的阈值)大得多 ——
+ *   这里要判的是「往哪个方向拖」,而人起手的那一小段几乎必然是斜的。
+ */
+private val DRAG_SLOP = 28.dp
+
+/**
+ * 竖滑走完整个量程要划几屏。1.4 = 比一屏还多划四成。
+ *
+ * ★ 1.0(上一版)意味着划过半屏音量就从 0 到满,而看片时手是搭在屏幕上的,
+ *   稍微一动就是一大格 —— 用户说的「太敏感、拖泥带水」有一半是这个数。
+ */
+private const val VERTICAL_TRAVEL = 1.4f
+
+/** 手势方向。定下来就不再改。 */
+internal enum class DragAxis { H, V }
+
+/**
+ * 这一次手势往哪个方向走。`null` = 还没攒够,继续攒。
+ *
+ * ☠ 判据是「**累计**位移谁先攒够」,不是「这一帧谁大」。后者每帧重判,
+ *   手指稍斜就在两个方向之间来回跳 —— 那正是「左右滑顺带把音量也调了」。
+ * ★ [ratio] 要求主方向比副方向多出一截:45° 斜划什么都不该触发,
+ *   而不是随机落到其中一边。
+ */
+internal fun lockAxis(dx: Float, dy: Float, slop: Float, ratio: Float = 1.7f): DragAxis? {
+    val ax = kotlin.math.abs(dx)
+    val ay = kotlin.math.abs(dy)
+    return when {
+        ax >= slop && ax >= ay * ratio -> DragAxis.H
+        ay >= slop && ay >= ax * ratio -> DragAxis.V
+        else -> null
+    }
+}
+
+/**
+ * 网速读数【用户定 2026-09-08】。
+ *
+ * ★ 口径是**整机**(TrafficStats 全设备计数),不是这一条流 —— 用户要看的是
+ *   「现在到底还有没有在下东西」,而播放中同时还有封面、弹幕、上报在跑。
+ * ★ 取不到(有的 ROM 返回 UNSUPPORTED)就返回空串,**界面上那一格整个不画**。
+ *   摆一个恒为 0 的读数比不摆更糟。
+ */
+internal fun fmtSpeed(bytes: Long, nanos: Long): String {
+    if (nanos <= 0L || bytes < 0L) return ""
+    val bps = bytes * 1_000_000_000.0 / nanos
+    return when {
+        bps >= 1024 * 1024 -> "%.1f MB/s".format(bps / 1024 / 1024)
+        bps >= 1024 -> "%.0f KB/s".format(bps / 1024)
+        else -> "0 KB/s"
+    }
+}
+
 /** 和 ExoEngine 里那个是同一件事:libass 的字体目录。两处各写一遍早晚会漂。 */
 private const val LIBASS_FONTS_DIR = "/system/fonts"
 private const val SP_MIN = 0.25
@@ -123,6 +178,11 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
     /** 跟手 seek 的预览值。**松手才发命令** —— 跟着滑发是每帧一条,把核心层的 seek 闩打乱。 */
     var seekPreview by remember { mutableStateOf<Double?>(null) }
     var volume by remember { mutableFloatStateOf(1f) }
+    /* 亮度自己存一份。**不能每次去读 `window.attributes`** —— 没设过时它是 -1
+       (「跟随系统」),拿 -1 当起点算增量的话第一下会直接跳到最暗。 */
+    var brightness by remember { mutableFloatStateOf(-1f) }
+    /** 正在调的是什么、调到几成。空 = 不显示【用户定 2026-09-08:调节时屏幕中间要有标志】。 */
+    var hud by remember { mutableStateOf<Pair<Boolean, Float>?>(null) }
     /** 起播失败(一次都没出画就 eof)。**不许静默退回去**。 */
     var openFailed by remember { mutableStateOf(false) }
     /** 失败时给用户看的**具体原因**,不是「原因在日志里」。见 [failureDiag]。 */
@@ -132,7 +192,7 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
        播到一半用户去设置里改了内核,回来时这一片的状态机会当场换一套
        —— 位置、时长、暂停三个值来源全变,而 ExoPlayer 手里根本没有这一片。
        所以设置页那一行明说「退出当前播放再进才生效」。 */
-    val engine = remember { xyz.linplayer.app.data.UiPrefs.engine.value }
+    val engine = remember { route.engine ?: xyz.linplayer.app.data.UiPrefs.engine.value }
     /* 字幕语言偏好。**要在建 ExoPlayer 之前读到** —— ExoPlayer 的轨道选择是
        「参数变了才重选」,建完再补一次也行,但首帧那几秒会没有字幕。
        `null` = 还没读到,`""` = 没有语言偏好(那是**默认状态**,不是「关了字幕」)。 */
@@ -439,7 +499,13 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
             } else Dim3(if (buffering) "正在缓冲…" else "正在打开…")
         }
 
-        // 三区手势(UI_MOBILE.md §8.4)。锁屏后只有解锁按钮响应
+        /* 三区手势(UI_MOBILE.md §8.4)。锁屏后只有解锁按钮响应。
+           ☠☠ **方向要锁死,不能每帧重判**【用户定 2026-09-08:「上下滑动和左右滑动
+              区分不开…做的不敏感」】。上一版的判据是「这一帧 |dx| 和 |dy| 谁大」——
+              手指稍微斜一点,两个分量就在每一帧上互相超过,于是一次左右滑里夹着几十帧
+              被判成上下:表现正是「左右滑顺带把音量也调了」。
+              现在:攒够 [DRAG_SLOP] 再定方向,定了这一次手势就不再改;而且主方向要比
+              副方向多出一截([lockAxis] 的 ratio),斜着划的那一下什么都不触发。 */
         if (!locked) Box(
             Modifier.fillMaxSize().pointerInput(Unit) {
                 detectTapGestures(
@@ -447,34 +513,59 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
                     onDoubleTap = { doPause(!paused) },
                 )
             }.pointerInput(duration) {
-                var acc = 0f
+                val slop = DRAG_SLOP.toPx()
+                var ax = 0f            // 这一次手势的累计位移
+                var ay = 0f
+                var axis: DragAxis? = null
+                var startX = 0f
+                var vol0 = 0f
+                var bri0 = 0f
+                fun reset() { ax = 0f; ay = 0f; axis = null }
                 detectDragGestures(
+                    onDragStart = { p ->
+                        reset()
+                        startX = p.x
+                        vol0 = volume
+                        bri0 = if (brightness >= 0f) brightness else 0.5f
+                    },
                     onDragEnd = {
                         // ★ 松手才真 seek
                         seekPreview?.let { t -> doSeek(t) }
-                        seekPreview = null; acc = 0f
+                        seekPreview = null
+                        reset()
                     },
+                    onDragCancel = { seekPreview = null; reset() },
                 ) { change, drag ->
                     change.consume()
-                    if (kotlin.math.abs(drag.x) > kotlin.math.abs(drag.y)) {
+                    ax += drag.x
+                    ay += drag.y
+                    if (axis == null) {
+                        axis = lockAxis(ax, ay, slop) ?: return@detectDragGestures
+                    }
+                    /* 攒够那一段 slop **不算进调节量**:算进去的话方向刚定下来的
+                       那一瞬间进度/音量会跳一格,手感上就是「一碰就窜」。 */
+                    if (axis == DragAxis.H) {
                         if (duration > 0) {
-                            acc += drag.x
-                            seekPreview = (position + acc / size.width * duration * 0.6)
+                            val d = ax - slop * kotlin.math.sign(ax)
+                            seekPreview = (position + d / size.width * duration * 0.6)
                                 .coerceIn(0.0, duration)
                             osd = true
                         }
-                    } else if (change.position.x > size.width / 2) {
-                        // 右 1/3 竖滑 = 音量。**不用系统音量条**
-                        volume = (volume - drag.y / size.height).coerceIn(0f, 1f)
-                        doVolume(volume)
-                        osd = true
                     } else {
-                        // 左 1/3 竖滑 = 亮度。**不改系统亮度**,只改本窗口
-                        activity?.window?.attributes = activity?.window?.attributes?.apply {
-                            screenBrightness = (screenBrightness.takeIf { it >= 0 } ?: 0.5f)
-                                .minus(drag.y / size.height).coerceIn(0.01f, 1f)
+                        val d = (ay - slop * kotlin.math.sign(ay)) / (size.height * VERTICAL_TRAVEL)
+                        if (startX > size.width / 2) {
+                            // 右半屏 = 音量。**不用系统音量条**
+                            volume = (vol0 - d).coerceIn(0f, 1f)
+                            doVolume(volume)
+                            hud = false to volume
+                        } else {
+                            // 左半屏 = 亮度。**不改系统亮度**,只改本窗口
+                            brightness = (bri0 - d).coerceIn(0.01f, 1f)
+                            activity?.window?.attributes = activity?.window?.attributes?.apply {
+                                screenBrightness = brightness
+                            }
+                            hud = true to brightness
                         }
-                        osd = true
                     }
                 }
             }
@@ -497,6 +588,13 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
                     color = Color.White, fontSize = 18.sp,
                 )
             }
+        }
+
+        /* 音量 / 亮度指示【用户定 2026-09-08:「屏幕中间要有一个标志显示当前进度」】。
+           ★ 它**不跟 OSD 走**:调音量时 OSD 多半是收着的,挂在 OSD 上等于没有。 */
+        hud?.let { (isBrightness, v) -> AdjustHud(isBrightness, v) }
+        LaunchedEffect(hud) {
+            if (hud != null) { delay(900); hud = null }
         }
 
         // ★ OSD 抬在 scrim 之上:面板开关期间上下栏**一动不动**
@@ -586,6 +684,8 @@ private fun Osd(
         ) {
             LpIconButton(LpIcons.back, "返回", tint = Color.White, onClick = onBack)
             Marquee(title, Modifier.weight(1f))
+            // 网速在「更多」左边 —— 右上角这一片本来就是这一页的读数区
+            NetSpeed()
             // ★ 「更多」在**右上角**【用户定 2026-09-07】。它是这一页的抽屉,
             //   抽屉该在角上,不该混在底排那串常用动作里
             Chip("更多") { onPanel("more") }
@@ -634,6 +734,73 @@ private fun Osd(
             }
         }
     }
+}
+
+/**
+ * 音量 / 亮度指示。**屏幕正中**,一格一格的条比一根连续的线好读。
+ *
+ * ★ 只在调的那一刻出现,900ms 不动就自己走 —— 它是反馈,不是常驻读数。
+ */
+@Composable
+private fun AdjustHud(brightness: Boolean, value: Float) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            Modifier.clip(RoundedCornerShape(R.md)).background(Color.Black.copy(alpha = .62f))
+                .padding(horizontal = Sp.x20, vertical = Sp.x16),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(
+                if (brightness) LpIcons.sun else LpIcons.audio,
+                if (brightness) "亮度" else "音量",
+                Modifier.size(26.dp), tint = Color.White,
+            )
+            Spacer(Modifier.height(Sp.x10))
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                // 12 格。刻度比百分数好读 —— 调的时候眼睛在画面上,读不了两位数字
+                repeat(12) { i ->
+                    Box(
+                        Modifier.size(width = 6.dp, height = 14.dp)
+                            .clip(RoundedCornerShape(R.none))
+                            .background(
+                                if (i < (value * 12).toInt().coerceAtLeast(if (value > 0f) 1 else 0))
+                                    Color.White else Color.White.copy(alpha = .26f)
+                            ),
+                    )
+                }
+            }
+            Spacer(Modifier.height(Sp.x8))
+            Text("${(value * 100).toInt()}%", color = Color.White, fontSize = 12.sp)
+        }
+    }
+}
+
+/**
+ * 右上角的网速读数。**整机口径**,见 [fmtSpeed]。
+ *
+ * ★ 一秒一次就够:再密只是让数字跳得看不清,而它要回答的问题是「卡是不是没网了」。
+ */
+@Composable
+private fun NetSpeed() {
+    var text by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        var last = android.net.TrafficStats.getTotalRxBytes()
+        var lastAt = System.nanoTime()
+        // UNSUPPORTED 的 ROM 上直接不画这一格,别摆一个恒为 0 的读数
+        if (last == android.net.TrafficStats.UNSUPPORTED.toLong()) return@LaunchedEffect
+        while (true) {
+            delay(1000)
+            val now = android.net.TrafficStats.getTotalRxBytes()
+            val at = System.nanoTime()
+            if (now == android.net.TrafficStats.UNSUPPORTED.toLong()) return@LaunchedEffect
+            text = fmtSpeed(now - last, at - lastAt)
+            last = now
+            lastAt = at
+        }
+    }
+    if (text.isNotEmpty()) Text(
+        text, Modifier.padding(end = Sp.x6),
+        color = Color.White.copy(alpha = .82f), fontSize = 12.sp, maxLines = 1,
+    )
 }
 
 /** 倍速:**连续不是档位**。点一下走 0.25。 */

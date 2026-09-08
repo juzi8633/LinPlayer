@@ -10,6 +10,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -51,6 +52,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -93,6 +96,37 @@ fun Modifier.pressable(onClick: () -> Unit, enabled: Boolean = true): Modifier {
     return this
         .graphicsLayer { scaleX = scale; scaleY = scale }
         .clickable(interactionSource = src, indication = null, enabled = enabled, onClick = onClick)
+}
+
+/**
+ * 带长按的 [pressable]。
+ *
+ * ★ 长按**必须震一下**:长按没有任何反馈的话,用户按到一半就松手了,
+ *   以为这台机器不支持 —— 而这正是「长按用另一个内核」那条路唯一的入口。
+ */
+@Composable
+fun Modifier.pressable(
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)?,
+    enabled: Boolean = true,
+): Modifier {
+    val src = remember { MutableInteractionSource() }
+    val pressed by src.collectIsPressedAsState()
+    val haptic = LocalHapticFeedback.current
+    val scale by animateFloatAsState(
+        if (pressed) 0.96f else 1f,
+        if (pressed) tween(0) else spring(dampingRatio = 0.42f, stiffness = 520f),
+        label = "press",
+    )
+    return this
+        .graphicsLayer { scaleX = scale; scaleY = scale }
+        .combinedClickable(
+            interactionSource = src, indication = null, enabled = enabled,
+            onLongClick = onLongClick?.let {
+                { haptic.performHapticFeedback(HapticFeedbackType.LongPress); it() }
+            },
+            onClick = onClick,
+        )
 }
 
 /**

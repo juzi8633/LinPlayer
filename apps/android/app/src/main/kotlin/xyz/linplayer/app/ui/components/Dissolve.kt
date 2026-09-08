@@ -243,6 +243,7 @@ fun PrimaryAction(
     text: String,
     m: Modifier = Modifier,
     icon: ImageVector? = null,
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val c = Lp.colors
@@ -250,7 +251,7 @@ fun PrimaryAction(
         m.fillMaxWidth().heightIn(min = Dim.tap)
             .clip(RoundedCornerShape(R.pill))
             .background(Brush.horizontalGradient(listOf(c.acc, Color(0xFFFFC145), c.acc)))
-            .pressable(onClick)
+            .pressable(onClick, onLongClick)
             .padding(horizontal = Sp.x20, vertical = Sp.x12),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,

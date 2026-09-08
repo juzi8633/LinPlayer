@@ -1494,3 +1494,36 @@ OSD 收了它照样在。反向注入(摘掉 `!_popupOpen` 守卫)实测:第一�
 
 ★ 规矩:**换了实现就要重新做一次反向注入**。断言的措辞没变不代表它还在验同一件事 ——
   一条一直绿的断言,可能是从某次重构起就再也红不了了。
+
+## 用户的 mpv.conf 会顶掉我们在 init 之前设的选项(2026-09-08)
+
+「导入自己的 mpv.conf」这条路上有两个坑,顺序上是连着的。
+
+**第一个:不给 `config-dir`,那份文件就是一张废纸。** libmpv 默认 `config=no`,
+而我们从来没设过 `config` / `config-dir` —— 核心层的 `player.setMpvConf` 写文件、
+返回成功,mpv 从头到尾没读过它。命令在那儿摆了很久,一直是个装成功能的入口。
+
+**第二个:开了 config-dir 之后,配置文件赢。** 用 `keep-open` 当探针实测
+(`probeConfDirPrecedence`,住在 `core/player/player.go`,理由同 `checkOptionNames`:
+`_test.go` 不能 `import "C"`):
+
+```
+mpv.conf 写 keep-open=yes,我们在 mpv_initialize 之前设 keep-open=no
+→ init 之后读回来是 yes
+```
+
+也就是说一行 `vo=gpu` 就能把 `vo=libmpv` 换掉。而 `vo=libmpv` 是 render context 的
+前提,换掉的表现是**桌面端全程黑屏、一条错都不报**。安卓那边同理(`vo=gpu` +
+`gpu-context=android` + `opengl-es`)。
+
+★ 所以交给 mpv 的**不是用户那份文件,是过滤过的副本**(`userdata/mpv/effective/`):
+  `sanitizeMpvConf` 把 `vo` / `wid` / `gpu-context` / `opengl-es` / `config` /
+  `config-dir` / `include` / `terminal` 这几行注释掉,别的一行不动。
+  过滤而不是自己解析 —— profile、include、引号这些 mpv 自己解析得最准,
+  我们只负责摘掉会砸掉画面输出的那几行。
+
+★ 注释掉而不是删掉:行号得和用户手上那份对得上,不然日志里那句
+  「这一行被忽略」他找不到是哪一行。
+
+☠ 这张黑名单里**只放两类**:会让画面整个没掉的,和会绕过这张表本身的。
+  「我们也设了的项」不用进 —— 那种冲突已经由「我们的值在后面」解决了。

@@ -247,6 +247,73 @@ func resolveScreenshotDir(configured *string) string {
 // userConfPath mpv.conf 的位置。
 func userConfPath() string { return filepath.Join(paths.Root(), "mpv", "mpv.conf") }
 
+// ensureConfDir 起 mpv 时要不要开 config-dir,开在哪。
+//
+// ☠☠ **不能直接把用户那个目录交给 mpv。** 实测(probeConfDirPrecedence):
+// mpv.conf 里的值会**顶掉**我们在 mpv_initialize 之前设的选项 —— 也就是说一行
+// `vo=gpu` 就能把 `vo=libmpv` 换掉,而那是 render context 的前提:表现是桌面端
+// 全程黑屏、一条错都不报。所以交给 mpv 的是**过滤过的副本**,用户那份原文一字不动。
+//
+// ★ 过滤而不是自己解析:profile / include / 引号这些 mpv 自己解析得最准,
+// 我们只负责把会砸掉画面的那几行摘掉。
+func ensureConfDir() string {
+	p := userConfPath()
+	b, err := os.ReadFile(p)
+	if err != nil || len(b) == 0 {
+		return "" // 没导入过 = 完全不读配置(libmpv 的出厂状态)
+	}
+	clean, dropped := sanitizeMpvConf(string(b))
+	for _, d := range dropped {
+		bus.Logf("warn", "mpv.conf 里这一行被忽略(它会砸掉画面输出):%s", d)
+	}
+	dir := filepath.Join(filepath.Dir(p), "effective")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		bus.Logf("warn", "生成 mpv 有效配置目录失败,本次不读用户配置: %v", err)
+		return ""
+	}
+	if err := os.WriteFile(filepath.Join(dir, "mpv.conf"), []byte(clean), 0o644); err != nil {
+		bus.Logf("warn", "写有效 mpv.conf 失败,本次不读用户配置: %v", err)
+		return ""
+	}
+	return dir
+}
+
+// mpvConfBanned 不许从用户配置里生效的选项。
+//
+// 只有两类进这张表:**会让画面整个没掉的**(vo/wid/gpu-context —— 它们决定
+// mpv 往哪儿画),和**会绕过这张表本身的**(config/config-dir/include)。
+// 别往里加「我们也设了的项」——那种冲突已经由「我们的值写在后面」解决了。
+var mpvConfBanned = map[string]bool{
+	"vo": true, "wid": true, "gpu-context": true, "opengl-es": true,
+	"config": true, "config-dir": true, "include": true,
+	"terminal": true,
+}
+
+// sanitizeMpvConf 把危险行注释掉,返回过滤后的正文和被摘掉的原文。
+//
+// ★ 保留行号(注释掉而不是删掉):用户拿我们的日志对着自己那份文件看时,
+// 行号对得上才找得到是哪一行。
+func sanitizeMpvConf(text string) (string, []string) {
+	lines := strings.Split(text, "\n")
+	dropped := []string{}
+	for i, ln := range lines {
+		t := strings.TrimSpace(ln)
+		if t == "" || strings.HasPrefix(t, "#") || strings.HasPrefix(t, "[") {
+			continue
+		}
+		key := t
+		if j := strings.IndexAny(key, "="); j >= 0 {
+			key = key[:j]
+		}
+		key = strings.ToLower(strings.TrimSpace(strings.TrimLeft(key, "-")))
+		if mpvConfBanned[key] {
+			dropped = append(dropped, t)
+			lines[i] = "# [LinPlayer 忽略] " + ln
+		}
+	}
+	return strings.Join(lines, "\n"), dropped
+}
+
 func mpvConfNow() map[string]any {
 	p := userConfPath()
 	b, _ := os.ReadFile(p)

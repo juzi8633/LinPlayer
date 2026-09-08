@@ -35,6 +35,18 @@ internal static class Program
            而自检脚本正是靠 grep 中文关键字读这些日志的,乱码 = 整套日志形同不存在。 */
         try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch { /* 无控制台时会抛,忽略 */ }
 
+        /* 界面字体自检:`LP_FONTPROBE=<字体文件> LinPlayer.exe` 打一行结果就退,不开窗口。
+           ★ 它存在的理由和 core 那个 checkOptionNames 一样:界面字体走的是
+             Avalonia 的 **internal** 接口(反射调),换版本时这一处会第一个坏,
+             而坏了的样子是「设置里显示已换、界面一点没变」—— 光靠编译发现不了。
+             升 Avalonia 之后跑一次这个。 */
+        if (Environment.GetEnvironmentVariable("LP_FONTPROBE") is { } probeFont && probeFont.Length > 0)
+        {
+            AppBuilder.Configure<App>().UsePlatformDetect().SetupWithoutStarting();
+            var ok = LinPlayer.Desktop.Core.UiFont.Apply(probeFont);
+            Console.WriteLine($"PROBE 装上了={ok} 家族={LinPlayer.Desktop.Core.UiFont.Current?.Name ?? "(无)"}");
+            return;
+        }
         Perf.Log("Main 入口");
         var exeDir = AppContext.BaseDirectory;
         /* 数据全在 exe 同级的 userdata/(绿色包单一数据根)。

@@ -13,6 +13,7 @@ package prefs
 
 import (
 	"context"
+	"strings"
 
 	"linplayer/core/bus"
 	"linplayer/core/config"
@@ -36,8 +37,18 @@ func RegisterCommands(version string) {
 	bus.Register("prefs.setPrefs", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
 		c := config.Current()
 		p := c.PrefsOf()
-		p.AudioLang = strPtr(a, "audio_lang")
-		p.SubLang = strPtr(a, "sub_lang")
+		/* ☠ **没传的键一律不动。** 这两条原来是无条件赋值,于是任何只想改别的东西
+		   的调用方(比如设置页那张「界面字体」卡)一保存就把用户的语言偏好清空了 ——
+		   而它不报错、下次进设置页才看得出来。空串仍然表示「不限定语言」,那是传了。 */
+		if _, ok := a["audio_lang"]; ok {
+			p.AudioLang = strPtr(a, "audio_lang")
+		}
+		if _, ok := a["sub_lang"]; ok {
+			p.SubLang = strPtr(a, "sub_lang")
+		}
+		if v, ok := a["ui_font"].(string); ok {
+			p.UiFont = strings.TrimSpace(v)
+		}
 		if v, ok := a["sub_enabled"].(bool); ok {
 			p.SubEnabled = v
 		}

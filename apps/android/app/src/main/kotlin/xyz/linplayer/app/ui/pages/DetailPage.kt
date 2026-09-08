@@ -285,8 +285,12 @@ fun DetailPage(nav: NavController, entry: NavBackStackEntry) {
     // 底色从**海报**取,不从背景图取:海报是这部片的主视觉,背景图常常是一片夜景
     val tone = rememberTone(app.imageUrl(route.itemId, "Primary", 330), c.acc.copy(alpha = .9f))
 
-    val toPlayer: (String) -> Unit = { target ->
-        nav.navigate(Route.Player(target, title, pickedVersion ?: ver?.takeIf { it.preferred }?.id))
+    /* 起播。`engine` 为空 = 用设置里的默认内核。
+       ★ 长按播放键换内核【用户定 2026-09-08】:短按一个、长按另一个,哪个在前由设置决定。
+         做成「这一次的参数」而不是改全局开关 —— 换回来不必再进一趟设置页。 */
+    val toPlayer: (String, String?) -> Unit = { target, engine ->
+        nav.navigate(Route.Player(
+            target, title, pickedVersion ?: ver?.takeIf { it.preferred }?.id, engine))
     }
 
     LpImmersive(bar = {
@@ -349,7 +353,13 @@ fun DetailPage(nav: NavController, entry: NavBackStackEntry) {
                             },
                             icon = LpIcons.play,
                             m = Modifier.padding(horizontal = Sp.x16),
-                        ) { toPlayer(if (isSeries) (nextEp?.id ?: route.itemId) else route.itemId) }
+                            onLongClick = {
+                                toPlayer(
+                                    if (isSeries) (nextEp?.id ?: route.itemId) else route.itemId,
+                                    xyz.linplayer.app.data.UiPrefs.otherEngine(),
+                                )
+                            },
+                        ) { toPlayer(if (isSeries) (nextEp?.id ?: route.itemId) else route.itemId, null) }
 
                         Row(
                             Modifier.fillMaxWidth().padding(start = Sp.x10, end = Sp.x10, top = Sp.x12),

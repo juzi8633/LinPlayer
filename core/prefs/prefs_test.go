@@ -135,6 +135,51 @@ func TestGetters对老配置里的离谱值要钳(t *testing.T) {
 	}
 }
 
+// setPrefs **没传的键一律不动** —— 包括选轨那两条。
+//
+// ☠ 它们原来是无条件赋值:只想存「界面字体」的调用方一保存,用户的音轨/字幕语言
+// 偏好当场被清空,而且不报错。这一条钉住的就是那个静默清空。
+func TestSetPrefs没传的键不动(t *testing.T) {
+	setup(t)
+	c := config.Current()
+	p := config.DefaultPrefs()
+	jpn, chi := "jpn", "chi"
+	p.AudioLang, p.SubLang = &jpn, &chi
+	if err := c.SetPrefs(p); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := config.Load(); err != nil {
+		t.Fatal(err)
+	}
+
+	if r := call(t, 302, "prefs.setPrefs", map[string]any{
+		"ui_font": "D:/字体/思源黑体.ttf",
+	}); !r.OK {
+		t.Fatalf("只存字体不该失败: %s", r.Msg)
+	}
+	got := config.Current().PrefsOf()
+	if got.UiFont != "D:/字体/思源黑体.ttf" {
+		t.Fatalf("字体没存上,实得 %q", got.UiFont)
+	}
+	if got.AudioLang == nil || *got.AudioLang != "jpn" {
+		t.Error("只存了字体,音轨语言偏好被清空了")
+	}
+	if got.SubLang == nil || *got.SubLang != "chi" {
+		t.Error("只存了字体,字幕语言偏好被清空了")
+	}
+
+	// 传了空串仍然是「不限定语言」—— 那是**传了**,和没传是两件事
+	if r := call(t, 303, "prefs.setPrefs", map[string]any{"audio_lang": ""}); !r.OK {
+		t.Fatalf("清空语言偏好不该失败: %s", r.Msg)
+	}
+	if config.Current().PrefsOf().AudioLang != nil {
+		t.Error("传空串该把语言偏好清掉")
+	}
+}
+
 // setPrefs **只改选轨三项**,别整体覆盖。
 //
 // ★ 整体覆盖的表现是:用户改个字幕语言,跨服续播 / 跳过片头 / 多线程加载全被重置。

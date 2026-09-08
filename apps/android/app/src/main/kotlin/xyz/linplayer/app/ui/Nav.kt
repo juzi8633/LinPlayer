@@ -29,9 +29,16 @@ object Route {
     @Serializable data object Calendar                                        // U1.14b
     @Serializable data object Settings                                        // U1.15
     @Serializable data class SettingsSub(val group: String)                   // U1.15 二级
-    /** U1.6。`versionId` = 详情页选中的 MediaSource —— 不传就让核心层按版本正则自己挑。 */
+    /**
+     * U1.6。`versionId` = 详情页选中的 MediaSource —— 不传就让核心层按版本正则自己挑。
+     *
+     * `engine` = 这一次用哪个内核(`mpv` / `exo`)。不传就用设置里的默认。
+     * ★ 跟着**这一次跳转**走而不是读全局开关:长按播放键换内核只影响按下的这一次,
+     *   不该把设置也改掉 —— 换回来还得再进一趟设置页,那不是「另一个内核试一下」。
+     */
     @Serializable data class Player(
         val itemId: String, val title: String, val versionId: String? = null,
+        val engine: String? = null,
     )
     @Serializable data object AddServer                                       // U1.2 的「添加」版式
 }

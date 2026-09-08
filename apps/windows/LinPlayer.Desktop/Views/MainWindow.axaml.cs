@@ -34,6 +34,10 @@ public partial class MainWindow : Window
            两处都得有,少哪个哪个是空的,而且都不报错。 */
         SetAppIcon();
 
+        // 用户换过界面字体的话在这里接上 —— App 那一步只是把字体装进 FontManager,
+        // 窗口是这之后才建的,不自己取一次就还是默认字体
+        if (Core.UiFont.Current is { } uf) FontFamily = uf;
+
         var drag = this.FindControl<Border>("DragArea")!;
         // 自绘标题栏必须自己接拖拽与双击最大化 —— 不接的话窗口拖不动,
         // 而用户第一反应是「卡死了」,不会想到是标题栏没实现。

@@ -4,6 +4,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -18,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -117,15 +119,35 @@ val LocalLpColors = staticCompositionLocalOf { Dark }
  */
 val LocalMotionScale: ProvidableCompositionLocal<Float> = compositionLocalOf { 1f }
 
-private val LpTypography = Typography(
-    displayLarge = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.Bold),
-    titleLarge = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold),
-    titleMedium = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
-    bodyLarge = TextStyle(fontSize = 14.sp, lineHeight = 21.sp),
-    bodyMedium = TextStyle(fontSize = 13.sp),
-    labelLarge = TextStyle(fontSize = 12.sp),
-    labelSmall = TextStyle(fontSize = 11.sp),
+private fun lpTypography(f: FontFamily?) = Typography(
+    displayLarge = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.Bold, fontFamily = f),
+    titleLarge = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = f),
+    titleMedium = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, fontFamily = f),
+    bodyLarge = TextStyle(fontSize = 14.sp, lineHeight = 21.sp, fontFamily = f),
+    bodyMedium = TextStyle(fontSize = 13.sp, fontFamily = f),
+    labelLarge = TextStyle(fontSize = 12.sp, fontFamily = f),
+    labelSmall = TextStyle(fontSize = 11.sp, fontFamily = f),
 )
+
+/**
+ * 用户导入的界面字体。
+ *
+ * ☠ **文件不在就当没设过,不许抛。** 路径存在偏好里,而文件可能被清数据、换机恢复
+ *   之后就没了 —— 那时整个应用不该起不来,只是回到默认字体。
+ * ★ 用 `Typeface.createFromFile` 而不是 Compose 的 `Font(File)`:后者要 API 26,
+ *   本应用 minSdk 是 24。
+ */
+@Composable
+private fun userFontFamily(): FontFamily? {
+    val path = xyz.linplayer.app.data.UiPrefs.uiFont.value
+    return remember(path) {
+        if (path.isBlank()) null
+        else runCatching {
+            val f = java.io.File(path)
+            if (f.isFile) FontFamily(android.graphics.Typeface.createFromFile(f)) else null
+        }.getOrNull()
+    }
+}
 
 /**
  * 主题三态:跟随系统 / 强制深色 / 强制浅色。
@@ -155,8 +177,18 @@ fun LpTheme(
         outline = c.line2, error = c.bad,
     )
 
+    /* ☠ **光换 Typography 不够。** 全站大半的 `Text(…, fontSize = 13.sp)` 走的是
+       `LocalTextStyle`(M3 不把 Typography 灌进去,它的默认值是 `TextStyle.Default`)——
+       只改 Typography 的表现是「标题换了字体,正文一个字都没变」。两处一起给。 */
+    val family = userFontFamily()
+    val typo = remember(family) { lpTypography(family) }
     CompositionLocalProvider(LocalLpColors provides c, LocalMotionScale provides motion) {
-        MaterialTheme(colorScheme = scheme, typography = LpTypography, content = content)
+        MaterialTheme(colorScheme = scheme, typography = typo) {
+            CompositionLocalProvider(
+                LocalTextStyle provides LocalTextStyle.current.copy(fontFamily = family),
+                content = content,
+            )
+        }
     }
 }
 
