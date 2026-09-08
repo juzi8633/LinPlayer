@@ -28,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -421,6 +422,16 @@ fun ExoSubtitles(player: ExoPlayer, m: Modifier = Modifier) {
     }
     if (cues.isEmpty()) return
 
+    /* 图形字幕平面的真实尺寸,从 cue 自己反推(见 [cueRect])。
+       平面和画面不等比正是「字幕被拉伸」的判据 —— 上一轮日志里没有这个数,
+       只能靠算式反推是哪一头错了,白花一轮。 */
+    val plane = cues.firstOrNull { it.bitmap != null }?.let { c ->
+        val b = c.bitmap ?: return@let null
+        if (c.size == Cue.DIMEN_UNSET || c.bitmapHeight == Cue.DIMEN_UNSET) null
+        else "${Math.round(b.width / c.size)}×${Math.round(b.height / c.bitmapHeight)}"
+    }
+    LaunchedEffect(plane) { plane?.let { Logs.d(TAG_EXO, "图形字幕平面 $it") } }
+
     BoxWithConstraints(m) {
         val texts = cues.filter { it.bitmap == null }
         cues.forEach { cue -> cue.bitmap?.let { BitmapCue(cue, it, maxWidth, maxHeight) } }
@@ -462,32 +473,59 @@ private fun TextCue(t: String) {
 }
 
 /**
+ * 一张图形字幕在画面框里的落点(像素)。**未给的值传 `NaN`。**
+ *
+ * ☠☠ **PGS 的比例是相对「字幕平面」的,不是相对画面的。** `PgsParser` 交出来的
+ *   `position/line/size/bitmapHeight` 都是拿平面宽高除出来的,而平面是**原盘那一帧**
+ *   (蓝光一律 1920×1080)。2.35:1 的片子重编码成 3840×1632 之后画面不带黑边了、
+ *   平面还带着 —— 把画面框当平面用,竖向就被压掉 1046/1383,而横向没压,
+ *   看上去正是「字幕向两边拉伸」(用户报了两轮)。
+ * ★ 平面比例从 cue 自己反推:平面宽 = 位图宽 / `size`,平面高 = 位图高 / `bitmapHeight`。
+ *   平面和画面同比例时(绝大多数片子)整段算式退化成原样。
+ * ★ 平面按**宽度**贴齐画面:PGS 平面横向总是铺满原帧,多出来的是上下那两条黑边。
+ */
+internal fun cueRect(
+    boxW: Float, boxH: Float, bmpW: Int, bmpH: Int,
+    size: Float, bmpFrac: Float, position: Float, line: Float, pad: Float = 0f,
+): Rect {
+    val on = { v: Float -> !v.isNaN() }
+    val planeH =
+        if (on(size) && on(bmpFrac) && size > 0f && bmpFrac > 0f && bmpW > 0)
+            boxW * bmpH * size / (bmpFrac * bmpW)
+        else boxH
+    val w = (if (on(size)) boxW * size else boxW).coerceAtMost(boxW)
+    val h = (if (on(bmpFrac)) planeH * bmpFrac
+    else w * bmpH / bmpW.coerceAtLeast(1)).coerceAtMost(boxH)
+    val x = if (on(position)) boxW * position else (boxW - w) / 2f
+    /* ☠ **落点要夹回画面里。** 平面比画面高的时候底部那条字会算到画面外面 ——
+       原样贴的表现是双语字幕只剩上面一行(用户原话:「直接看不到下面的英语了」)。 */
+    val y = if (on(line)) (boxH - planeH) / 2f + planeH * line else boxH - h - pad
+    val cx = x.coerceIn(0f, (boxW - w).coerceAtLeast(0f))
+    val cy = y.coerceIn(0f, (boxH - h).coerceAtLeast(0f))
+    return Rect(cx, cy, cx + w, cy + h)
+}
+
+/**
  * 一张图形字幕。
  *
- * 坐标全按 `Cue` 里的比例还原;比例缺了才回落到「底部居中、按原图长宽比」。
- * `DIMEN_UNSET` 是 `Float.MIN_VALUE`,**不是 0 也不是 -1** —— 拿 `<= 0` 判会
- * 把它当成合法的 0,字幕就贴到左上角去了。
+ * `DIMEN_UNSET` 是 `Float.MIN_VALUE`,**不是 0 也不是 -1** —— 拿 `<= 0` 判会把它
+ * 当成合法的 0,字幕就贴到左上角去了。这里统一换成 `NaN` 交给 [cueRect]。
  */
 @OptIn(UnstableApi::class)
 @Composable
 private fun BitmapCue(cue: Cue, bmp: android.graphics.Bitmap, boxW: Dp, boxH: Dp) {
-    val set = { v: Float -> v != Cue.DIMEN_UNSET }
-    val w = (if (set(cue.size)) boxW * cue.size else boxW).coerceAtMost(boxW)
-    val h = (if (set(cue.bitmapHeight)) boxH * cue.bitmapHeight
-    else w * (bmp.height.toFloat() / bmp.width.coerceAtLeast(1))).coerceAtMost(boxH)
-    val x = if (set(cue.position)) boxW * cue.position else (boxW - w) / 2
-    val y = if (set(cue.line) && cue.lineType == Cue.LINE_TYPE_FRACTION) boxH * cue.line
-    else boxH - h - 24.dp
-    /* ☠ **落点要夹回画面里。** PGS 的坐标是相对**片源画面**的,而我们这块布
-       是显示出来的那块 —— 「自适应」档裁过之后两者不等长,原样贴会把整条字幕
-       推到画面外面。双语字幕是一张图两行字,推出去的正好是下面那行英文
-       (用户原话:「双语字幕直接看不到下面的英语了」)。 */
-    Image(
-        bmp.asImageBitmap(), null,
-        Modifier
-            .offset(x.coerceIn(0.dp, (boxW - w).coerceAtLeast(0.dp)),
-                y.coerceIn(0.dp, (boxH - h).coerceAtLeast(0.dp)))
-            .size(w, h),
-        contentScale = ContentScale.FillBounds,
-    )
+    val on = { v: Float -> if (v == Cue.DIMEN_UNSET) Float.NaN else v }
+    with(LocalDensity.current) {
+        val r = cueRect(
+            boxW.toPx(), boxH.toPx(), bmp.width, bmp.height,
+            on(cue.size), on(cue.bitmapHeight), on(cue.position),
+            if (cue.lineType == Cue.LINE_TYPE_FRACTION) on(cue.line) else Float.NaN,
+            24.dp.toPx(),
+        )
+        Image(
+            bmp.asImageBitmap(), null,
+            Modifier.offset(r.left.toDp(), r.top.toDp()).size(r.width.toDp(), r.height.toDp()),
+            contentScale = ContentScale.FillBounds,
+        )
+    }
 }

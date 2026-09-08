@@ -62,6 +62,7 @@ import xyz.linplayer.app.data.LocalApp
 import xyz.linplayer.app.data.ToastKind
 import xyz.linplayer.app.data.arr
 import xyz.linplayer.app.data.bool
+import xyz.linplayer.app.data.boolOrNull
 import xyz.linplayer.app.data.dbl
 import xyz.linplayer.app.data.long
 import xyz.linplayer.app.data.obj
@@ -134,11 +135,18 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
     val engine = remember { xyz.linplayer.app.data.UiPrefs.engine.value }
     /* 字幕语言偏好。**要在建 ExoPlayer 之前读到** —— ExoPlayer 的轨道选择是
        「参数变了才重选」,建完再补一次也行,但首帧那几秒会没有字幕。
-       `null` = 还没读到(别当成「用户关了字幕」);`""` = 用户显式关了。 */
+       `null` = 还没读到,`""` = 没有语言偏好(那是**默认状态**,不是「关了字幕」)。 */
     var subLangPref by remember { mutableStateOf<String?>(null) }
+    /* ☠ **「关字幕」的开关是 `sub_enabled`,不是「语言偏好为空」。**
+       核心层的 `sub_lang` 是 `*string`、默认 null,含义是「没偏好,随便挑一条」;
+       上一版拿它是不是空串当关闭判据,于是**从没设过语言的人**(绝大多数)
+       整条字幕链被关死:libass 不开、兜底选轨不选、外挂 ASS 不取。
+       真机日志里就是那句 `libass 不走这条路: available=true subOff=true`。 */
+    var subOff by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        subLangPref = runCatching { app.call("prefs.getPrefs") }.getOrNull().obj()
-            .str("sub_lang") ?: ""
+        val p = runCatching { app.call("prefs.getPrefs") }.getOrNull().obj()
+        subLangPref = p.str("sub_lang") ?: ""
+        subOff = p.boolOrNull("sub_enabled") == false
     }
     val exo = rememberExoPlayer(engine == "exo", subLangPref)
     /* 画面比例【用户定 2026-09-07】。★ **不持久化** —— 和画面增强档位同一条口径:
@@ -204,7 +212,7 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
                内封 ASS 走 media3 的解析器那条路(ExoSurface 里按选中轨切),
                外挂的核心层根本不交给 ExoPlayer,得自己取回来喂 libass。
                ★ fire-and-forget:取不到就没有特效字幕,不该挡住播放。 */
-            if (exo != null && subLangPref != "") loadExternalAss(app, r?.get("external_subs"))
+            if (exo != null && !subOff) loadExternalAss(app, r?.get("external_subs"))
             /* 内嵌字体(MKV 附件)。**特效字幕的字形全靠它** ——
                ExoPlayer 不解析 Attachments,不自己抠的话 libass 只能回落系统字体。
                ★ 和上面那条一样是 fire-and-forget:抠不到只是字形不对,不该挡住播放。 */
@@ -400,7 +408,7 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
         // 视频层:SurfaceView。Compose 内容天然画在它上面
         // ☠ 两条**互斥**:同时挂的话 mpv 和 ExoPlayer 会各画各的,上面那层赢
         if (exo != null)
-            ExoSurface(exo, subOff = subLangPref == "", fit = videoFit, hintAr = srcAr,
+            ExoSurface(exo, subOff = subOff, fit = videoFit, hintAr = srcAr,
                 m = Modifier.fillMaxSize())
         else VideoSurface(app.core, Modifier.fillMaxSize())
 

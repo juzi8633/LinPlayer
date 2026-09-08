@@ -23,6 +23,7 @@ import xyz.linplayer.app.ui.player.VideoFit
 import xyz.linplayer.app.ui.player.assTimeMs
 import xyz.linplayer.app.ui.player.isAssMime
 import xyz.linplayer.app.ui.player.shotCorner
+import xyz.linplayer.app.ui.player.cueRect
 import xyz.linplayer.app.ui.player.videoRect
 import xyz.linplayer.app.ui.player.splitMedia3Dialogue
 import xyz.linplayer.app.ui.theme.pickTone
@@ -394,6 +395,33 @@ class LogicTest {
         // 没有轨道名才轮到 display_title,再没有才自己拼
         assertEquals("English - PGS", sub(display = "English - PGS", lang = "eng", codec = "pgs").label)
         assertEquals("英语 SRT", sub(lang = "eng", codec = "srt").label)
+    }
+
+    /**
+     * PGS 的比例是相对**字幕平面**(原盘那一帧)的,不是相对画面的。
+     * 2.35:1 的片子重编码掉黑边之后两者不等比,拿画面框当平面用会把字竖着压扁 ——
+     * 屏幕上看着就是「字幕向两边拉伸」。判据就一条:**位图长宽比不能变**。
+     */
+    @Test fun `图形字幕按自己的平面还原不被压扁`() {
+        // 画面 3840×1632 铺在 2460×1080 的屏上 = 2460×1046;字幕平面还是 1920×1080
+        val r = cueRect(
+            2460f, 1046f, 1600, 120,
+            size = 1600f / 1920f, bmpFrac = 120f / 1080f,
+            position = 160f / 1920f, line = 900f / 1080f, pad = 24f,
+        )
+        assertEquals(1600f / 120f, r.width / r.height, 0.05f)
+        assertEquals(2050f, r.width, 1f)          // 位图按画面的缩放比 2460/1920 放大
+        assertEquals(0f, r.left - 205f, 1f)
+
+        // 平面和画面同比例(1920×1080 的片子)时算式必须退化成原样
+        val same = cueRect(
+            1920f, 1080f, 1600, 120,
+            size = 1600f / 1920f, bmpFrac = 120f / 1080f,
+            position = 160f / 1920f, line = 900f / 1080f,
+        )
+        assertEquals(1600f, same.width, 1f)
+        assertEquals(120f, same.height, 1f)
+        assertEquals(900f, same.top, 1f)
     }
 
     private fun sub(
