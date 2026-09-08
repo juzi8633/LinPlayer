@@ -990,3 +990,27 @@ Emby 的 `MediaStream.DisplayTitle` 是**服务器自己拼的**「语言 + 格�
 3840×1632 的片源算出来分毫不差。**用户说的「画面也被拉伸」是字幕层带来的错觉**;
 `R16x9` / `Cover` 两档本来就会形变,那是档位的定义不是 bug。
 下次再报比例,先看这一行:它对了就别再动 `videoRect`。
+
+#### media3 给的 `initializationData[0]` 不是 ASS 头
+
+`MatroskaExtractor` 对 `S_TEXT/ASS` 塞的是**两条**(1.11.0 字节码
+`ImmutableList.of(SSA_DIALOGUE_FORMAT, getCodecPrivate(codecId))`):
+
+- `[0]` = 它自己拼的 `Format: Start, End, ReadOrder, Layer, Style, Name, MarginL, MarginR, MarginV, Effect, Text`,**恒 90 字节**
+- `[1]` = MKV 的 CodecPrivate,也就是带 `[Script Info]`(PlayResX/PlayResY)和 `[V4+ Styles]` 的真头
+
+拿了 `[0]` 的表现是 libass **开得起来**(`ass_process_codec_private` 不报错、`rc=0`),
+但样式表是空的、PlayRes 也没有 —— 事件的 Style 索引全落在表外,渲染那一步整条跳过。
+屏幕上就是「特效字幕完全不显示」,一句错都不报。
+
+**指纹是日志里那句「头 90 字节」**:`len("Format: Start, End, …, Text") == 90`,
+对得上就是这条错。现在按内容认(挑含 `[Script Info]` 的那条),`LogicTest` 钉住。
+
+顺带记两个数:`第一条事件进 libass`、`libass 画出第一帧`。这条链上
+「开起来了但一个字没有」有四五种成因(头不对 / 事件没喂进去 / 画布 0×0 /
+字体缺 / 时间轴偏),不记这两个数只能一轮一轮试。
+
+#### 一个副产物:`图形字幕平面 1920×1080` 实测坐实了 PGS 那条
+
+同一份日志里画面是 `2460×1046`(片源 3840×1632)而字幕平面是 `1920×1080` ——
+两者比例 2.35 vs 1.78,竖向差 24%。这不是推测,是打出来的数。

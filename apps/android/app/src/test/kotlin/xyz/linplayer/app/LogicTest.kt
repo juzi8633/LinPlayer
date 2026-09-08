@@ -20,6 +20,7 @@ import xyz.linplayer.app.ui.pages.cornerCode
 import xyz.linplayer.app.ui.pages.cornerLabel
 import xyz.linplayer.app.ui.pages.withScheme
 import xyz.linplayer.app.ui.player.VideoFit
+import xyz.linplayer.app.ui.player.assHeaderOf
 import xyz.linplayer.app.ui.player.assTimeMs
 import xyz.linplayer.app.ui.player.isAssMime
 import xyz.linplayer.app.ui.player.shotCorner
@@ -422,6 +423,23 @@ class LogicTest {
         assertEquals(1600f, same.width, 1f)
         assertEquals(120f, same.height, 1f)
         assertEquals(900f, same.top, 1f)
+    }
+
+    /**
+     * media3 的 MatroskaExtractor 给两条 initializationData:`[0]` 是它自己拼的
+     * `Format: …`(恒 90 字节),`[1]` 才是带样式表的真 ASS 头。拿错了 libass
+     * 照样 `rc=0`、一个字不画 —— 真机日志里那句「头 90 字节」就是指纹。
+     */
+    @Test fun `ASS 头要挑带样式表的那一条不是 media3 拼的 Format 行`() {
+        val fmt = ("Format: Start, End, ReadOrder, Layer, Style, Name, " +
+            "MarginL, MarginR, MarginV, Effect, Text").toByteArray()
+        val real = ("[Script Info]\nPlayResX: 1920\n" +
+            "[V4+ Styles]\nStyle: Default,思源黑体,60\n").toByteArray()
+        assertEquals(90, fmt.size)
+        assertEquals(String(real), String(assHeaderOf(listOf(fmt, real))!!))
+        // 只给一条(别的解封装器)时原样用它
+        assertEquals(String(real), String(assHeaderOf(listOf(real))!!))
+        assertNull(assHeaderOf(emptyList()))
     }
 
     private fun sub(

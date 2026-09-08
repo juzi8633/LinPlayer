@@ -72,6 +72,10 @@ object Libass {
 
     /** 下一帧强制重画。灌了字体 / 换了尺寸之后要用它 —— 见 [render]。 */
     private var pendingForce = false
+    /* 开轨之后**真的喂进去几条、真的画出几帧**。各记一行就够 ——
+       这条链上「开起来了但一个字没有」有四五种成因,不记这两个数只能一轮一轮试。 */
+    private var fed = 0
+    private var drawn = 0
     /** 这一部片已经灌过的字体名。附件字体常常在多条轨里重复,灌两遍是白花内存。 */
     private val fonts = HashSet<String>()
     /** 最近一次要的画布 / 片源尺寸。见 [setSize]。 */
@@ -103,8 +107,10 @@ object Libass {
             b.bytes += body.size
         }
         // 正在放的这条直通。libass 自己按 ReadOrder 去重,seek 之后重复喂不会画两遍
-        if (id == active && opened) Native.assChunk(body, startMs, durMs)
-        else openWantedLocked(id)
+        if (id == active && opened) {
+            Native.assChunk(body, startMs, durMs)
+            if (fed++ == 0) Logs.d(TAG, "第一条事件进 libass id=$id @${startMs}ms ${body.size} 字节")
+        } else openWantedLocked(id)
     }
 
     // ------------------------------------------------------------ 切轨
@@ -130,13 +136,17 @@ object Libass {
     private fun openLocked(id: String, fontsDir: String): Boolean {
         val b = bufs[id] ?: return false
         val rc = Native.assOpen(b.header, fontsDir)
-        Logs.d(TAG, "开轨 $id rc=$rc 头 ${b.header?.size ?: 0} 字节 事件 ${b.events.size} 条")
+        Logs.d(TAG, "开轨 $id rc=$rc 头 ${b.header?.size ?: 0} 字节" +
+            " 样式 ${b.header?.let { h -> String(h, Charsets.UTF_8).split("Style:").size - 1 } ?: 0} 条" +
+            " 事件 ${b.events.size} 条")
         if (rc != 0) {
             // 开不起来是硬失败(建轨/建渲染器失败),重试只会每来一条字幕就再失败一次
             opened = false; active = null; wanted = null
             return false
         }
         for (e in b.events) Native.assChunk(e.body, e.startMs, e.durMs)
+        fed = b.events.size
+        drawn = 0
         active = id
         opened = true
         applySizeLocked()
@@ -158,6 +168,7 @@ object Libass {
         }
         active = key
         opened = true
+        fed = 0; drawn = 0
         applySizeLocked()
         return true
     }
@@ -229,7 +240,9 @@ object Libass {
         if (!opened) return -1
         val f = force || pendingForce
         pendingForce = false
-        return Native.assRender(bmp, posMs, f)
+        val rc = Native.assRender(bmp, posMs, f)
+        if (rc > 0 && drawn++ == 0) Logs.d(TAG, "libass 画出第一帧 @${posMs}ms")
+        return rc
     }
 }
 
@@ -275,8 +288,7 @@ class LibassParserFactory(private val fontsDir: String) : SubtitleParser.Factory
 private class LibassParser(private val id: String, format: Format) : SubtitleParser {
 
     init {
-        // initializationData[0] 是 MKV 的 CodecPrivate,也就是真正的 ASS 头
-        Libass.header(id, format.initializationData.firstOrNull())
+        Libass.header(id, assHeaderOf(format.initializationData))
     }
 
     override fun parse(
@@ -293,6 +305,23 @@ private class LibassParser(private val id: String, format: Format) : SubtitlePar
 
     override fun reset() { /* 事件按 ReadOrder 去重,seek 不必清空 —— 清了反而要重放 */ }
 }
+
+/**
+ * 从 `initializationData` 里挑出**真正的 ASS 头**。
+ *
+ * ☠☠ media3 的 `MatroskaExtractor` 塞的是**两条**:`[0]` 是它自己拼的
+ * `Format: Start, End, ReadOrder, …`(恒 90 字节),`[1]` 才是 MKV 的 CodecPrivate,
+ * 也就是带 `[Script Info]`(PlayResX/PlayResY)和 `[V4+ Styles]` 的那份真头
+ * (1.11.0 字节码:`ImmutableList.of(SSA_DIALOGUE_FORMAT, getCodecPrivate(codecId))`)。
+ * 拿了 `[0]` 的表现是 libass **开得起来**(`rc=0`)却一个字都不画:样式表是空的,
+ * 事件的 Style 索引全落在表外,渲染那一步整条跳过 —— 一句错都不报。
+ * 真机日志里那句「头 90 字节」就是这条错的指纹。
+ *
+ * ★ 按内容认而不是按下标认:下标的顺序是 media3 的实现细节,认错了又是无声失败。
+ */
+internal fun assHeaderOf(data: List<ByteArray>): ByteArray? =
+    data.lastOrNull { String(it, Charsets.UTF_8).contains("[Script Info]", true) }
+        ?: data.lastOrNull()
 
 /** 一条切好的事件。`body` 已经是 `ass_process_chunk` 要的 Matroska 口径。 */
 data class AssEvent(val startMs: Long, val durMs: Long, val body: String)
