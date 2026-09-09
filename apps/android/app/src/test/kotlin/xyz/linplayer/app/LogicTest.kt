@@ -11,6 +11,7 @@ import xyz.linplayer.app.data.Item
 import xyz.linplayer.app.data.Page
 import xyz.linplayer.app.data.Session
 import xyz.linplayer.app.data.UiPrefs
+import xyz.linplayer.app.ui.player.DanmakuStyle
 import xyz.linplayer.app.ui.player.SubStyle
 import xyz.linplayer.app.ui.pages.Stream
 import xyz.linplayer.app.ui.pages.Version
@@ -541,5 +542,35 @@ class LogicTest {
         assertEquals(0, SubStyle.stepPos(0, false))
         assertEquals(10.0, SubStyle.stepBorder(10.0, true), 1e-9)
         assertEquals(0.0, SubStyle.stepBorder(0.0, false), 1e-9)
+    }
+
+    /**
+     * 滚动范围是**三档循环**:四分之一 → 半 → 全 → 四分之一。
+     *
+     * ☠ 判据用的是「点了 N 下之后是哪一档」而不是「函数返回什么」——
+     *   写成 `>= 0.5` 之类的边界错法会让某一档永远跳不进去,而每一步单看都对。
+     */
+    @Test fun `滚动范围三档循环走得回来`() {
+        var a = 1.0
+        assertEquals("全屏", DanmakuStyle.areaLabel(a))
+        a = DanmakuStyle.nextArea(a); assertEquals(0.25, a, 1e-9)
+        assertEquals("四分之一屏", DanmakuStyle.areaLabel(a))
+        a = DanmakuStyle.nextArea(a); assertEquals(0.5, a, 1e-9)
+        assertEquals("半屏", DanmakuStyle.areaLabel(a))
+        a = DanmakuStyle.nextArea(a); assertEquals(1.0, a, 1e-9)
+        assertEquals("全屏", DanmakuStyle.areaLabel(a))
+    }
+
+    /** 弹幕的步进要夹住区间,而且**不许攒出浮点尾巴**(读数会原样显示出来)。 */
+    @Test fun `弹幕步进夹区间且不留浮点尾巴`() {
+        assertEquals(3.0, DanmakuStyle.step(3.0, true, 0.1, 0.1, 3.0), 1e-9)
+        assertEquals(0.1, DanmakuStyle.step(0.1, false, 0.1, 0.1, 3.0), 1e-9)
+        assertEquals(1.0, DanmakuStyle.step(1.0, true, 0.1, 0.1, 1.0), 1e-9)
+        // 连加十次:0.1 一直加会攒出 1.7000000000000002,收不掉的话读数就是那一串
+        var v = 1.0
+        repeat(10) { v = DanmakuStyle.step(v, true, 0.1, 0.1, 3.0) }
+        // 判据用 toString 不用 delta:2.0000000000000004 和 2.0 的差在 1e-9 之内,
+        // 而读数上它就是一长串 —— delta 那种写法**看不见这个 bug**
+        assertEquals("2.0", v.toString())
     }
 }

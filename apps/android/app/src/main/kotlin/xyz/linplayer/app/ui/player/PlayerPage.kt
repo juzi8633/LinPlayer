@@ -175,6 +175,19 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
     var osd by remember { mutableStateOf(true) }
     var locked by remember { mutableStateOf(false) }
     var panel by remember { mutableStateOf<String?>(null) }
+    var dmSearch by remember { mutableStateOf(false) }
+    /** 弹幕密度。空表 = 不画(关了热力图、或者这一集没弹幕)。 */
+    var heat by remember { mutableStateOf<List<Float>>(emptyList()) }
+    /* 语料换了要重取一次。**跟着弹幕开关和热力图开关走**,不做轮询 ——
+       密度是一集一份的静态数据,每秒问一次纯属白烧。 */
+    LaunchedEffect(DanmakuStyle.enabled.value, DanmakuStyle.heatmap.value, duration) {
+        heat = if (!DanmakuStyle.enabled.value || !DanmakuStyle.heatmap.value) emptyList()
+        else runCatching {
+            app.call("player.danmakuHeatmap", args("buckets" to 120, "duration" to duration))
+        }.getOrNull().arr().mapNotNull {
+            (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toFloatOrNull()
+        }
+    }
     /** 跟手 seek 的预览值。**松手才发命令** —— 跟着滑发是每帧一条,把核心层的 seek 闩打乱。 */
     var seekPreview by remember { mutableStateOf<Double?>(null) }
     var volume by remember { mutableFloatStateOf(1f) }
@@ -606,7 +619,7 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
             Osd(
                 portrait = portrait,
                 title = route.title, position = seekPreview ?: position, duration = duration,
-                paused = paused, speed = speed, hasEpisodes = hasEpisodes,
+                paused = paused, speed = speed, hasEpisodes = hasEpisodes, heat = heat,
                 onBack = { nav.popBackStack() },
                 onToggle = { doPause(!paused) },
                 onSeek = { t -> doSeek(t) },
@@ -635,6 +648,7 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
                 it, route.itemId, exo,
                 fit = videoFit,
                 onOpen = { k -> panel = k },
+                onSearch = { dmSearch = true },
                 /* mpv 那条路的比例在核心层改(keepaspect / video-aspect-override / panscan);
                    Exo 那条路在 Compose 侧改尺寸。**同一个档位表**,不给用户两套说法。 */
                 onFit = { f ->
@@ -645,6 +659,9 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
                 },
             ) { panel = null }
         }
+
+        // 弹幕搜索是**居中模态**,所以挂在整页最上面,不在那个 236dp 的小面板里
+        if (dmSearch) DanmakuSearchDialog(route.itemId, route.title) { dmSearch = false }
     }
 }
 
@@ -675,7 +692,7 @@ private val BottomVeil = Brush.verticalGradient(
 private fun Osd(
     portrait: Boolean,
     title: String, position: Double, duration: Double, paused: Boolean, speed: Double,
-    hasEpisodes: Boolean,
+    hasEpisodes: Boolean, heat: List<Float>,
     onBack: () -> Unit, onToggle: () -> Unit, onSeek: (Double) -> Unit,
     onSpeed: (Double) -> Unit, onLock: () -> Unit, onShot: () -> Unit,
     onPanel: (String) -> Unit,
@@ -711,7 +728,7 @@ private fun Osd(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(BottomVeil)
                 .safeDrawingPadding().padding(top = Sp.x12),
         ) {
-            ProgressRow(position, duration, onSeek)
+            ProgressRow(position, duration, heat, onSeek)
             Row(
                 Modifier.fillMaxWidth().padding(start = Sp.x6, end = Sp.x6, bottom = Sp.x2),
                 verticalAlignment = Alignment.CenterVertically,
@@ -851,7 +868,9 @@ private fun Chip(label: String, onClick: () -> Unit) {
  * 真服加载窗口实测 6~7 秒,这期间点中间会跳到 0.5 秒,用户看到的是「画面不变」。
  */
 @Composable
-private fun ProgressRow(position: Double, duration: Double, onSeek: (Double) -> Unit) {
+private fun ProgressRow(
+    position: Double, duration: Double, heat: List<Float>, onSeek: (Double) -> Unit,
+) {
     val enabled = duration > 0
     var live by remember(position) { mutableFloatStateOf(position.toFloat()) }
     Row(
@@ -859,16 +878,35 @@ private fun ProgressRow(position: Double, duration: Double, onSeek: (Double) -> 
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(fmtTime(position), color = Color.White, fontSize = 11.sp)
+        /* 热力图画在滑杆**上方**那 10dp 里,不叠进轨道 ——
+           叠进去的话它和已播那半截互相染色,两个都读不出来。
+           空表就整块不占位:关掉热力图之后进度条要回到原来的高度。 */
+        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+        if (heat.isNotEmpty()) androidx.compose.foundation.Canvas(
+            Modifier.fillMaxWidth().height(10.dp)
+                .align(Alignment.TopCenter).padding(horizontal = Sp.x10),
+        ) {
+            val cw = size.width / heat.size
+            heat.forEachIndexed { i, v ->
+                val h = v.coerceIn(0f, 1f) * size.height
+                if (h > 0.5f) drawRect(
+                    Color(0xFFFF9D3F).copy(alpha = .4f),
+                    topLeft = androidx.compose.ui.geometry.Offset(i * cw, size.height - h),
+                    size = androidx.compose.ui.geometry.Size(cw + .5f, h),
+                )
+            }
+        }
         Slider(
             value = if (enabled) live.coerceIn(0f, duration.toFloat()) else 0f,
             onValueChange = { live = it },
             onValueChangeFinished = { if (enabled) onSeek(live.toDouble()) },
             valueRange = 0f..(if (enabled) duration.toFloat() else 1f),
             enabled = enabled,
-            modifier = Modifier.weight(1f).padding(horizontal = Sp.x10),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = Sp.x10),
             colors = SliderDefaults.colors(thumbColor = Lp.colors.acc,
                 activeTrackColor = Lp.colors.acc, inactiveTrackColor = Color.White.copy(alpha = .3f)),
         )
+        }
         // 右边写**剩余**不写总长:看片的时候关心的是「还有多久」
         Text(
             if (enabled) "-" + fmtTime((duration - position).coerceAtLeast(0.0)) else "--:--",

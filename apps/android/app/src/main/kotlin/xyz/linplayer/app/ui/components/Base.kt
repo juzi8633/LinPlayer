@@ -263,6 +263,9 @@ fun LpField(
     password: Boolean = false,
     error: String? = null,
     label: String? = null,
+    /** >1 = 多行(屏蔽词那种一行一条的列表)。给参数不另造一个组件:
+     *  另造一个的下场是两份配色、两份错误位置,而改的人只会记得改一份。 */
+    lines: Int = 1,
 ) {
     val c = Lp.colors
     Column(m) {
@@ -271,7 +274,8 @@ fun LpField(
             value = value,
             onValueChange = onChange,
             placeholder = { Dim3(placeholder) },
-            singleLine = true,
+            singleLine = lines <= 1,
+            minLines = lines,
             isError = error != null,
             shape = RoundedCornerShape(R.sm),
             visualTransformation = if (password)

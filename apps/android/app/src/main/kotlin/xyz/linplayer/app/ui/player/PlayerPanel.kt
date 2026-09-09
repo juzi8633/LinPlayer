@@ -66,6 +66,9 @@ fun PlayerPanel(
     fit: VideoFit = VideoFit.Source,
     onOpen: (String) -> Unit = {},
     onFit: (VideoFit) -> Unit = {},
+    // 搜索弹幕是**居中大弹窗**,不塞进这个 236dp 的小面板里 ——
+    // 搜索结果是「源 → 条目 → 集数」三层,一列 236dp 摊不开
+    onSearch: () -> Unit = {},
     onClose: () -> Unit,
 ) {
     val app = LocalApp.current
@@ -143,15 +146,6 @@ fun PlayerPanel(
                 }
                 current = lv.firstOrNull { it.obj().bool("selected") }.obj().str("id")
             }
-            "danmaku" -> {
-                options = listOf(
-                    Triple("on", null, "打开弹幕"),
-                    Triple("off", null, "关闭弹幕"),
-                )
-                // 回显当前状态:不回显的话开关看起来永远是「两个都没选」
-                current = if (runCatching { app.call("prefs.getPrefs") }
-                        .getOrNull().obj().bool("danmaku_enabled")) "on" else "off"
-            }
             /* 画面比例。★ 档位表由 [VideoFit] 一处定 —— 面板里再抄一遍的话,
                加一档就得改两处,而漏掉的那处不会报错,只是少一个选项。
                ☠ **只写档位名,不挂说明也不挂「片源未知」**【用户定 2026-09-07:
@@ -175,7 +169,12 @@ fun PlayerPanel(
                        而 `player.setShaderLevel` 照样返回成功。
                        一颗「点开永远没效果」的按钮比没有它更糟。 */
                     if (exo == null) Triple("quality", null, "画面增强") else null,
-                    Triple("danmaku", null, "弹幕"),
+                    /* ☠ **Exo 内核下也没有「弹幕」。** 渲染那条路的终点是 mpv 的
+                       osd-overlay,Exo 那条路上 mpv 手里根本没有这一片 ——
+                       `player.danmakuSet` 照样返回成功、照样报「挂上 N 条」,
+                       画面上一条都没有。和「画面增强」同一个理由。
+                       设置页里的弹幕源和屏蔽词不受影响:那两件事跟内核无关。 */
+                    if (exo == null) Triple("danmaku", null, "弹幕") else null,
                     Triple("substyle", null, "字幕样式"),
                 )
             }
@@ -183,8 +182,9 @@ fun PlayerPanel(
         loading = false
     }
 
-    // 字幕样式不是「一列选项」,是几个步进器 —— 它不进上面那套 options 模型
+    // 字幕样式和弹幕不是「一列选项」,是开关加步进器 —— 它们不进上面那套 options 模型
     LaunchedEffect(kind) { if (kind == "substyle" && !SubStyle.loaded.value) SubStyle.load(app) }
+    LaunchedEffect(kind) { if (kind == "danmaku") DanmakuStyle.load(app) }
 
     val title = when (kind) {
         "source" -> "版本与线路"; "audio" -> "音轨"; "subtitle" -> "字幕"
@@ -217,6 +217,9 @@ fun PlayerPanel(
             Spacer(Modifier.height(Sp.x6))
             when {
                 kind == "substyle" -> SubStylePanel(app, scope)
+                kind == "danmaku" -> DanmakuPanel(app, scope, itemId, onSearch = {
+                    onClose(); onSearch()
+                })
                 loading -> Dim3("正在取…")
                 options.isEmpty() -> Dim3("这里没有可选项", maxLines = 2)
                 else -> LazyColumn(Modifier.fillMaxWidth(), list) {
@@ -300,6 +303,104 @@ private fun SubStylePanel(
 }
 
 /**
+ * 弹幕面板:开关 / 搜索 / 九项显示设置。
+ *
+ * <p>以前这一格只有「打开 / 关闭」两行,而核心层十六条 `danmaku.*` 里
+ * 十一条零调用 —— 搜索、选集、换源、屏蔽词在两端都没有入口。</p>
+ *
+ * ★ 用步进器不用滑块:滑块拖一次会往核心层灌上百次重排,而重排要遍历几千条弹幕。
+ */
+@Composable
+private fun DanmakuPanel(
+    app: xyz.linplayer.app.data.AppState,
+    scope: kotlinx.coroutines.CoroutineScope,
+    itemId: String,
+    onSearch: () -> Unit,
+) {
+    LazyColumn(Modifier.fillMaxWidth()) {
+        item("on") {
+            OptRow("显示弹幕", {
+                scope.launch { toggleDanmaku(app, itemId, !DanmakuStyle.enabled.value) }
+            }, selected = DanmakuStyle.enabled.value)
+        }
+        item("search") { OptRow("搜索弹幕…", onSearch, selected = false) }
+        item("again") {
+            OptRow("重新匹配这一集", {
+                scope.launch { loadDanmakuFor(app, itemId, loud = true) }
+            }, selected = false)
+        }
+        // 范围是**三档枚举**不是连续值,所以是「点一下换下一档」而不是步进器
+        item("area") {
+            OptRow("滚动范围:" + DanmakuStyle.areaLabel(DanmakuStyle.area.doubleValue), {
+                scope.launch {
+                    DanmakuStyle.set(app, "area", DanmakuStyle.nextArea(DanmakuStyle.area.doubleValue))
+                }
+            }, selected = false)
+        }
+        item("scale") {
+            StepRow("弹幕缩放", "%.1f×".format(DanmakuStyle.scale.doubleValue)) { up ->
+                scope.launch { DanmakuStyle.set(app, "scale", DanmakuStyle.step(DanmakuStyle.scale.doubleValue, up, 0.1, 0.1, 3.0)) }
+            }
+        }
+        item("opacity") {
+            StepRow("透明度", "%.0f%%".format(DanmakuStyle.opacity.doubleValue * 100)) { up ->
+                scope.launch { DanmakuStyle.set(app, "opacity", DanmakuStyle.step(DanmakuStyle.opacity.doubleValue, up, 0.1, 0.1, 1.0)) }
+            }
+        }
+        item("speed") {
+            StepRow("滚动速度", "%.1f×".format(DanmakuStyle.speed.doubleValue)) { up ->
+                scope.launch { DanmakuStyle.set(app, "speed", DanmakuStyle.step(DanmakuStyle.speed.doubleValue, up, 0.1, 0.1, 3.0)) }
+            }
+        }
+        item("top") {
+            StepRow("置顶行数", DanmakuStyle.topLines.intValue.toString()) { up ->
+                scope.launch {
+                    DanmakuStyle.set(app, "top_lines",
+                        (DanmakuStyle.topLines.intValue + if (up) 1 else -1).coerceIn(0, 20))
+                }
+            }
+        }
+        item("bottom") {
+            StepRow("置底行数", DanmakuStyle.bottomLines.intValue.toString()) { up ->
+                scope.launch {
+                    DanmakuStyle.set(app, "bottom_lines",
+                        (DanmakuStyle.bottomLines.intValue + if (up) 1 else -1).coerceIn(0, 20))
+                }
+            }
+        }
+        item("merge") {
+            OptRow("合并重复弹幕",
+                { scope.launch { DanmakuStyle.set(app, "merge", !DanmakuStyle.merge.value) } },
+                selected = DanmakuStyle.merge.value)
+        }
+        item("bold") {
+            OptRow("粗体弹幕",
+                { scope.launch { DanmakuStyle.set(app, "bold", !DanmakuStyle.bold.value) } },
+                selected = DanmakuStyle.bold.value)
+        }
+        item("heat") {
+            OptRow("进度条热力图",
+                { scope.launch { DanmakuStyle.set(app, "heatmap", !DanmakuStyle.heatmap.value) } },
+                selected = DanmakuStyle.heatmap.value)
+        }
+        item("note") {
+            Dim3("行数设成 0 就是这一类不显示。屏蔽词在设置里加。", maxLines = 3)
+        }
+    }
+}
+
+/** 弹幕开关。开的时候顺手匹配一次并灌进渲染层。 */
+private suspend fun toggleDanmaku(
+    app: xyz.linplayer.app.data.AppState, itemId: String, on: Boolean,
+) {
+    DanmakuStyle.enabled.value = on
+    runCatching { app.call("player.setDanmakuEnabled", args("enabled" to on)) }
+        .onFailure { app.report(it); return }
+    if (on) loadDanmakuFor(app, itemId, loud = false)
+    else runCatching { app.call("player.danmakuSet", argsEmptyItems()) }
+}
+
+/**
  * 一行步进器:标签 + 读数 + 两个键。
  *
  * ★ 两个键的命中区拉到 36dp:面板本身只有 236dp 宽,按 12sp 的字面大小去点
@@ -354,16 +455,6 @@ private suspend fun pick(
                     app.toast(r.str("note") ?: "这档在你这台机器上跑不起来", ToastKind.Error)
                 }
             }
-            /* 弹幕开关走 player.setDanmakuEnabled(2026-09-06 新增)。
-               ☠ **不是** danmaku.setDanmakuConfig —— 那条收的是**弹幕源清单**,
-                 传 enabled 进去核心层只会报「缺少 sources」。
-               打开时顺手匹配一次本片的弹幕并灌进渲染层:开关只管开关,
-               取哪一集是 danmaku.* 的事,两件事不合成一条命令。 */
-            "danmaku" -> {
-                app.call("player.setDanmakuEnabled", args("enabled" to (id == "on")))
-                if (id == "on") loadDanmakuFor(app, itemId) else
-                    app.call("player.danmakuSet", argsEmptyItems())
-            }
             else -> Unit
         }
     }.onFailure { app.report(it) }
@@ -375,7 +466,9 @@ private suspend fun pick(
  * ★ 匹配不上**不弹错**:九成片子本来就没有弹幕,弹一次错等于骂用户一次。
  *   `danmaku.autoLoad` 分不够时返回 null,那是正常结果不是失败。
  */
-private suspend fun loadDanmakuFor(app: xyz.linplayer.app.data.AppState, itemId: String) {
+private suspend fun loadDanmakuFor(
+    app: xyz.linplayer.app.data.AppState, itemId: String, loud: Boolean = false,
+) {
     val d = runCatching { app.call("emby.itemDetail", args("item_id" to itemId)) }
         .getOrNull().obj() ?: return
     // ★ autoLoad 收的是**嵌套的 input 对象**(MatchInput),不是平铺参数。
@@ -397,13 +490,15 @@ private suspend fun loadDanmakuFor(app: xyz.linplayer.app.data.AppState, itemId:
             mapOf("input" to kotlinx.serialization.json.JsonObject(input))))
     }.getOrNull()
     if (items == null || items is kotlinx.serialization.json.JsonNull) {
-        app.toast("这一集没匹配到弹幕")
+        app.toast("这一集没匹配到弹幕,可以手动搜一下")
         return
     }
     runCatching {
         app.call("player.danmakuSet",
             kotlinx.serialization.json.JsonObject(mapOf("items" to items)))
-    }.onFailure { app.report(it) }
+    }.onFailure { app.report(it); return }
+    if (loud) app.toast("挂上 " + (items as? kotlinx.serialization.json.JsonArray)?.size + " 条弹幕",
+        ToastKind.Ok)
 }
 
 private fun argsEmptyItems() = kotlinx.serialization.json.JsonObject(

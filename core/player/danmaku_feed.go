@@ -41,22 +41,26 @@ func danmakuSet(list []feedComment) int {
 			mode = 1
 		}
 		items = append(items, danmakuItem{
-			Time: c.Time, Mode: mode, Text: c.Text,
+			Time: c.Time, Mode: mode, Text: c.Text, Count: 1,
 			Color: uint32(c.Color) & 0xFFFFFF,
 		})
 	}
 	// 按时间排:布局按出现顺序分轨,乱序进来会让同一时刻的几条挤在一条轨上。
 	sort.Slice(items, func(i, j int) bool { return items[i].Time < items[j].Time })
-	for i := range items {
-		items[i].lane = i % 16
-	}
-	dmMu.Lock()
-	dmItems = items
-	dmMu.Unlock()
+	/* 存的是**原始语料**,分轨结果由 relayout 现算(见 danmakustyle.go)。
+	   ☠ 别把布局结果当唯一副本存下来:合并 / 范围 / 行数 / 缩放 / 速度这五项
+	     一改都要重排,而重排的输入是「合并之前、丢弃之前」的那一份。
+	     只留布局结果的话,范围调小一次就再也调不回去了 —— 丢掉的条目找不回来。 */
+	styMu.Lock()
+	dmRaw = items
+	styMu.Unlock()
+	relayout()
 	return len(items)
 }
 
 func registerDanmakuFeed() {
+	registerDanmakuStyle()
+
 	// player.danmakuSet 灌语料。传空数组 = 清空(换片时必须清,否则上一集的弹幕会跟过来)。
 	bus.Register("player.danmakuSet", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
 		raw, ok := a["items"]

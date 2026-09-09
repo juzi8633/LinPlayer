@@ -126,6 +126,9 @@ public static class LinPlayerCommandNames
         "player.setPause",
         "player.danmakuSet",
         "player.setDanmakuEnabled",
+        "player.setDanmakuStyle",
+        "player.getDanmakuStyle",
+        "player.danmakuHeatmap",
         "player.setPlaybackPrefs",
         "player.setScreenshotDir",
         "player.setSecondarySub",
@@ -172,6 +175,8 @@ public static class LinPlayerCommandNames
         "danmaku.minAutoScore",
         "danmaku.search",
         "danmaku.setDanmakuConfig",
+        "danmaku.getBlockwords",
+        "danmaku.setBlockwords",
         "plugin.devPoll",
         "plugin.disable",
         "plugin.enable",
@@ -406,7 +411,7 @@ public static class LinPlayerCommandsExtensions
     public static Task<JsonElement> AccountUpdateAccount(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("account.updateAccount", args, ct);
 
-    // ---- 播放器 · player.* (45 条) ----
+    // ---- 播放器 · player.* (48 条) ----
     public static Task<JsonElement> PlayerAddSubtitle(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("player.addSubtitle", args, ct);
     public static Task<JsonElement> PlayerChapterInfo(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -453,6 +458,12 @@ public static class LinPlayerCommandsExtensions
         => c.CallAsync("player.danmakuSet", args, ct);
     public static Task<JsonElement> PlayerSetDanmakuEnabled(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("player.setDanmakuEnabled", args, ct);
+    public static Task<JsonElement> PlayerSetDanmakuStyle(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("player.setDanmakuStyle", args, ct);
+    public static Task<JsonElement> PlayerGetDanmakuStyle(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("player.getDanmakuStyle", args, ct);
+    public static Task<JsonElement> PlayerDanmakuHeatmap(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("player.danmakuHeatmap", args, ct);
     public static Task<JsonElement> PlayerSetPlaybackPrefs(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("player.setPlaybackPrefs", args, ct);
     public static Task<JsonElement> PlayerSetScreenshotDir(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -520,7 +531,7 @@ public static class LinPlayerCommandsExtensions
     public static Task<JsonElement> SourceWatchdog(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("source.watchdog", args, ct);
 
-    // ---- 弹幕 · danmaku.* (14 条) ----
+    // ---- 弹幕 · danmaku.* (16 条) ----
     public static Task<JsonElement> DanmakuAutoLoad(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("danmaku.autoLoad", args, ct);
     public static Task<JsonElement> DanmakuCacheClear(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -549,6 +560,10 @@ public static class LinPlayerCommandsExtensions
         => c.CallAsync("danmaku.search", args, ct);
     public static Task<JsonElement> DanmakuSetDanmakuConfig(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("danmaku.setDanmakuConfig", args, ct);
+    public static Task<JsonElement> DanmakuGetBlockwords(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("danmaku.getBlockwords", args, ct);
+    public static Task<JsonElement> DanmakuSetBlockwords(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("danmaku.setBlockwords", args, ct);
 
     // ---- 插件 · plugin.* (22 条) ----
     public static Task<JsonElement> PluginDevPoll(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)

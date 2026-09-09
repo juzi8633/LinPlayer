@@ -155,6 +155,9 @@
 | [x] | `player.setPause` | `set_pause` | `paused: bool` | `Result<(), String>` | ✅ |
 | [x] | `player.danmakuSet` | **新增** | `items: Vec<danmaku::Comment>` | `{count: i64}` | ✅ | <!-- 把 danmaku.autoLoad 取到的弹幕灌进 osd-overlay。空数组=清空,换片必须发一次 -->
 | [x] | `player.setDanmakuEnabled` | **新增** | `enabled: bool` | `{enabled: bool}` | ✅ | <!-- 弹幕开关,落 prefs.danmaku_enabled。以前三端都在发一条不存在的命令 -->
+| [x] | `player.setDanmakuStyle` | **新增** | `area: f64, scale: f64, opacity: f64, speed: f64, top_lines: i64, bottom_lines: i64, merge: bool, bold: bool, heatmap: bool` | `DanmakuStyle` | ✅ | <!-- 九项显示设置,只传要改的那几个;回的是钳过之后的值,UI 照它刷读数 -->
+| [x] | `player.getDanmakuStyle` | **新增** | `—` | `DanmakuStyle` | ✅ | <!-- 面板打开时回显。不回显的话滑块从写死的默认值起手,和画面上的弹幕对不上 -->
+| [x] | `player.danmakuHeatmap` | **新增** | `buckets: Option<i64>, duration: Option<f64>` | `Vec<f64>` | ✅ | <!-- 当前语料的密度(0..1),两端在进度条上画同一份 -->
 | [x] | `player.setPlaybackPrefs` | `set_playback_prefs` | `settings: PlaybackPrefs` | `Result<(), String>` | ✅ |
 | [x] | `player.setScreenshotDir` | `set_screenshot_dir` | `dir: Option<String>` | `Result<ScreenshotDir, String>` | ❌ |
 | [x] | `player.setSecondarySub` | `set_secondary_sub` | `id: String` | `Result<(), String>` | ✅ |
@@ -193,7 +196,7 @@
 | [x] | `source.search` | `source_search` | `query: String` | `Result<Vec<SourceEntry>, String>` | ✅ |
 | [x] | `source.watchdog` | `source_watchdog` | `pos: f64` | `Result<bool, String>` | ✅ |
 
-### 弹幕 · `danmaku.*` — 14 条
+### 弹幕 · `danmaku.*` — 16 条
 
 | 移植 | 新命令名 | 现有名 | 参数 | 返回 | 安卓已注册 |
 |:--:|---|---|---|---|:--:|
@@ -211,6 +214,8 @@
 | [x] | `danmaku.minAutoScore` | `danmaku_min_auto_score` | `—` | `f64` | ✅ |
 | [x] | `danmaku.search` | `danmaku_search` | `keyword: String` | `Result<Vec<danmaku::DanmakuSourceGroup>, String>` | ✅ |
 | [x] | `danmaku.setDanmakuConfig` | `set_danmaku_config` | `sources: Vec<DanmakuServer>` | `Result<(), String>` | ✅ |
+| [x] | `danmaku.getBlockwords` | **新增** | `—` | `{words: Vec<String>, users: Vec<String>}` | ✅ | <!-- 落库的屏蔽词与屏蔽用户。autoLoad/filter 无条件并进来,不靠调用方传 -->
+| [x] | `danmaku.setBlockwords` | **新增** | `words: Vec<String>, users: Vec<String>` | `{words: Vec<String>, users: Vec<String>}` | ✅ | <!-- 只传要改的那一半,另一半原样留着 -->
 
 ### 插件 · `plugin.*` — 22 条
 

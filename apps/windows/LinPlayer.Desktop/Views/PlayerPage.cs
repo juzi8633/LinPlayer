@@ -582,8 +582,9 @@ public sealed class PlayerPage : UserControl
               **弹幕源清单**,`enabled` 被当未知键忽略、核心层照常返回成功。
               一个永远不生效又不报错的开关。走 `player.setDanmakuEnabled`(2026-09-06 新增)。
             开的时候顺手匹配一次并灌进渲染层:开关只管开关,取哪一集是 `danmaku.*` 的事。 */
-        var dmBtn = Osd("弹幕", "打开 / 关闭弹幕");
-        dmBtn.Click += async (_, _) => await ToggleDanmaku(dmBtn);
+        _dmBtn = Osd("弹幕", "弹幕开关 / 搜索 / 显示设置");
+        _dmBtn.Click += (_, _) => ShowDanmakuMenu(_dmBtn);
+        var dmBtn = _dmBtn;
 
         /* 跳过片头 / 片尾。
             这是<b>核心层早就算好、UI 从来没用过</b>的东西:player.chapterInfo
@@ -758,7 +759,8 @@ public sealed class PlayerPage : UserControl
         {
             Background = Brushes.Black,
             // 气泡排在 _bottom <b>之后</b> —— 它要画在控制条上面,而不是被压在下面
-            Children = { _view, _top, _bottom, _skip, _bubble },
+            // 弹幕搜索排在 _bottom 之后:它是「旁边那扇窗」,不该被控制条压住
+            Children = { _view, _top, _bottom, _dmPanel, _skip, _bubble },
         };
         _root = root;
         Content = root;
@@ -1634,41 +1636,494 @@ public sealed class PlayerPage : UserControl
         return true;
     }
 
+    // ---------------------------------------------------------------- 弹幕
+
+    private Button _dmBtn = null!;
+    private bool _dmOn;
+
     /// <summary>
-    /// 弹幕开关。开的时候顺手匹配一次本片弹幕并灌进渲染层。
-    /// <para>匹配不上<b>不弹错</b> —— 九成片子本来就没有弹幕,弹一次错等于骂用户一次。</para>
+    /// 弹幕搜索面板。<b>贴在画面右侧,不是另开一扇顶层窗口</b>。
+    ///
+    /// <para>用户要的是「旁边的窗口」。真开一个 <c>Window</c> 的话它得和
+    /// 底下那个 mpv 视频窗抢 z 序 —— 这一页所有浮层之所以能稳稳压在画面上,
+    /// 靠的正是「它们都住在同一个透明的 Avalonia 窗口里」。
+    /// 另开一扇窗要重新解决一遍窗口跟随、DPI、Alt-Tab,而收益只是同一块内容。</para>
     /// </summary>
-    private async Task ToggleDanmaku(Button btn)
+    private readonly Border _dmPanel = new()
+    {
+        IsVisible = false,
+        Width = 360,
+        HorizontalAlignment = HorizontalAlignment.Right,
+        VerticalAlignment = VerticalAlignment.Stretch,
+        Margin = new Thickness(0, 26, 26, OsdClearance + 14),
+        CornerRadius = new CornerRadius(10),
+        Padding = new Thickness(14),
+        Background = new SolidColorBrush(Color.Parse("#e6101014")),
+    };
+
+    /// <summary>弹幕显示设置的当前值。<c>player.getDanmakuStyle</c> 回来之前用默认值占位。</summary>
+    private double _dmArea = 1.0, _dmScale = 1.0, _dmOpacity = 1.0, _dmSpeed = 1.0;
+    private int _dmTop = 10, _dmBottom = 10;
+    private bool _dmMerge, _dmBold, _dmHeat;
+
+    /// <summary>
+    /// 弹幕菜单:开关 / 搜索 / 九项显示设置。
+    ///
+    /// <para>以前这颗按钮<b>只有开关</b>,而核心层十四条 <c>danmaku.*</c> 里
+    /// 十一条零调用 —— 搜索、选集、换源、屏蔽词全没有入口。</para>
+    /// </summary>
+    private void ShowDanmakuMenu(Button anchor)
+    {
+        var body = new StackPanel { Spacing = 2, MinWidth = 300 };
+        body.Children.Add(PopupTitle("弹幕"));
+        Flyout? fly = null;
+
+        var toggle = MenuRow("");
+        void PaintToggle() => toggle.Content = (_dmOn ? "● " : "○ ") + "显示弹幕";
+        PaintToggle();
+        toggle.Click += async (_, _) =>
+        {
+            _dmOn = !_dmOn;
+            PaintToggle();
+            await ToggleDanmaku(_dmOn);
+        };
+        body.Children.Add(toggle);
+
+        var search = MenuRow("搜索弹幕…");
+        search.Click += (_, _) => { fly?.Hide(); ShowDanmakuSearch(); };
+        body.Children.Add(search);
+
+        var again = MenuRow("重新匹配这一集");
+        again.Click += async (_, _) => { fly?.Hide(); await AutoLoadDanmaku(true); };
+        body.Children.Add(again);
+
+        body.Children.Add(DanmakuStyleBlock());
+        // DanmakuStyleBlock 把 _dmRepaint 占了,这里把开关那一行接回去 ——
+        // 不接的话回显只刷了九项设置,开关还停在打开面板之前的样子
+        var styleRepaint = _dmRepaint;
+        _dmRepaint = () => { PaintToggle(); styleRepaint?.Invoke(); };
+        _popupRows = body.Children.OfType<Button>().ToList();
+        fly = Popup(anchor, body, false);
+        fly.Closed += (_, _) => _dmRepaint = null;
+        // 读回落库的那一份。**每次打开都读** —— 设置页里也能改屏蔽词和源,
+        // 缓存住的话这里显示的是上一次进播放页时的值
+        _ = LoadDanmakuStyle();
+    }
+
+    /// <summary>开关。开的时候顺手匹配一次并灌进渲染层。</summary>
+    private async Task ToggleDanmaku(bool on)
     {
         try
         {
-            var p = await _core.PrefsGetPrefs();
-            var on = !(p.TryGetProperty("danmaku_enabled", out var v) && v.ValueKind == JsonValueKind.True);
             await _core.PlayerSetDanmakuEnabled(new { enabled = on });
-            btn.Content = on ? "弹幕 ●" : "弹幕";
+            _dmBtn.Content = on ? "弹幕 ●" : "弹幕";
             if (!on)
             {
                 await _core.PlayerDanmakuSet(new { items = Array.Empty<object>() });
+                _bar.Heat = [];
+                _bar.InvalidateVisual();
                 return;
             }
-            if (NoEmby || _itemId == "" || Nav.Session is not { } s) return;
-            var d = await _core.EmbyItemDetail(new
-            {
-                s.server, s.token, s.user_id, s.device_id, server_id = _serverId,
-                item_id = _itemId, with_children = false,
-            });
-            var title = Str(d, "series_name") is { Length: > 0 } sn ? sn : Str(d, "name");
-            if (title == "") return;
-            // ★ autoLoad 收的是**嵌套的 input 对象**(MatchInput),不是平铺参数
-            var items = await _core.DanmakuAutoLoad(new { input = new { title } });
-            if (items.ValueKind != JsonValueKind.Array || items.GetArrayLength() == 0)
-            {
-                Toast.Show("这一集没匹配到弹幕");
-                return;
-            }
-            await _core.PlayerDanmakuSet(new { items });
+            await AutoLoadDanmaku(false);
         }
         catch (Exception e) { Toast.Show(LibraryPage.Advice(e)); }
+    }
+
+    /// <summary>
+    /// 自动匹配本片弹幕。
+    ///
+    /// <para>匹配不上<b>不弹错</b> —— 九成片子本来就没有弹幕,弹一次错等于骂用户一次。
+    /// 只有用户主动点「重新匹配」时(<paramref name="loud"/>)才说话。</para>
+    /// <para>☠ input 要把<b>集号季号和类型标签一起带上</b>:只给 title 的话
+    /// 多季番剧每一集都匹配到第一季第一集,而分数照样够高、照样上屏 ——
+    /// 那比没有弹幕糟得多。安卓侧一直是带的,PC 这边漏了。</para>
+    /// </summary>
+    private async Task AutoLoadDanmaku(bool loud)
+    {
+        if (NoEmby || _itemId == "" || Nav.Session is not { } s)
+        {
+            if (loud) Toast.Show("这条流没有条目信息,匹配不了");
+            return;
+        }
+        var d = await _core.EmbyItemDetail(new
+        {
+            s.server, s.token, s.user_id, s.device_id, server_id = _serverId,
+            item_id = _itemId, with_children = false,
+        });
+        var title = Str(d, "series_name") is { Length: > 0 } sn ? sn : Str(d, "name");
+        if (title == "")
+        {
+            if (loud) Toast.Show("这一集没有片名,匹配不了");
+            return;
+        }
+        var input = new Dictionary<string, object> { ["title"] = title };
+        if (d.TryGetProperty("episode_no", out var ep) && ep.ValueKind == JsonValueKind.Number)
+            input["episode_no"] = ep.GetInt64();
+        if (d.TryGetProperty("season_no", out var se) && se.ValueKind == JsonValueKind.Number)
+            input["season_no"] = se.GetInt64();
+        if (d.TryGetProperty("genres", out var g) && g.ValueKind == JsonValueKind.Array)
+            input["genres"] = g.EnumerateArray().Select(x => x.GetString() ?? "").ToArray();
+
+        var items = await _core.DanmakuAutoLoad(new { input });
+        if (items.ValueKind != JsonValueKind.Array || items.GetArrayLength() == 0)
+        {
+            Toast.Show("这一集没匹配到弹幕,可以手动搜一下");
+            return;
+        }
+        await _core.PlayerDanmakuSet(new { items });
+        if (loud) Toast.Show($"挂上 {items.GetArrayLength()} 条弹幕");
+        await RefreshHeatmap();
+    }
+
+    /// <summary>把弹幕密度喂给进度条。关掉热力图时喂空表 —— 不喂的话上一集那条还留着。</summary>
+    private async Task RefreshHeatmap()
+    {
+        try
+        {
+            if (!_dmHeat) { _bar.Heat = []; _bar.InvalidateVisual(); return; }
+            var h = await _core.PlayerDanmakuHeatmap(new { buckets = 160, duration = _duration });
+            if (h.ValueKind != JsonValueKind.Array) return;
+            _bar.Heat = h.EnumerateArray().Select(x => x.GetDouble()).ToList();
+            _bar.InvalidateVisual();
+        }
+        catch { /* 热力图是锦上添花,取不到就不画 —— 不该为它弹一个错 */ }
+    }
+
+    private async Task LoadDanmakuStyle()
+    {
+        try
+        {
+            // 两个请求互不依赖,串起来的话面板要等两个往返才刷出正确的读数
+            var t1 = _core.PlayerGetDanmakuStyle();
+            var t2 = _core.PrefsGetPrefs();
+            await Task.WhenAll(t1, t2);
+            var r = await t1;
+            var p = await t2;
+            Dispatcher.UIThread.Post(() =>
+            {
+                _dmOn = p.TryGetProperty("danmaku_enabled", out var v) && v.ValueKind == JsonValueKind.True;
+                _dmBtn.Content = _dmOn ? "弹幕 ●" : "弹幕";
+                ApplyStyleReply(r);
+            });
+        }
+        catch { /* 读不回来就用默认值起手 —— 面板不该因为这个消失 */ }
+    }
+
+    private void ApplyStyleReply(JsonElement r)
+    {
+        if (r.ValueKind != JsonValueKind.Object) return;
+        double N(string k, double def) =>
+            r.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : def;
+        bool B(string k) => r.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.True;
+        _dmArea = N("area", _dmArea);
+        _dmScale = N("scale", _dmScale);
+        _dmOpacity = N("opacity", _dmOpacity);
+        _dmSpeed = N("speed", _dmSpeed);
+        _dmTop = (int)N("top_lines", _dmTop);
+        _dmBottom = (int)N("bottom_lines", _dmBottom);
+        _dmMerge = B("merge");
+        _dmBold = B("bold");
+        _dmHeat = B("heatmap");
+        _dmRepaint?.Invoke();
+    }
+
+    /// <summary>面板还开着时刷读数用。面板关了就是 null。</summary>
+    private Action? _dmRepaint;
+
+    /// <summary>
+    /// 弹幕搜索:关键词 → <b>按源分组的条目</b> → 条目下的集数 → 挂上。
+    ///
+    /// <para>为什么是「先条目再集数」两层:弹幕接口给的就是这个形状 ——
+    /// 一次搜索回的是作品,一部作品下面挂着它所有集。电影只有一集,
+    /// 展开就是一行,不必为它另做一套。</para>
+    /// <para>多源<b>各占一组、各报各的错</b>:合成一个大列表的话,
+    /// 一个源 429 就把整页拖成空白,而用户看到的是「搜不到」。</para>
+    /// </summary>
+    private void ShowDanmakuSearch()
+    {
+        if (_dmPanel.IsVisible) { _dmPanel.IsVisible = false; return; }
+
+        var box = new TextBox { Watermark = "片名", MinHeight = 32 };
+        var go = new Button { Classes = { "primary" }, Content = "搜索" };
+        var close = new Button { Classes = { "ghost" }, Content = "关闭" };
+        var status = Dimmed("");
+        var results = new StackPanel { Spacing = 2 };
+
+        close.Click += (_, _) => _dmPanel.IsVisible = false;
+
+        async Task Attach(string sourceId, string epId, string label)
+        {
+            status.Text = $"正在取「{label}」…";
+            try
+            {
+                var items = await _core.DanmakuLoad(new { source_id = sourceId, episode_id = epId });
+                var n = items.ValueKind == JsonValueKind.Array ? items.GetArrayLength() : 0;
+                await _core.PlayerDanmakuSet(new { items });
+                // 手动挂上就顺手把开关打开 —— 挂完不显示的话用户会以为没成功
+                if (!_dmOn)
+                {
+                    _dmOn = true;
+                    await _core.PlayerSetDanmakuEnabled(new { enabled = true });
+                    _dmBtn.Content = "弹幕 ●";
+                }
+                await RefreshHeatmap();
+                status.Text = $"已挂上 {n} 条";
+            }
+            catch (Exception e) { status.Text = LibraryPage.Advice(e); }
+        }
+
+        async Task Expand(StackPanel host, string sourceId, string animeId, JsonElement anime)
+        {
+            host.Children.Clear();
+            var eps = anime.TryGetProperty("episodes", out var e) && e.ValueKind == JsonValueKind.Array
+                ? e.EnumerateArray().ToList() : [];
+            if (eps.Count == 0)
+            {
+                host.Children.Add(Dimmed("正在取集数…"));
+                try
+                {
+                    var r = await _core.DanmakuEpisodes(new { source_id = sourceId, anime_id = animeId });
+                    eps = r.ValueKind == JsonValueKind.Array ? r.EnumerateArray().ToList() : [];
+                }
+                catch (Exception ex) { host.Children.Clear(); host.Children.Add(Dimmed(LibraryPage.Advice(ex))); return; }
+                host.Children.Clear();
+            }
+            if (eps.Count == 0) { host.Children.Add(Dimmed("这部作品下面没有集。")); return; }
+            foreach (var ep in eps)
+            {
+                var epId = Str(ep, "episode_id");
+                var label = Str(ep, "episode_title") is { Length: > 0 } t ? t : epId;
+                var row = MenuRow("    " + label);
+                row.Click += async (_, _) => await Attach(sourceId, epId, label);
+                host.Children.Add(row);
+            }
+        }
+
+        async Task Search()
+        {
+            var kw = (box.Text ?? "").Trim();
+            if (kw.Length == 0) { status.Text = "先输入片名。"; return; }
+            results.Children.Clear();
+            status.Text = "搜索中…";
+            JsonElement groups;
+            try { groups = await _core.DanmakuSearch(new { keyword = kw }); }
+            catch (Exception e) { status.Text = LibraryPage.Advice(e); return; }
+            if (groups.ValueKind != JsonValueKind.Array || groups.GetArrayLength() == 0)
+            {
+                status.Text = "一个可用的弹幕源都没有 —— 去设置里加一个。";
+                return;
+            }
+            var total = 0;
+            foreach (var g in groups.EnumerateArray())
+            {
+                results.Children.Add(PopupTitle(Str(g, "source_name")));
+                if (g.TryGetProperty("error", out var err) && err.ValueKind == JsonValueKind.String)
+                {
+                    // 这个源自己挂了,**别把别的源一起判死**
+                    results.Children.Add(Dimmed("这个源报错了:" + err.GetString()));
+                    continue;
+                }
+                var animes = g.TryGetProperty("animes", out var a) && a.ValueKind == JsonValueKind.Array
+                    ? a.EnumerateArray().ToList() : [];
+                if (animes.Count == 0) { results.Children.Add(Dimmed("这个源没搜到。")); continue; }
+                total += animes.Count;
+                foreach (var an in animes)
+                {
+                    var srcId = Str(g, "source_id");
+                    var anId = Str(an, "anime_id");
+                    var year = an.TryGetProperty("year", out var y) && y.ValueKind == JsonValueKind.Number
+                        ? $" · {y.GetInt64()}" : "";
+                    var kind = Str(an, "type_description") is { Length: > 0 } td ? $" · {td}" : "";
+                    var host = new StackPanel { Spacing = 2 };
+                    var row = MenuRow(Str(an, "anime_title") + year + kind);
+                    var opened = false;
+                    row.Click += async (_, _) =>
+                    {
+                        opened = !opened;
+                        if (!opened) { host.Children.Clear(); return; }
+                        await Expand(host, srcId, anId, an);
+                    };
+                    results.Children.Add(row);
+                    results.Children.Add(host);
+                }
+            }
+            status.Text = total == 0 ? "都没搜到。换个写法试试(原名往往比中文名好使)。" : $"{total} 部";
+        }
+
+        go.Click += async (_, _) => await Search();
+        box.KeyDown += async (_, e) => { if (e.Key == Key.Enter) await Search(); };
+
+        _dmPanel.Child = new DockPanel
+        {
+            LastChildFill = true,
+            Children =
+            {
+                new StackPanel
+                {
+                    [DockPanel.DockProperty] = Dock.Top,
+                    Spacing = 6,
+                    Children =
+                    {
+                        new StackPanel
+                        {
+                            Orientation = Orientation.Horizontal, Spacing = 6,
+                            Children =
+                            {
+                                new TextBlock
+                                {
+                                    Text = "弹幕搜索", Foreground = Brushes.White,
+                                    FontWeight = FontWeight.SemiBold,
+                                    VerticalAlignment = VerticalAlignment.Center,
+                                },
+                                close,
+                            },
+                        },
+                        box,
+                        new StackPanel
+                        {
+                            Orientation = Orientation.Horizontal, Spacing = 6,
+                            Children = { go, status },
+                        },
+                    },
+                },
+                new ScrollViewer
+                {
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    Margin = new Thickness(0, 10, 0, 0),
+                    Content = results,
+                },
+            },
+        };
+        _dmPanel.IsVisible = true;
+        // 片名先填好:九成情况下用户就是想搜正在放的这一部
+        if (_title.Length > 0) box.Text = _title;
+        box.Focus();
+    }
+
+    /// <summary>
+    /// 弹幕显示设置(用户 2026-09-09 点名的九项)。
+    ///
+    /// <para>每一下都是一次提交:核心层收到就重排并落库,画面当场变。
+    /// 用滑块的话拖一次会灌上百次重排 —— 而重排要遍历几千条弹幕。</para>
+    /// </summary>
+    private Control DanmakuStyleBlock()
+    {
+        var areaRow = MenuRow("");
+        var scaleText = new TextBlock { Foreground = Brushes.White, FontSize = 13 };
+        var opText = new TextBlock { Foreground = Brushes.White, FontSize = 13 };
+        var speedText = new TextBlock { Foreground = Brushes.White, FontSize = 13 };
+        var topText = new TextBlock { Foreground = Brushes.White, FontSize = 13 };
+        var botText = new TextBlock { Foreground = Brushes.White, FontSize = 13 };
+        var mergeRow = MenuRow("");
+        var boldRow = MenuRow("");
+        var heatRow = MenuRow("");
+
+        void Refresh()
+        {
+            areaRow.Content = "滚动范围:" + _dmArea switch
+            {
+                <= 0.3 => "四分之一屏", <= 0.6 => "半屏", _ => "全屏",
+            };
+            scaleText.Text = $"{_dmScale:0.0}×";
+            opText.Text = $"{_dmOpacity * 100:0}%";
+            speedText.Text = $"{_dmSpeed:0.0}×";
+            topText.Text = _dmTop.ToString();
+            botText.Text = _dmBottom.ToString();
+            mergeRow.Content = (_dmMerge ? "● " : "○ ") + "合并重复弹幕";
+            boldRow.Content = (_dmBold ? "● " : "○ ") + "粗体弹幕";
+            heatRow.Content = (_dmHeat ? "● " : "○ ") + "进度条热力图";
+        }
+        Refresh();
+        _dmRepaint = Refresh;
+
+        async Task Push(object args)
+        {
+            try
+            {
+                var r = await _core.PlayerSetDanmakuStyle(args);
+                // 回的是**钳过之后**的值 —— 照它刷读数才不会显示一个核心层没接受的数
+                ApplyStyleReply(r);
+                await RefreshHeatmap();
+            }
+            catch (Exception e) { Toast.Show(LibraryPage.Advice(e)); }
+        }
+
+        Control Row(string label, TextBlock readout, Action<int> step, Action reset)
+        {
+            Button Key(string text, int delta)
+            {
+                var b = new Button
+                {
+                    Content = text, Classes = { "osdstep" },
+                    Width = delta == 0 ? 40 : 28, Height = 28,
+                    HorizontalContentAlignment = HorizontalAlignment.Center,
+                    VerticalContentAlignment = VerticalAlignment.Center,
+                };
+                b.Click += (_, _) => { if (delta == 0) reset(); else step(delta); Refresh(); };
+                return b;
+            }
+            readout.Width = 52;
+            readout.TextAlignment = TextAlignment.Center;
+            return Labeled(label, new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 6,
+                VerticalAlignment = VerticalAlignment.Center,
+                Children = { Key("−", -1), readout, Key("+", 1), Key("默认", 0) },
+            });
+        }
+
+        // 范围是**三档枚举**不是连续值,所以是「点一下换下一档」而不是步进器
+        areaRow.Click += async (_, _) =>
+        {
+            _dmArea = _dmArea switch { <= 0.3 => 0.5, <= 0.6 => 1.0, _ => 0.25 };
+            Refresh();
+            await Push(new { area = _dmArea });
+        };
+        mergeRow.Click += async (_, _) =>
+        {
+            _dmMerge = !_dmMerge; Refresh(); await Push(new { merge = _dmMerge });
+        };
+        boldRow.Click += async (_, _) =>
+        {
+            _dmBold = !_dmBold; Refresh(); await Push(new { bold = _dmBold });
+        };
+        heatRow.Click += async (_, _) =>
+        {
+            _dmHeat = !_dmHeat; Refresh(); await Push(new { heatmap = _dmHeat });
+        };
+
+        return new StackPanel
+        {
+            Spacing = 2,
+            Children =
+            {
+                PopupTitle("弹幕显示"),
+                areaRow,
+                Row("弹幕缩放", scaleText,
+                    d => { _dmScale = Math.Clamp(Math.Round((_dmScale + d * 0.1) * 10) / 10, 0.1, 3.0);
+                           _ = Push(new { scale = _dmScale }); },
+                    () => { _dmScale = 1.0; _ = Push(new { scale = 1.0 }); }),
+                Row("透明度", opText,
+                    d => { _dmOpacity = Math.Clamp(Math.Round((_dmOpacity + d * 0.1) * 10) / 10, 0.1, 1.0);
+                           _ = Push(new { opacity = _dmOpacity }); },
+                    () => { _dmOpacity = 1.0; _ = Push(new { opacity = 1.0 }); }),
+                Row("滚动速度", speedText,
+                    d => { _dmSpeed = Math.Clamp(Math.Round((_dmSpeed + d * 0.1) * 10) / 10, 0.1, 3.0);
+                           _ = Push(new { speed = _dmSpeed }); },
+                    () => { _dmSpeed = 1.0; _ = Push(new { speed = 1.0 }); }),
+                Row("置顶行数", topText,
+                    d => { _dmTop = Math.Clamp(_dmTop + d, 0, 20);
+                           _ = Push(new { top_lines = _dmTop }); },
+                    () => { _dmTop = 10; _ = Push(new { top_lines = 10 }); }),
+                Row("置底行数", botText,
+                    d => { _dmBottom = Math.Clamp(_dmBottom + d, 0, 20);
+                           _ = Push(new { bottom_lines = _dmBottom }); },
+                    () => { _dmBottom = 10; _ = Push(new { bottom_lines = 10 }); }),
+                mergeRow, boldRow, heatRow,
+                Dimmed("行数设成 0 就是这一类不显示。范围调小之后排不下的弹幕会被丢掉 ——"
+                    + "那正是「少一点」的意思。"),
+            },
+        };
     }
 
     /// <summary>跳过片头 / 片尾。按钮和快捷键走同一条路,不各写一遍。</summary>

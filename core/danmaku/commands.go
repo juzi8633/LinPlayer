@@ -241,8 +241,44 @@ func RegisterCommands() {
 		return ApplyFilterAndDedup(items, filterOptionsOf(a)), nil
 	})
 
+	// danmaku.importBlocklist 解析弹弹Play 的 XML 屏蔽表并**并进落库的那一份**。
+	//
+	// ☠ 上一版只解析、不落库,由调用方自己合并再存 —— 而调用方有两个(PC / 安卓),
+	//   两边各写一份合并逻辑,漏掉「去重」的那一边会越导越长且不报错。
+	//   合并放这里,两端各自只要发一条命令。
 	bus.Register("danmaku.importBlocklist", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
-		return ImportDandanplayBlocklistXML(str(a, "xml")), nil
+		r := ImportDandanplayBlocklistXML(str(a, "xml"))
+		words, users := LoadBlocklist()
+		words = mergeUnique(words, r.TextWords)
+		users = mergeUnique(users, r.UserIDs)
+		if err := SaveBlocklist(words, users); err != nil {
+			return nil, bus.NewErr(bus.EInternal, "屏蔽表保存失败: %v", err)
+		}
+		return map[string]any{
+			"text_words": r.TextWords, "user_ids": r.UserIDs,
+			"skipped_count": r.SkippedCount,
+			"total_words":   len(words), "total_users": len(users),
+		}, nil
+	})
+
+	// ---- 屏蔽词(落库,自动加载和手动搜索都用它)----
+	bus.Register("danmaku.getBlockwords", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
+		words, users := LoadBlocklist()
+		return map[string]any{"words": words, "users": users}, nil
+	})
+
+	bus.Register("danmaku.setBlockwords", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
+		words, users := LoadBlocklist()
+		if v, ok := a["words"]; ok {
+			words = strList(v)
+		}
+		if v, ok := a["users"]; ok {
+			users = strList(v)
+		}
+		if err := SaveBlocklist(words, users); err != nil {
+			return nil, bus.NewErr(bus.EInternal, "屏蔽表保存失败: %v", err)
+		}
+		return map[string]any{"words": words, "users": users}, nil
 	})
 
 	// ---- 缓存 ----
@@ -331,21 +367,53 @@ func matchInputOf(a map[string]any) (*MatchInput, error) {
 //
 // ★ **先造默认再往上盖**:直接解进零值结构体的话去重窗口会变成 0,
 // 开了去重跟没开一样(本仓最常见的移植坑,见 config/prefs.go 的包注释)。
+//
+// ☠ **落库的屏蔽词无条件并进来**,不管调用方传没传 options。
+//   靠调用方传的话,漏传的那条路径不报错、只是屏蔽词没生效 ——
+//   而用户会以为是词写错了,然后去改一个本来就对的词。
 func filterOptionsOf(a map[string]any) FilterOptions {
 	opts := DefaultFilterOptions()
-	raw, ok := a["options"]
-	if !ok {
-		return opts
+	if raw, ok := a["options"]; ok {
+		if b, err := json.Marshal(raw); err == nil {
+			_ = json.Unmarshal(b, &opts)
+		}
 	}
-	b, err := json.Marshal(raw)
-	if err != nil {
-		return opts
-	}
-	_ = json.Unmarshal(b, &opts)
 	if opts.DedupWindow <= 0 {
 		opts.DedupWindow = 10.0
 	}
+	words, users := LoadBlocklist()
+	opts.Blockwords = mergeUnique(opts.Blockwords, words)
+	opts.UserBlocklist = mergeUnique(opts.UserBlocklist, users)
 	return opts
+}
+
+// mergeUnique 并集,保持 a 的顺序。
+func mergeUnique(a, b []string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, s := range append(append([]string{}, a...), b...) {
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
+}
+
+// strList 把命令参数里的一个数组读成字符串表。非字符串项丢掉。
+func strList(v any) []string {
+	arr, ok := v.([]any)
+	if !ok {
+		return []string{}
+	}
+	out := make([]string, 0, len(arr))
+	for _, it := range arr {
+		if s, ok := it.(string); ok && s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func chConvertOf(a map[string]any) int {

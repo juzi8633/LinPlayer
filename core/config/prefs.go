@@ -51,6 +51,17 @@ const (
 	// 宽银幕片子上这是最常用的一档(字不再挡画面)。
 	SubPosMax    = 150
 	SubBorderMax = 10.0
+
+	// 弹幕显示的合法区间(用户 2026-09-09 点名的九项)。
+	// ★ 缩放 / 透明度 / 速度三项**下限不是 0**:0 分别是「看不见」「全透明」
+	//   「原地不动」,那三种状态用「关掉弹幕」表达就够了,不该占一档。
+	DanmakuScaleMin   = 0.1
+	DanmakuScaleMax   = 3.0
+	DanmakuSpeedMin   = 0.1
+	DanmakuSpeedMax   = 3.0
+	DanmakuLinesMax   = 20
+	// DanmakuAreaMin 滚动弹幕最少占四分之一屏。
+	DanmakuAreaMin = 0.25
 )
 
 // Prefs 播放与全局偏好。
@@ -63,6 +74,45 @@ type Prefs struct {
 	// DanmakuEnabled 弹幕开关。**默认 false** —— 弹幕要先匹配上才有内容,
 	// 默认开着的表现是每起播一次就往上游打一轮匹配请求,而九成片子匹配不上。
 	DanmakuEnabled bool `json:"danmaku_enabled"`
+
+	/* ---- 弹幕显示(播放页「弹幕」面板,用户 2026-09-09 点名的九项)----
+
+	   ☠ 和字幕样式同理:这几项决定的是**每一帧怎么画**,而渲染器在核心层
+	   (core/player/danmaku.go 每拍重算 \pos)。放在 UI 侧的话 PC 和安卓
+	   各存一份,同一个账号在两端看到的弹幕长得不一样。 */
+
+	// DanmakuArea 滚动弹幕占画面高度的比例:0.25 / 0.5 / 1.0。
+	// 只有滚动层受它管 —— 置顶置底本来就贴着边,再限高等于把它们挤没。
+	DanmakuArea float64 `json:"danmaku_area"`
+
+	// DanmakuScale 弹幕字号倍率。**行高跟着一起缩** ——
+	// 只缩字号的话字变小了行距没变,屏幕上会出现一条条空带。
+	DanmakuScale float64 `json:"danmaku_scale"`
+
+	// DanmakuOpacity 不透明度 0..1(1 = 全不透明)。
+	DanmakuOpacity float64 `json:"danmaku_opacity"`
+
+	// DanmakuSpeed 滚动速度倍率。1 = 一条弹幕横穿画面用 8 秒。
+	DanmakuSpeed float64 `json:"danmaku_speed"`
+
+	// DanmakuTopLines / DanmakuBottomLines 置顶 / 置底弹幕最多占几行。
+	// **0 是合法值**(= 这一类不显示),所以 Clamped 不能把 0 当没设。
+	DanmakuTopLines    int `json:"danmaku_top_lines"`
+	DanmakuBottomLines int `json:"danmaku_bottom_lines"`
+
+	// DanmakuMerge 合并重复弹幕(同文本同类型),合并后带 ×N。
+	DanmakuMerge bool `json:"danmaku_merge"`
+
+	DanmakuBold bool `json:"danmaku_bold"`
+
+	// DanmakuHeatmap 进度条上画弹幕密度热力图。
+	DanmakuHeatmap bool `json:"danmaku_heatmap"`
+
+	// DanmakuBlockwords / DanmakuBlockUsers 屏蔽词与屏蔽用户。
+	// ★ 落在这里而不是让每个调用点自己传:漏传的那条路径**不报错**,
+	//   只是屏蔽词没生效 —— 而用户会以为是词写错了。见 core/danmaku 的 filterOptionsOf。
+	DanmakuBlockwords []string `json:"danmaku_blockwords"`
+	DanmakuBlockUsers []string `json:"danmaku_block_users"`
 
 	// 正则优先选择。空 = 不启用,回退到上面的语言偏好。
 	// 优先级:手动选过的 ＞ 正则命中 ＞ 语言/服务端默认。
@@ -256,6 +306,14 @@ func DefaultPrefs() Prefs {
 	return Prefs{
 		SubEnabled:                   true,
 		DanmakuEnabled:               false,
+		DanmakuArea:                  1.0,
+		DanmakuScale:                 1.0,
+		DanmakuOpacity:               1.0,
+		DanmakuSpeed:                 1.0,
+		DanmakuTopLines:              10,
+		DanmakuBottomLines:           10,
+		DanmakuBlockwords:            []string{},
+		DanmakuBlockUsers:            []string{},
 		CrossServerWritebackRange:    "all",
 		CrossServerWritebackProgress: true,
 		PrefetchThreads:              3,
@@ -403,6 +461,35 @@ func (p Prefs) Clamped() Prefs {
 	}
 	if p.SubBorderSize < 0 || p.SubBorderSize > SubBorderMax {
 		p.SubBorderSize = -1
+	}
+	/* 弹幕显示:越界回**默认值**,不是回 0。
+	   老配置里没有这几个键 —— 但 ParsePrefs 是从 DefaultPrefs 起手的,
+	   所以走到这里的 0 只可能来自「前端算错了」或「手改配置改坏了」,
+	   那两种情况都该回到能看的那一档,而不是一个看不见的画面。 */
+	if p.DanmakuArea < DanmakuAreaMin || p.DanmakuArea > 1.0 {
+		p.DanmakuArea = 1.0
+	}
+	if p.DanmakuScale < DanmakuScaleMin || p.DanmakuScale > DanmakuScaleMax {
+		p.DanmakuScale = 1.0
+	}
+	if p.DanmakuOpacity <= 0 || p.DanmakuOpacity > 1.0 {
+		p.DanmakuOpacity = 1.0
+	}
+	if p.DanmakuSpeed < DanmakuSpeedMin || p.DanmakuSpeed > DanmakuSpeedMax {
+		p.DanmakuSpeed = 1.0
+	}
+	// ★ 这两项**只夹不回默认**:0 是「不显示这一类」,是用户真会选的一档。
+	if p.DanmakuTopLines < 0 || p.DanmakuTopLines > DanmakuLinesMax {
+		p.DanmakuTopLines = DanmakuLinesMax
+	}
+	if p.DanmakuBottomLines < 0 || p.DanmakuBottomLines > DanmakuLinesMax {
+		p.DanmakuBottomLines = DanmakuLinesMax
+	}
+	if p.DanmakuBlockwords == nil {
+		p.DanmakuBlockwords = []string{}
+	}
+	if p.DanmakuBlockUsers == nil {
+		p.DanmakuBlockUsers = []string{}
 	}
 	return p
 }

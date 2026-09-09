@@ -899,6 +899,179 @@ public static class SettingsSections
         });
     }
 
+    // ---------------------------------------------------------------- 弹幕
+
+    /// <summary>
+    /// 弹幕源与屏蔽词。
+    ///
+    /// <para>这一整组以前<b>一个入口都没有</b>:核心层十四条 <c>danmaku.*</c> 命令里
+    /// 只有 <c>autoLoad</c> 被调过 —— 加源、看官方源为什么不可用、屏蔽词,
+    /// 三件事在两端都没有界面。</para>
+    /// <para>屏蔽词落在核心层而不是各端各存一份:它要跟着「备份与还原」走
+    /// (见 <c>docs/backup-format.md</c>),而且自动加载和手动搜索必须用同一份。</para>
+    /// </summary>
+    public static Control Danmaku(CoreClient core)
+    {
+        var official = Note("正在看官方源可不可用…");
+        var list = new StackPanel { Spacing = 6 };
+        var hint = Hint();
+        var name = new TextBox { Watermark = "名称", Width = 140, MinHeight = 32 };
+        var url = new TextBox { Watermark = "接口地址(粘贴整条即可)", Width = 340, MinHeight = 32 };
+        var words = new TextBox
+        {
+            AcceptsReturn = true, MinHeight = 96, MaxHeight = 180,
+            TextWrapping = TextWrapping.NoWrap, Watermark = "一行一个词",
+        };
+        var users = Note("");
+
+        List<JsonElement> sources = [];
+
+        async Task Save()
+        {
+            try
+            {
+                await core.DanmakuSetDanmakuConfig(new { sources });
+                hint.Text = $"已保存,{sources.Count} 个自建源。";
+            }
+            catch (Exception e) { hint.Text = LibraryPage.Advice(e); }
+        }
+
+        void Paint()
+        {
+            list.Children.Clear();
+            if (sources.Count == 0) list.Children.Add(Note("还没有自建源。只用官方源也能看。"));
+            foreach (var (s, i) in sources.Select((s, i) => (s, i)))
+            {
+                var del = new Button { Classes = { "ghost" }, Content = "删除" };
+                var at = i;
+                del.Click += async (_, _) =>
+                {
+                    sources.RemoveAt(at);
+                    Paint();
+                    await Save();
+                };
+                list.Children.Add(Row(
+                    new TextBlock
+                    {
+                        Text = Str(s, "name") is { Length: > 0 } n ? n : "(没名字)",
+                        Width = 150, VerticalAlignment = VerticalAlignment.Center,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                    },
+                    new TextBlock
+                    {
+                        Text = Str(s, "api_url"), Width = 330, Classes = { "dim" },
+                        VerticalAlignment = VerticalAlignment.Center,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                    },
+                    del));
+            }
+        }
+
+        async Task Reload()
+        {
+            try
+            {
+                // 三个请求互不依赖 —— 串起来的话这张卡片要等三个往返才画得出来
+                var t1 = core.DanmakuGetOfficialDanmaku();
+                var t2 = core.DanmakuGetDanmakuConfig();
+                var t3 = core.DanmakuGetBlockwords();
+                await Task.WhenAll(t1, t2, t3);
+                var o = await t1;
+                var cfg = await t2;
+                var bw = await t3;
+                Dispatcher.UIThread.Post(() =>
+                {
+                    official.Text = Bool(o, "enabled")
+                        ? $"官方源可用:{Str(o, "name")}"
+                        // ★ 「没有」和「坏了」是两件事,核心层把原因写清楚了,原样转给用户
+                        : "官方源不可用 —— " + Str(o, "reason");
+                    sources = cfg.ValueKind == JsonValueKind.Array
+                        ? cfg.EnumerateArray().Where(x => !Bool(x, "official")).ToList() : [];
+                    Paint();
+                    words.Text = string.Join("\n", Strings(bw, "words"));
+                    users.Text = $"屏蔽用户 {Strings(bw, "users").Length} 个(只能从弹弹Play 屏蔽表导入)";
+                });
+            }
+            catch (Exception e) { hint.Text = LibraryPage.Advice(e); }
+        }
+        _ = Reload();
+
+        var add = new Button { Classes = { "primary" }, Content = "添加" };
+        add.Click += async (_, _) =>
+        {
+            var u = (url.Text ?? "").Trim();
+            if (u.Length == 0) { hint.Text = "先把接口地址填上。"; return; }
+            /* 鉴权方式**不让用户选** —— 他也不知道什么是 pathToken。
+               核心层从地址里推(setDanmakuConfig 里的 DeriveAuth),推错了也比
+               给一个四选一的下拉框强:那个框选错了同样不报错,只是搜不到。 */
+            sources.Add(JsonSerializer.SerializeToElement(new
+            {
+                id = "u" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                name = (name.Text ?? "").Trim() is { Length: > 0 } n ? n : "自建源",
+                api_url = u,
+            }));
+            name.Text = ""; url.Text = "";
+            Paint();
+            await Save();
+        };
+
+        var saveWords = new Button { Classes = { "primary" }, Content = "保存屏蔽词" };
+        saveWords.Click += async (_, _) =>
+        {
+            var ws = (words.Text ?? "").Split('\n')
+                .Select(x => x.Trim()).Where(x => x.Length > 0).Distinct().ToArray();
+            try
+            {
+                await core.DanmakuSetBlockwords(new { words = ws });
+                hint.Text = $"已保存 {ws.Length} 个屏蔽词。下一次加载弹幕时生效。";
+            }
+            catch (Exception e) { hint.Text = LibraryPage.Advice(e); }
+        };
+
+        var import = new Button { Classes = { "ghost" }, Content = "导入弹弹Play 屏蔽表" };
+        import.Click += async (_, _) =>
+        {
+            var top = TopLevel.GetTopLevel(import);
+            if (top is null) return;
+            var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "选一份弹弹Play 的屏蔽列表",
+                FileTypeFilter = [new FilePickerFileType("屏蔽表") { Patterns = ["*.xml"] }],
+            });
+            if (files.Count == 0) return;
+            try
+            {
+                await using var st = await files[0].OpenReadAsync();
+                using var sr = new StreamReader(st);
+                var xml = await sr.ReadToEndAsync();
+                // 合并落库由核心层做 —— 两端各写一份合并逻辑,漏掉去重的那边会越导越长
+                var r = await core.DanmakuImportBlocklist(new { xml });
+                hint.Text = $"导入 {Num(r, "total_words"):0} 个词、{Num(r, "total_users"):0} 个用户" +
+                    $"(这份文件里跳过 {Num(r, "skipped_count"):0} 条没启用的)。";
+                await Reload();
+            }
+            catch (Exception e) { hint.Text = LibraryPage.Advice(e); }
+        };
+
+        return Group("弹幕", new StackPanel
+        {
+            Spacing = 10,
+            Children =
+            {
+                official,
+                Note("自建源填弹弹Play 兼容接口的地址就行,鉴权方式由地址推导,不用你选。"),
+                list,
+                Row(name, url, add),
+                new TextBlock { Text = "屏蔽词", Classes = { "h2" }, Margin = new Thickness(0, 10, 0, 0) },
+                Note("一行一个。命中的弹幕直接不上屏,自动加载和手动搜索都算。"),
+                words,
+                Row(saveWords, import),
+                users,
+                hint,
+            },
+        });
+    }
+
     // ---------------------------------------------------------------- 小工具
 
     private static Control Group(string title, Control body) => new Border

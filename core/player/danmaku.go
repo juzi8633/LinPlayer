@@ -39,7 +39,10 @@ type danmakuItem struct {
 	Mode  int     // 1=滚动 4=底部 5=顶部
 	Color uint32
 	Text  string
-	lane  int // 轨道,布局时算
+	// Count 合并重复弹幕后这一条代表几条。未合并恒为 1。
+	Count int
+	lane  int     // 轨道,布局时算(见 danmakustyle.go 的 layout)
+	w     float64 // 估算的文本像素宽,布局和插值都要用
 }
 
 const (
@@ -71,9 +74,7 @@ var (
 
 // danmakuLoad 造 n 条测试弹幕,均匀铺在 span 秒里。
 func danmakuLoad(n int, span float64) {
-	dmMu.Lock()
-	defer dmMu.Unlock()
-	dmItems = dmItems[:0]
+	items := make([]danmakuItem, 0, n)
 	r := rand.New(rand.NewSource(42)) // 固定种子:两次跑的语料一样,数字才可比
 	for i := 0; i < n; i++ {
 		mode := 1
@@ -83,50 +84,71 @@ func danmakuLoad(n int, span float64) {
 		case i%23 == 0:
 			mode = 4 // 底部
 		}
-		dmItems = append(dmItems, danmakuItem{
+		items = append(items, danmakuItem{
 			Time:  r.Float64() * span,
 			Mode:  mode,
 			Color: 0xFFFFFF,
 			Text:  fmt.Sprintf("弹幕测试 %d ABCdef", i),
-			lane:  i % 16,
+			Count: 1,
 		})
 	}
+	styMu.Lock()
+	dmRaw = items
+	styMu.Unlock()
+	relayout()
 	bus.Logf("info", "弹幕语料:%d 条,铺在 %.0f 秒里", n, span)
 }
 
 // buildLayers 按当前播放位置算出两层 ASS。
 //
-// ★ 这是「每拍重算 \pos」的那一步。线性插值:
+// ★ 这是「每拍重算 pos」的那一步。线性插值:一条 t 时刻出现的滚动弹幕,
+//   在 now 时刻的横坐标 = 从 res_x 走到 -文本宽度,走完用 roll 秒。
 //
-//	一条 t 时刻出现的滚动弹幕,在 now 时刻的横坐标 =
-//	从 res_x 走到 -文本宽度,走完用 rollSeconds 秒。
+// 分轨、合并、丢弃都已经在 layout 里做完了(见 danmakustyle.go)——
+// 这里只负责把定好的位置写成 ASS。
 func buildLayers(now float64) (roll string, fix string) {
+	s := curStyle()
 	dmMu.Lock()
 	items := dmItems
 	dmMu.Unlock()
+
+	rollSec := rollSeconds / s.Speed
+	laneH := laneHeight * s.Scale
+	fs := int(40 * s.Scale)
+	// ASS 的 alpha 是**透明度**:00 = 完全不透明。所以要拿 1-opacity 换算。
+	alpha := int((1 - s.Opacity) * 255)
+	bold := 0
+	if s.Bold {
+		bold = 1
+	}
 
 	var rb, fb strings.Builder
 	for i := range items {
 		d := &items[i]
 		age := now - d.Time
-		if age < 0 || age > rollSeconds {
+		life := rollSec
+		if d.Mode != 1 {
+			life = fixSeconds
+		}
+		if age < 0 || age > life {
 			continue
 		}
-		y := 20 + d.lane*laneHeight
+		// ASS 的颜色是 **BGR**,而弹幕源给的是 RGB。不换的话红蓝是反的 ——
+		// 白色和灰色看不出来,所以这个 bug 能活很久。
+		bgr := (d.Color&0xFF)<<16 | d.Color&0xFF00 | (d.Color>>16)&0xFF
+		tag := fmt.Sprintf(`\fs%d\b%d\bord2\shad0\alpha&H%02X&\c&H%06X&`,
+			fs, bold, alpha, bgr)
 		switch d.Mode {
 		case 1:
-			// 线性插值算 x。文本宽度按字数估,够用 —— 精确宽度要问 libass,
-			// 而 osd-overlay 拿不到测量结果(compute_bounds 是另一条路,没走)
-			w := len([]rune(d.Text)) * 26
-			x := float64(danmakuResX) - age/rollSeconds*float64(danmakuResX+w)
-			fmt.Fprintf(&rb, "{\\an7\\pos(%.0f,%d)\\fs40\\bord2\\shad0\\c&H%06X&}%s\n",
-				x, y, d.Color, d.Text)
+			y := 4 + float64(d.lane)*laneH
+			x := float64(danmakuResX) - age/rollSec*(float64(danmakuResX)+d.w)
+			fmt.Fprintf(&rb, "{\\an7\\pos(%.0f,%.0f)%s}%s\n", x, y, tag, d.Text)
 		case 5:
-			fmt.Fprintf(&fb, "{\\an8\\pos(%d,%d)\\fs40\\bord2\\shad0\\c&H%06X&}%s\n",
-				danmakuResX/2, 20+(d.lane%3)*laneHeight, d.Color, d.Text)
+			y := 4 + float64(d.lane)*laneH
+			fmt.Fprintf(&fb, "{\\an8\\pos(%d,%.0f)%s}%s\n", danmakuResX/2, y, tag, d.Text)
 		case 4:
-			fmt.Fprintf(&fb, "{\\an2\\pos(%d,%d)\\fs40\\bord2\\shad0\\c&H%06X&}%s\n",
-				danmakuResX/2, danmakuResY-20-(d.lane%3)*laneHeight, d.Color, d.Text)
+			y := float64(danmakuResY) - 4 - float64(d.lane)*laneH
+			fmt.Fprintf(&fb, "{\\an2\\pos(%d,%.0f)%s}%s\n", danmakuResX/2, y, tag, d.Text)
 		}
 	}
 	return rb.String(), fb.String()

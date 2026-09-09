@@ -139,6 +139,17 @@ public sealed class PlayerBar : Control
     private static readonly IBrush ThumbBandBrush = new SolidColorBrush(Color.Parse("#7a5b8def"));
 
     /// <summary>
+    /// 弹幕密度热力图,每格 0..1。空表 = 不画。
+    /// <para>画在进度条<b>上方</b>而不是叠在轨道里:叠进去的话它和「已缓冲」
+    /// 两条半透明带子会互相染色,两个都读不出来。</para>
+    /// </summary>
+    public IReadOnlyList<double> Heat = [];
+
+    /// <summary>热力图占热区最上面这几像素。 轨道居中在 10..14,所以 9 塞得下、不打架。</summary>
+    private const double HeatHeight = 9;
+    private static readonly IBrush HeatBrush = new SolidColorBrush(Color.Parse("#66ff9d3f"));
+
+    /// <summary>
     /// 自检:把悬停态钉住,好让「哪一段有缩略图」那条带子进截图。
     ///
     /// <para>自检里发不出真的鼠标事件,而这条带子**只在悬停时画** ——
@@ -161,6 +172,20 @@ public sealed class PlayerBar : Control
            又回到「只有中间 4px 那条线能点」,也就是用户说的「一点都不好点击」。
            Panel.Background="Transparent" 是同一个把戏,只是那条路上 Render 被 sealed 了。 */
         ctx.FillRectangle(Brushes.Transparent, new Rect(0, 0, w, HitHeight));
+
+        /* 弹幕热力图。 画在轨道**上方**那几像素里 ——
+           叠进轨道的话它和「已缓冲」那条半透明带子互相染色,两个都读不出来。 */
+        if (Heat.Count > 0)
+        {
+            var cw = w / Heat.Count;
+            for (var i = 0; i < Heat.Count; i++)
+            {
+                var h = Math.Clamp(Heat[i], 0, 1) * HeatHeight;
+                if (h <= 0.5) continue;
+                ctx.FillRectangle(HeatBrush, new Rect(i * cw, HeatHeight - h, cw + 0.5, h));
+            }
+        }
+
         var big = _hover || _dragging;
         var th = big ? TrackHover : TrackIdle;
         var y = (HitHeight - th) / 2;

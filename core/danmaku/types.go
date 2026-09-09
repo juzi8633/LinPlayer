@@ -180,6 +180,27 @@ func LoadSources() []SourceConfig {
 	return out
 }
 
+// LoadBlocklist 读落库的屏蔽词与屏蔽用户。
+//
+// ★ 和显示设置放同一份 prefs:它们一起被「备份与还原」带走
+//   (docs/backup-format.md 里 prefs 是整块透传的),
+//   另开一个配置段的话导出的备份里就少了这一块,而且没人会发现。
+func LoadBlocklist() (words, users []string) {
+	p := config.Current().PrefsOf()
+	return p.DanmakuBlockwords, p.DanmakuBlockUsers
+}
+
+// SaveBlocklist 写回屏蔽词与屏蔽用户。
+func SaveBlocklist(words, users []string) error {
+	c := config.Current()
+	p := c.PrefsOf()
+	p.DanmakuBlockwords, p.DanmakuBlockUsers = words, users
+	if err := c.SetPrefs(p); err != nil {
+		return err
+	}
+	return c.Save()
+}
+
 // SaveSources 写回弹幕源表。
 func SaveSources(list []SourceConfig) error {
 	c := config.Current()

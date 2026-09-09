@@ -728,6 +728,8 @@ func playFile(path string) error {
 	/* 把落库的字幕样式压回刚起来的 mpv。**放在这里不放 ensureMpv 里**:
 	   ensureMpv 全程持着 mpvMu,而 setProp 自己也要拿这把锁 —— 在里面调是死锁。 */
 	applySubStyle()
+	// 弹幕显示设置同理:它决定的是每一帧怎么排,而每次起播都是新的一轮布局
+	loadDanmakuStyle()
 	mpvMu.Lock()
 	h := mpvH
 	mpvMu.Unlock()

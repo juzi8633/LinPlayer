@@ -42,6 +42,10 @@ import xyz.linplayer.app.ui.Route
 import xyz.linplayer.app.ui.components.Dim3
 import xyz.linplayer.app.ui.components.EmptyState
 import xyz.linplayer.app.ui.components.Hairline
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
+import xyz.linplayer.app.ui.components.LpButton
+import xyz.linplayer.app.ui.components.LpField
 import xyz.linplayer.app.ui.components.LpCell
 import xyz.linplayer.app.ui.components.LpScaffold
 import xyz.linplayer.app.ui.components.Panel
@@ -77,6 +81,9 @@ fun SettingsPage(nav: NavController) {
                     LpCell("播放器", icon = LpIcons.play) { nav.navigate(Route.SettingsSub("player")) }
                     Hairline()
                     LpCell("mpv 配置", icon = LpIcons.file) { nav.navigate(Route.SettingsSub("mpvconf")) }
+                    Hairline()
+                    // 弹幕源和屏蔽词跟内核无关,Exo 下也照样能加(播放页那个入口才分内核)
+                    LpCell("弹幕", icon = LpIcons.danmaku) { nav.navigate(Route.SettingsSub("danmaku")) }
                     Hairline()
                     LpCell("截屏", icon = LpIcons.camera) { nav.navigate(Route.SettingsSub("shot")) }
                 }
@@ -130,7 +137,7 @@ fun SettingsSubPage(nav: NavController, entry: NavBackStackEntry) {
 
     val title = when (route.group) {
         "appearance" -> "外观"; "player" -> "播放器"; "shot" -> "截屏"
-        "mpvconf" -> "mpv 配置"
+        "mpvconf" -> "mpv 配置"; "danmaku" -> "弹幕"
         "backup" -> "备份与还原"
         "prefetch" -> "多线程加载"
         "blocked" -> "已屏蔽的内容"; "storage" -> "存储与数据目录"; else -> "关于"
@@ -145,6 +152,7 @@ fun SettingsSubPage(nav: NavController, entry: NavBackStackEntry) {
                     "player" -> PlayerPrefsPanel()
                     "shot" -> ShotPanel()
                     "mpvconf" -> MpvConfPanel()
+                    "danmaku" -> DanmakuSettingsPanel()
                     "backup" -> BackupPanel()
                     "prefetch" -> PrefetchPanel()
                     "blocked" -> BlockedPanel()
@@ -406,6 +414,138 @@ private fun BackupPanel() {
         LpCell("勾了账号的备份文件里有你所有服务器的登录凭据,只做了混淆,别公开分享。",
             arrow = false)
         note?.let { Hairline(); LpCell(it, arrow = false) }
+    }
+}
+
+/**
+ * 弹幕源与屏蔽词。
+ *
+ * ★ 这一整组以前**一个入口都没有**:核心层十六条 `danmaku.*` 里只有 `autoLoad`
+ *   被调过 —— 加源、看官方源为什么不可用、屏蔽词,三件事在两端都没有界面。
+ * ★ 屏蔽词落在核心层而不是各端各存一份:它要跟着「备份与还原」走
+ *   (`docs/backup-format.md` 里 prefs 是整块透传的),而且自动加载和手动搜索
+ *   必须用同一份。
+ */
+@Composable
+private fun DanmakuSettingsPanel() {
+    val app = LocalApp.current
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var official by remember { mutableStateOf<JsonObject?>(null) }
+    var sources by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
+    var words by remember { mutableStateOf("") }
+    var userCount by remember { mutableStateOf(0) }
+    var newName by remember { mutableStateOf("") }
+    var newUrl by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf<String?>(null) }
+    var reload by remember { mutableStateOf(0) }
+
+    LaunchedEffect(reload) {
+        // 三个请求互不依赖 —— 串起来的话这一页要等三个往返才画得出来
+        official = runCatching { app.call("danmaku.getOfficialDanmaku") }.getOrNull().obj()
+        sources = runCatching { app.call("danmaku.getDanmakuConfig") }.getOrNull().arr()
+            .mapNotNull { it.obj() }.filter { !it.bool("official") }
+        val bw = runCatching { app.call("danmaku.getBlockwords") }.getOrNull().obj()
+        words = bw?.strList("words").orEmpty().joinToString("\n")
+        userCount = bw?.strList("users").orEmpty().size
+    }
+
+    suspend fun saveSources(list: List<JsonObject>) {
+        runCatching {
+            app.call("danmaku.setDanmakuConfig",
+                JsonObject(mapOf("sources" to kotlinx.serialization.json.JsonArray(list))))
+        }.onFailure { app.report(it) }
+        reload++
+    }
+
+    val importXml = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            runCatching {
+                val xml = withContext(Dispatchers.IO) {
+                    ctx.contentResolver.openInputStream(uri)?.use {
+                        val b = it.readBytes()
+                        if (b.size > 8 * 1024 * 1024) error("这个文件太大,不像屏蔽表") else String(b)
+                    }
+                } ?: error("读不出这个文件")
+                // 合并落库由核心层做 —— 两端各写一份合并逻辑,漏掉去重的那边会越导越长
+                val r = app.call("danmaku.importBlocklist", args("xml" to xml)).obj()
+                note = "现在共 ${r.long("total_words") ?: 0} 个词、" +
+                    "${r.long("total_users") ?: 0} 个用户" +
+                    "(这份文件里跳过 ${r.long("skipped_count") ?: 0} 条没启用的)。"
+                reload++
+            }.onFailure { app.report(it) }
+        }
+    }
+
+    Column {
+        Panel(Modifier.padding(Sp.x16)) {
+            // ★ 「没有」和「坏了」是两件事,核心层把原因写清楚了,原样转给用户
+            LpCell(
+                if (official.bool("enabled")) "官方源可用"
+                else "官方源不可用",
+                sub = if (official.bool("enabled")) official.str("name")
+                else official.str("reason") ?: "正在查…",
+                arrow = false,
+            )
+        }
+        GroupLabel("自建源")
+        Panel(Modifier.padding(horizontal = Sp.x16)) {
+            if (sources.isEmpty()) LpCell("还没有自建源。只用官方源也能看。", arrow = false)
+            sources.forEachIndexed { i, src ->
+                if (i > 0) Hairline()
+                LpCell(src.str("name") ?: "(没名字)", sub = src.str("api_url"),
+                    value = "删除", arrow = false, onClick = {
+                        scope.launch { saveSources(sources.filterIndexed { j, _ -> j != i }) }
+                    })
+            }
+        }
+        Column(Modifier.padding(Sp.x16)) {
+            LpField(newName, { newName = it }, "名称(可留空)")
+            Spacer(Modifier.height(Sp.x6))
+            LpField(newUrl, { newUrl = it }, "接口地址,粘贴整条即可")
+            Spacer(Modifier.height(Sp.x6))
+            // ★ 鉴权方式**不让用户选** —— 他也不知道什么是 pathToken。
+            //   核心层从地址里推,推错了也比给一个四选一的下拉框强:那个框选错了
+            //   同样不报错,只是搜不到。
+            LpButton("添加", onClick = {
+                if (newUrl.isBlank()) return@LpButton
+                scope.launch {
+                    saveSources(sources + JsonObject(mapOf(
+                        "id" to JsonPrimitive("u" + System.currentTimeMillis()),
+                        "name" to JsonPrimitive(newName.ifBlank { "自建源" }),
+                        "api_url" to JsonPrimitive(newUrl.trim()),
+                    )))
+                    newName = ""; newUrl = ""
+                }
+            })
+        }
+        GroupLabel("屏蔽词")
+        Column(Modifier.padding(Sp.x16)) {
+            Dim3("一行一个。命中的弹幕直接不上屏,自动加载和手动搜索都算。", maxLines = 2)
+            Spacer(Modifier.height(Sp.x6))
+            LpField(words, { words = it }, "一行一个词", lines = 5)
+            Spacer(Modifier.height(Sp.x6))
+            Row {
+                LpButton("保存屏蔽词", onClick = {
+                    scope.launch {
+                        val ws = words.split("\n").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+                        runCatching {
+                            app.call("danmaku.setBlockwords", JsonObject(mapOf(
+                                "words" to kotlinx.serialization.json.JsonArray(ws.map { JsonPrimitive(it) }))))
+                        }.onSuccess { note = "已保存 ${ws.size} 个屏蔽词。下一次加载弹幕时生效。" }
+                            .onFailure { app.report(it) }
+                    }
+                })
+                Spacer(Modifier.width(Sp.x10))
+                LpButton("导入弹弹Play 屏蔽表", kind = xyz.linplayer.app.ui.components.BtnKind.Secondary,
+                    onClick = { importXml.launch(arrayOf("*/*")) })
+            }
+        }
+        Panel(Modifier.padding(Sp.x16)) {
+            LpCell("屏蔽用户 $userCount 个", sub = "只能从弹弹Play 的屏蔽表导入", arrow = false)
+            note?.let { Hairline(); LpCell(it, arrow = false) }
+        }
     }
 }
 
