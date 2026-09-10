@@ -125,10 +125,15 @@ fun SearchPage(nav: NavController, entry: NavBackStackEntry) {
                         Block.Ok(emptyList())
                     }, { Block.Fail("E_INTERNAL", it.message ?: "搜索失败") })
                 } else {
+                    /* ☠ 库内搜索的库 id 参数叫 **parent_id**;`types` 要的是**数组**。
+                       传 view_id = 核心层读不到,搜的是全站(而「在这个库里搜」的入口
+                       还在);types 传逗号串 = strList 认不出来,当成「全都要」——
+                       「包括集」那个开关于是点了没反应。两边都不报错。 */
                     val a = buildMap<String, Any> {
                         put("query", text)
-                        put("types", if (eps) "Series,Movie,Episode" else "Series,Movie")
-                        route.viewId?.let { put("view_id", it) }
+                        put("types", jsonArrayOf(
+                            if (eps) listOf("Series", "Movie", "Episode") else listOf("Series", "Movie")))
+                        route.viewId?.let { put("parent_id", it) }
                     }
                     result = when (val r = app.block("emby.search", args(*a.toList().toTypedArray()))) {
                         is Block.Ok -> Block.Ok(Page.from(r.value).items)

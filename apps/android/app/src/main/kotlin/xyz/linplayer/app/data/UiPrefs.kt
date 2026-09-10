@@ -24,6 +24,7 @@ object UiPrefs {
     const val K_SHOT_LOGO = "shot_logo"
     const val K_SHOT_TIME_POS = "shot_time_pos"
     const val K_SHOT_LOGO_POS = "shot_logo_pos"
+    private const val K_LONG_SHOT = "long_shot"
 
     /** `system` / `dark` / `light`。 */
     val theme = mutableStateOf("system")
@@ -60,6 +61,13 @@ object UiPrefs {
     val shotTimePos = mutableStateOf("br")
     val shotLogoPos = mutableStateOf("tl")
 
+    /**
+     * 可滚动的页面上显示「截长屏」按钮【用户 2026-09-10:「方便截图演示」】。
+     *
+     * ★ 默认关:它是给演示用的,常驻一颗浮标会挡住内容右下角。
+     */
+    val longShot = mutableStateOf(false)
+
     fun load(ctx: Context) {
         val sp = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         theme.value = sp.getString(K_THEME, "system") ?: "system"
@@ -69,11 +77,17 @@ object UiPrefs {
         shotLogo.value = sp.getBoolean(K_SHOT_LOGO, false)
         shotTimePos.value = sp.getString(K_SHOT_TIME_POS, "br") ?: "br"
         shotLogoPos.value = sp.getString(K_SHOT_LOGO_POS, "tl") ?: "tl"
+        longShot.value = sp.getBoolean(K_LONG_SHOT, false)
     }
 
     fun setShotFlag(ctx: Context, key: String, v: Boolean) {
         (if (key == K_SHOT_TIME) shotTime else shotLogo).value = v
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(key, v).apply()
+    }
+
+    fun setLongShot(ctx: Context, v: Boolean) {
+        longShot.value = v
+        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(K_LONG_SHOT, v).apply()
     }
 
     fun setShotPos(ctx: Context, key: String, v: String) {

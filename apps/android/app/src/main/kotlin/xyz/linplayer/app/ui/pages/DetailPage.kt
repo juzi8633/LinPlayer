@@ -61,6 +61,7 @@ import xyz.linplayer.app.data.obj
 import xyz.linplayer.app.data.str
 import xyz.linplayer.app.data.strList
 import xyz.linplayer.app.ui.Route
+import xyz.linplayer.app.ui.components.LongShotTarget
 import xyz.linplayer.app.ui.components.DataStrip
 import xyz.linplayer.app.ui.components.Dim3
 import xyz.linplayer.app.ui.components.GlassIcon
@@ -179,6 +180,9 @@ fun DetailPage(nav: NavController, entry: NavBackStackEntry) {
     val c = Lp.colors
     val scope = rememberCoroutineScope()
     val list = rememberLazyListState()
+    // 截长屏认的就是这个滚动容器(设置里开了才画按钮,见 LongShot)
+    LongShotTarget(list)
+
 
     var detail by remember { mutableStateOf<Block<JsonObject>>(Block.Loading) }
     var versions by remember { mutableStateOf<List<Version>>(emptyList()) }

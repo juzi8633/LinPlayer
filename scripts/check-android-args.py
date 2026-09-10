@@ -90,6 +90,38 @@ CALL = re.compile(
     re.S)
 PAIR = re.compile(r'"([a-z_0-9]+)"\s+to\b')
 
+# `args(*a.toList().toTypedArray())` —— 参数名在**上面**那个 buildMap 里。
+#
+# ☠ 这个写法 2026-09-10 之前是本闸门的盲区,而三处里两处是真错的:
+#   emby.listItemsPage 传 view_id/offset/limit(核心层读 parent_id + 嵌套 query)、
+#   emby.search 传 view_id(核心层读 parent_id)。「点进媒体库出来的不是这个库」
+#   和「库内搜索搜的是全站」这两条症状,都是从这个盲区长出来的。
+SPREAD = re.compile(
+    r'\b(?:call|block|callJson)\(\s*"([a-z]+\.[A-Za-z]+)"\s*,\s*args\(\s*\*\s*(\w+)\s*\.', re.S)
+PUT = re.compile(r'\bput\(\s*"([a-z_0-9]+)"')
+
+
+def build_map_keys(src, var, before):
+    """`val <var> = buildMap { put("k", …) }` 里的那些 k。认不出来返回 None。"""
+    last = None
+    for hit in re.finditer(r'\bval\s+' + re.escape(var) + r'\s*=\s*buildMap\b', src[:before]):
+        last = hit
+    if last is None:
+        return None
+    i = src.find('{', last.end())
+    if i < 0:
+        return None
+    depth, j = 0, i
+    while j < len(src):
+        if src[j] == '{':
+            depth += 1
+        elif src[j] == '}':
+            depth -= 1
+            if depth == 0:
+                break
+        j += 1
+    return PUT.findall(src[i:j])
+
 
 def ui_calls():
     """[(文件, 行号, command, [参数名…])]"""
@@ -100,10 +132,17 @@ def ui_calls():
                 continue
             path = os.path.join(base, f)
             src = io.open(path, encoding='utf-8').read()
+            rel = os.path.relpath(path, ROOT)
             for m in CALL.finditer(src):
                 line = src.count('\n', 0, m.start()) + 1
-                found.append((os.path.relpath(path, ROOT), line,
-                              m.group(1), PAIR.findall(m.group(2))))
+                found.append((rel, line, m.group(1), PAIR.findall(m.group(2))))
+            for m in SPREAD.finditer(src):
+                keys = build_map_keys(src, m.group(2), m.start())
+                # 认不出来就别算 —— 假红会训练人无视这道闸门
+                if keys is None:
+                    continue
+                line = src.count('\n', 0, m.start()) + 1
+                found.append((rel, line, m.group(1), keys))
     return found
 
 

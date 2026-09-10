@@ -58,6 +58,7 @@ import xyz.linplayer.app.data.long
 import xyz.linplayer.app.data.obj
 import xyz.linplayer.app.data.str
 import xyz.linplayer.app.ui.Route
+import xyz.linplayer.app.ui.components.LongShotTarget
 import xyz.linplayer.app.ui.components.BtnKind
 import xyz.linplayer.app.ui.components.Body
 import xyz.linplayer.app.ui.components.Dim3
@@ -92,6 +93,9 @@ fun ServersPage(nav: NavController) {
     val app = LocalApp.current
     val scope = rememberCoroutineScope()
     val list = rememberLazyListState()
+    // 截长屏认的就是这个滚动容器(设置里开了才画按钮,见 LongShot)
+    LongShotTarget(list)
+
     val haptic = LocalHapticFeedback.current
 
     var accounts by remember { mutableStateOf<List<Account>>(emptyList()) }

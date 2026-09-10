@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 
@@ -118,6 +117,17 @@ func RegisterCommands() {
 		if kw == "" {
 			return nil, bus.NewErr(bus.EInvalid, "请输入搜索词")
 		}
+		/* ★ 粘一条 Bangumi 条目链接(或 `bgm:253`)就当片名用 —— 换成条目的官方原名再搜。
+		   媒体库刮到的中文名和弹幕源收录的日文名对不上时,直接搜中文名是 0 条。
+		   ☠ 换不出名字要**明说**:拿 `bgm:253` 这串去搜必然 0 条,
+		     而用户看到的会是「都没搜到」,以为源坏了。 */
+		if id := BgmSubjectID(kw); id > 0 {
+			names := BgmTitles(ctx, id)
+			if len(names) == 0 {
+				return nil, bus.NewErr(bus.EUpstream, "查不到 Bangumi 条目 %d 的名字,直接输片名试试", id)
+			}
+			kw = names[0]
+		}
 		// ★ 手动搜索**不**过 AllowOfficialFor 那一关:那是用户明确要求的
 		cfgs := allSources(true)
 		if len(cfgs) == 0 {
@@ -156,7 +166,7 @@ func RegisterCommands() {
 		if len(cfgs) == 0 {
 			return nil, bus.NewErr(bus.EUnsupported, "还没有可用的弹幕源")
 		}
-		out, err := MatchAll(ctx, cfgs, in)
+		out, err := MatchAll(ctx, cfgs, withBgmTitles(ctx, in))
 		if err != nil {
 			return nil, upstream(err)
 		}
@@ -176,7 +186,11 @@ func RegisterCommands() {
 		if len(cfgs) == 0 {
 			return nil, nil // 没源 = 没弹幕,不是错误
 		}
-		cands, err := MatchAll(ctx, cfgs, in)
+		// ★ 连看下一集先走接力:上一集的 id 加一,一次上游请求解决(见 relay.go)
+		if items, ok := relayLoad(ctx, cfgs, in, chConvertOf(a)); ok {
+			return ApplyFilterAndDedup(items, filterOptionsOf(a)), nil
+		}
+		cands, err := MatchAll(ctx, cfgs, withBgmTitles(ctx, in))
 		if err != nil {
 			return nil, upstream(err)
 		}
@@ -193,6 +207,10 @@ func RegisterCommands() {
 		items, err := getCommentsCached(ctx, cfg, best.EpisodeID, chConvertOf(a))
 		if err != nil {
 			return nil, upstream(err)
+		}
+		// 取到东西才记接力点 —— 记一个空集会让下一集跟着一路错下去
+		if len(items) > 0 {
+			relayRemember(in, &best)
 		}
 		return ApplyFilterAndDedup(items, filterOptionsOf(a)), nil
 	})
@@ -290,10 +308,19 @@ func RegisterCommands() {
 	})
 }
 
+// SearchGroupCap 一个源最多回多少部作品。
+//
+// ★ 用户 2026-09-10:「每个源最多 8 个,方便换源」。搜索面板是**用来换源的**,
+// 一个源刷出四十条相似作品时,第二个源已经被顶到屏幕外面去了。
+const SearchGroupCap = 8
+
 // searchAllGrouped 并行搜所有源,**按源分组**返回。
 //
 // ★★ 一个源挂了**不影响别的** —— 它自己那组带 error,其余照出。
 // 合成一个大列表的话,一个源 429 就把整页拖成空白。
+//
+// ★ 组的顺序**就是设置里的顺序**,不按结果条数重排 —— 重排的话用户在设置里
+//   把常用源拖到第一位这件事等于没做。
 func searchAllGrouped(ctx context.Context, cfgs []SourceConfig, keyword string) []SourceGroup {
 	out := make([]SourceGroup, len(cfgs))
 	var wg sync.WaitGroup
@@ -307,14 +334,15 @@ func searchAllGrouped(ctx context.Context, cfgs []SourceConfig, keyword string) 
 				msg := err.Error()
 				g.Error = &msg
 			} else {
+				if len(animes) > SearchGroupCap {
+					animes = animes[:SearchGroupCap]
+				}
 				g.Animes = animes
 			}
 			out[i] = g
 		}(i)
 	}
 	wg.Wait()
-	// 有结果的排前面 —— 空组和报错组沉底
-	sort.SliceStable(out, func(i, j int) bool { return len(out[i].Animes) > len(out[j].Animes) })
 	return out
 }
 

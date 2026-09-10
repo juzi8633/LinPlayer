@@ -62,6 +62,7 @@ import xyz.linplayer.app.data.keepState
 import xyz.linplayer.app.data.ToastKind
 import xyz.linplayer.app.ui.Route
 import xyz.linplayer.app.ui.switchTab
+import xyz.linplayer.app.ui.components.LongShotTarget
 import xyz.linplayer.app.ui.components.CardAction
 import xyz.linplayer.app.ui.components.EmptyState
 import xyz.linplayer.app.ui.components.ErrorState
@@ -99,6 +100,9 @@ fun HomePage(nav: NavController) {
     val app = LocalApp.current
     val scope = rememberCoroutineScope()
     val list = rememberLazyListState()
+    // 截长屏认的就是这个滚动容器(设置里开了才画按钮,见 LongShot)
+    LongShotTarget(list)
+
 
     /* ☠ 这几份数据以前是 `remember`,而 `remember` 的寿命是 composition ——
        点进任何一页再返回,首页**整个重拉一遍**(骨架闪一次、Hero 从第一张重来)。
@@ -567,14 +571,26 @@ private fun iconFor(type: String?) = when (type) {
     else -> LpIcons.grid
 }
 
+/**
+ * 命令参数。
+ *
+ * ☠ **JsonElement 必须原样透传。** 少了这一支的时候,数组和对象会走 `toString()`
+ *   变成一个**字符串** —— 核心层那边 `strList` 只认 JSON 数组,拿到字符串直接当空表。
+ *   表现是 `emby.search` 的「包括集」开关点了没反应,而且两边都不报错。
+ */
 internal fun args(vararg pairs: Pair<String, Any>): JsonObject =
     JsonObject(pairs.associate { (k, v) ->
         k to when (v) {
+            is kotlinx.serialization.json.JsonElement -> v
             is Number -> JsonPrimitive(v)
             is Boolean -> JsonPrimitive(v)
             else -> JsonPrimitive(v.toString())
         }
     })
+
+/** `listOf("a","b")` → JSON 数组。核心层的 strList 只认这个形状。 */
+internal fun jsonArrayOf(items: List<String>) =
+    kotlinx.serialization.json.JsonArray(items.map { JsonPrimitive(it) })
 
 internal fun <T, Rn> Block<T>.map(f: (T) -> Rn): Block<Rn> = when (this) {
     is Block.Loading -> Block.Loading

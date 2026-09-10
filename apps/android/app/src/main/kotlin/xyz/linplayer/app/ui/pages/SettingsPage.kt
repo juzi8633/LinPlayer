@@ -39,6 +39,14 @@ import xyz.linplayer.app.data.long
 import xyz.linplayer.app.data.obj
 import xyz.linplayer.app.data.str
 import xyz.linplayer.app.ui.Route
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.graphics.graphicsLayer
+import xyz.linplayer.app.ui.components.BtnKind
+import xyz.linplayer.app.ui.components.LpDialog
+import xyz.linplayer.app.ui.components.LpIconButton
+import xyz.linplayer.app.ui.components.LongShotTarget
 import xyz.linplayer.app.ui.components.Dim3
 import xyz.linplayer.app.ui.components.EmptyState
 import xyz.linplayer.app.ui.components.Hairline
@@ -70,6 +78,9 @@ import xyz.linplayer.app.ui.theme.Sp
 @Composable
 fun SettingsPage(nav: NavController) {
     val list = rememberLazyListState()
+    // 截长屏认的就是这个滚动容器(设置里开了才画按钮,见 LongShot)
+    LongShotTarget(list)
+
 
     LpScaffold("设置", onBack = { nav.popBackStack() }, scrolled = rememberScrolled(list)) { pad ->
         LazyColumn(Modifier.fillMaxSize(), list, contentPadding = pad) {
@@ -134,6 +145,9 @@ fun SettingsSubPage(nav: NavController, entry: NavBackStackEntry) {
     val app = LocalApp.current
     val scope = rememberCoroutineScope()
     val list = rememberLazyListState()
+    // 截长屏认的就是这个滚动容器(设置里开了才画按钮,见 LongShot)
+    LongShotTarget(list)
+
 
     val title = when (route.group) {
         "appearance" -> "外观"; "player" -> "播放器"; "shot" -> "截屏"
@@ -420,11 +434,13 @@ private fun BackupPanel() {
 /**
  * 弹幕源与屏蔽词。
  *
- * ★ 这一整组以前**一个入口都没有**:核心层十六条 `danmaku.*` 里只有 `autoLoad`
- *   被调过 —— 加源、看官方源为什么不可用、屏蔽词,三件事在两端都没有界面。
- * ★ 屏蔽词落在核心层而不是各端各存一份:它要跟着「备份与还原」走
- *   (`docs/backup-format.md` 里 prefs 是整块透传的),而且自动加载和手动搜索
- *   必须用同一份。
+ * ★ **极简**【用户 2026-09-10:「丑死了,一堆文字一堆说明」】——
+ *   加源是一颗按钮 + 一个只有两格的弹窗,屏蔽词收进弹窗,说明文字全删。
+ *   一屏之内看到的只有「有哪些源、什么顺序」。
+ * ★ **顺序有用**:搜索结果按这张表的顺序分组(核心层 searchAllGrouped),
+ *   常用的源排第一位就排在最上面。没有这一条的话排序就是个摆设。
+ * ★ 屏蔽词落在核心层而不是各端各存一份:它跟着「备份与还原」走,
+ *   而且自动加载和手动搜索必须用同一份。
  */
 @Composable
 private fun DanmakuSettingsPanel() {
@@ -435,9 +451,8 @@ private fun DanmakuSettingsPanel() {
     var sources by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
     var words by remember { mutableStateOf("") }
     var userCount by remember { mutableStateOf(0) }
-    var newName by remember { mutableStateOf("") }
-    var newUrl by remember { mutableStateOf("") }
-    var note by remember { mutableStateOf<String?>(null) }
+    var adding by remember { mutableStateOf(false) }
+    var editWords by remember { mutableStateOf(false) }
     var reload by remember { mutableStateOf(0) }
 
     LaunchedEffect(reload) {
@@ -470,9 +485,8 @@ private fun DanmakuSettingsPanel() {
                 } ?: error("读不出这个文件")
                 // 合并落库由核心层做 —— 两端各写一份合并逻辑,漏掉去重的那边会越导越长
                 val r = app.call("danmaku.importBlocklist", args("xml" to xml)).obj()
-                note = "现在共 ${r.long("total_words") ?: 0} 个词、" +
-                    "${r.long("total_users") ?: 0} 个用户" +
-                    "(这份文件里跳过 ${r.long("skipped_count") ?: 0} 条没启用的)。"
+                app.toast("导入 ${r.long("total_words") ?: 0} 个词、${r.long("total_users") ?: 0} 个用户",
+                    ToastKind.Ok)
                 reload++
             }.onFailure { app.report(it) }
         }
@@ -480,71 +494,130 @@ private fun DanmakuSettingsPanel() {
 
     Column {
         Panel(Modifier.padding(Sp.x16)) {
-            // ★ 「没有」和「坏了」是两件事,核心层把原因写清楚了,原样转给用户
-            LpCell(
-                if (official.bool("enabled")) "官方源可用"
-                else "官方源不可用",
-                sub = if (official.bool("enabled")) official.str("name")
-                else official.str("reason") ?: "正在查…",
-                arrow = false,
-            )
+            // 「没有」和「坏了」是两件事:不可用时才把核心层给的原因摊开
+            LpCell("弹弹Play 官方源", arrow = false,
+                value = if (official.bool("enabled")) "可用" else "不可用",
+                sub = if (official.bool("enabled")) null else official.str("reason"))
         }
         GroupLabel("自建源")
         Panel(Modifier.padding(horizontal = Sp.x16)) {
-            if (sources.isEmpty()) LpCell("还没有自建源。只用官方源也能看。", arrow = false)
+            if (sources.isEmpty()) LpCell("还没有自建源", arrow = false)
             sources.forEachIndexed { i, src ->
                 if (i > 0) Hairline()
-                LpCell(src.str("name") ?: "(没名字)", sub = src.str("api_url"),
-                    value = "删除", arrow = false, onClick = {
+                SourceRow(
+                    name = src.str("name") ?: "(没名字)",
+                    url = src.str("api_url") ?: "",
+                    canUp = i > 0, canDown = i < sources.lastIndex,
+                    onMove = { d -> scope.launch { saveSources(sources.moved(i, i + d)) } },
+                    onDelete = {
                         scope.launch { saveSources(sources.filterIndexed { j, _ -> j != i }) }
-                    })
+                    },
+                )
             }
         }
         Column(Modifier.padding(Sp.x16)) {
-            LpField(newName, { newName = it }, "名称(可留空)")
-            Spacer(Modifier.height(Sp.x6))
-            LpField(newUrl, { newUrl = it }, "接口地址,粘贴整条即可")
-            Spacer(Modifier.height(Sp.x6))
-            // ★ 鉴权方式**不让用户选** —— 他也不知道什么是 pathToken。
-            //   核心层从地址里推,推错了也比给一个四选一的下拉框强:那个框选错了
-            //   同样不报错,只是搜不到。
-            LpButton("添加", onClick = {
-                if (newUrl.isBlank()) return@LpButton
-                scope.launch {
-                    saveSources(sources + JsonObject(mapOf(
-                        "id" to JsonPrimitive("u" + System.currentTimeMillis()),
-                        "name" to JsonPrimitive(newName.ifBlank { "自建源" }),
-                        "api_url" to JsonPrimitive(newUrl.trim()),
-                    )))
-                    newName = ""; newUrl = ""
-                }
-            })
+            LpButton("添加源", onClick = { adding = true })
         }
-        GroupLabel("屏蔽词")
-        Column(Modifier.padding(Sp.x16)) {
-            Dim3("一行一个。命中的弹幕直接不上屏,自动加载和手动搜索都算。", maxLines = 2)
-            Spacer(Modifier.height(Sp.x6))
-            LpField(words, { words = it }, "一行一个词", lines = 5)
-            Spacer(Modifier.height(Sp.x6))
-            Row {
-                LpButton("保存屏蔽词", onClick = {
-                    scope.launch {
-                        val ws = words.split("\n").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
-                        runCatching {
-                            app.call("danmaku.setBlockwords", JsonObject(mapOf(
-                                "words" to kotlinx.serialization.json.JsonArray(ws.map { JsonPrimitive(it) }))))
-                        }.onSuccess { note = "已保存 ${ws.size} 个屏蔽词。下一次加载弹幕时生效。" }
-                            .onFailure { app.report(it) }
-                    }
-                })
-                Spacer(Modifier.width(Sp.x10))
-                LpButton("导入弹弹Play 屏蔽表", kind = xyz.linplayer.app.ui.components.BtnKind.Secondary,
-                    onClick = { importXml.launch(arrayOf("*/*")) })
-            }
+        GroupLabel("屏蔽")
+        Panel(Modifier.padding(horizontal = Sp.x16)) {
+            LpCell("屏蔽词", value = "${words.split("\n").count { it.isNotBlank() }} 个",
+                onClick = { editWords = true })
+            Hairline()
+            LpCell("屏蔽用户", value = "$userCount 个", sub = "从弹弹Play 屏蔽表导入",
+                onClick = { importXml.launch(arrayOf("*/*")) })
         }
-        Panel(Modifier.padding(Sp.x16)) {
-            LpCell("屏蔽用户 $userCount 个", sub = "只能从弹弹Play 的屏蔽表导入", arrow = false)
-            note?.let { Hairline(); LpCell(it, arrow = false) }
+        Spacer(Modifier.height(Sp.x20))
+    }
+
+    if (adding) AddSourceDialog({ adding = false }) { name, url ->
+        scope.launch {
+            saveSources(sources + JsonObject(mapOf(
+                "id" to JsonPrimitive("u" + System.currentTimeMillis()),
+                "name" to JsonPrimitive(name.ifBlank { "自建源" }),
+                "api_url" to JsonPrimitive(url.trim()),
+            )))
+        }
+        adding = false
+    }
+
+    if (editWords) BlockwordsDialog(words, { editWords = false }) { ws ->
+        scope.launch {
+            runCatching {
+                app.call("danmaku.setBlockwords", JsonObject(mapOf(
+                    "words" to kotlinx.serialization.json.JsonArray(ws.map { JsonPrimitive(it) }))))
+            }.onSuccess { words = ws.joinToString("\n"); editWords = false }
+                .onFailure { app.report(it) }
+        }
+    }
+}
+
+/** 把第 [from] 项挪到第 [to] 位。越界原样返回 —— 箭头到头了不该把表打乱。 */
+internal fun <T> List<T>.moved(from: Int, to: Int): List<T> {
+    if (from !in indices || to !in indices || from == to) return this
+    val out = toMutableList()
+    out.add(to, out.removeAt(from))
+    return out
+}
+
+/** 一条自建源:名字 + 地址 + 上移 / 下移 / 删除。 */
+@Composable
+private fun SourceRow(
+    name: String, url: String, canUp: Boolean, canDown: Boolean,
+    onMove: (Int) -> Unit, onDelete: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = Sp.x16, end = Sp.x6, top = Sp.x6, bottom = Sp.x6),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(name, color = Lp.colors.fg, fontSize = 14.sp, maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Dim3(url)
+        }
+        // 只有一个「向下」的箭头,向上那颗把它转过来 —— 不为一个方向再画一个图标
+        if (canUp) Box(Modifier.graphicsLayer { rotationZ = 180f }) {
+            LpIconButton(LpIcons.chevD, "上移", size = 18) { onMove(-1) }
+        }
+        if (canDown) LpIconButton(LpIcons.chevD, "下移", size = 18) { onMove(1) }
+        LpIconButton(LpIcons.trash, "删除", size = 18) { onDelete() }
+    }
+}
+
+/**
+ * 加一条源:**只问名字和地址**【用户 2026-09-10】。
+ *
+ * ★ 鉴权方式不让用户选 —— 他也不知道什么是 pathToken。核心层从地址里推
+ *   (setDanmakuConfig 的 DeriveAuth),推错了也比给一个四选一的下拉框强:
+ *   那个框选错了同样不报错,只是搜不到。
+ */
+@Composable
+private fun AddSourceDialog(onClose: () -> Unit, onAdd: (String, String) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var url by remember { mutableStateOf("") }
+    LpDialog(onClose, "添加弹幕源") {
+        LpField(name, { name = it }, "弹幕源名字")
+        Spacer(Modifier.height(Sp.x10))
+        LpField(url, { url = it }, "弹幕源链接")
+        Spacer(Modifier.height(Sp.x16))
+        Row(horizontalArrangement = Arrangement.spacedBy(Sp.x10)) {
+            LpButton("取消", onClose, Modifier.weight(1f), BtnKind.Secondary)
+            LpButton("添加", { if (url.isNotBlank()) onAdd(name, url) }, Modifier.weight(1f))
+        }
+    }
+}
+
+/** 屏蔽词编辑。收进弹窗 —— 设置页里摊着一个八行的文本框,整页就只剩它了。 */
+@Composable
+private fun BlockwordsDialog(init: String, onClose: () -> Unit, onSave: (List<String>) -> Unit) {
+    var draft by remember { mutableStateOf(init) }
+    LpDialog(onClose, "屏蔽词") {
+        LpField(draft, { draft = it }, "一行一个", lines = 8)
+        Spacer(Modifier.height(Sp.x16))
+        Row(horizontalArrangement = Arrangement.spacedBy(Sp.x10)) {
+            LpButton("取消", onClose, Modifier.weight(1f), BtnKind.Secondary)
+            LpButton("保存", {
+                onSave(draft.split("\n").map { it.trim() }.filter { it.isNotEmpty() }.distinct())
+            }, Modifier.weight(1f))
         }
     }
 }
@@ -640,6 +713,9 @@ private fun ShotPanel() {
             onSwitch = { v -> p.setShotFlag(ctx, xyz.linplayer.app.data.UiPrefs.K_SHOT_LOGO, v) })
         if (p.shotLogo.value) SegRow("艺术字的位置", CORNER_LABELS, cornerLabel(p.shotLogoPos.value),
             { v -> p.setShotPos(ctx, xyz.linplayer.app.data.UiPrefs.K_SHOT_LOGO_POS, cornerCode(v)) })
+        Hairline()
+        LpCell("截长屏按钮", sub = "可滚动的页面右下角出现一颗按钮,按一下把整页拼成长图",
+            switch = p.longShot.value, onSwitch = { v -> p.setLongShot(ctx, v) })
     }
 }
 

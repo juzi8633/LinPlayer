@@ -494,6 +494,9 @@ internal suspend fun loadDanmakuFor(
         }
         put("genres", kotlinx.serialization.json.JsonArray(
             d.strList("genres").map { kotlinx.serialization.json.JsonPrimitive(it) }))
+        /* ★ 媒体库刮到了 Bangumi 条目号就带上 —— 核心层拿它换回作品的**日文原名**
+           再去搜。中文名和弹幕源收录的名字对不上时,那是唯一能对上的一路。 */
+        d.long("bgm_id")?.let { put("bgm_id", kotlinx.serialization.json.JsonPrimitive(it)) }
     }
     val items = runCatching {
         app.call("danmaku.autoLoad", kotlinx.serialization.json.JsonObject(

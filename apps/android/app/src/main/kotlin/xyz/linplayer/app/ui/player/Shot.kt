@@ -138,7 +138,7 @@ object Shot {
      *   全盘写权限不值(而且 Play 对播放器不放行)。那些机器落到应用自己的外部目录:
      *   `Android/data/<包名>/files/Pictures/shots`,和日志目录同一处,文件管理器进得去。
      */
-    private fun save(ctx: Context, bmp: Bitmap): String {
+    internal fun save(ctx: Context, bmp: Bitmap): String {
         val name = "LinPlayer-" +
             SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date()) + ".png"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

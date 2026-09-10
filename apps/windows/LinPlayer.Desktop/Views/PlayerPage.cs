@@ -1768,6 +1768,10 @@ public sealed class PlayerPage : UserControl
             input["season_no"] = se.GetInt64();
         if (d.TryGetProperty("genres", out var g) && g.ValueKind == JsonValueKind.Array)
             input["genres"] = g.EnumerateArray().Select(x => x.GetString() ?? "").ToArray();
+        // 媒体库刮到了 Bangumi 条目号就带上:核心层拿它换回作品的日文原名再去搜。
+        // 中文名和弹幕源收录的名字对不上时,那是唯一能对上的一路。
+        if (d.TryGetProperty("bgm_id", out var bg) && bg.ValueKind == JsonValueKind.Number)
+            input["bgm_id"] = bg.GetInt64();
 
         var items = await _core.DanmakuAutoLoad(new { input });
         if (items.ValueKind != JsonValueKind.Array || items.GetArrayLength() == 0)

@@ -604,6 +604,19 @@ fun ErrorState(message: String, onRetry: (() -> Unit)? = null, m: Modifier = Mod
  *   把 dialog 窗撑满,再自己铺一块 scrim。
  * ★ 点遮罩关闭 —— 但**面板本身要拦住点击**,不然点面板空白处也会关掉。
  */
+/**
+ * 弹窗宽度:**跟着屏幕按比例走**【用户 2026-09-10】。
+ *
+ * 原来是「最宽 420dp,否则铺满」—— 手机上等于满幅(几个选项占一整屏),
+ * 平板上 420dp 只占半屏多一点,小得像个错位的提示框。同一个数字在两种屏上
+ * 给出两种毛病,因为它根本不是按比例来的。
+ *
+ * 上下限不是审美是可用性:窄于 280dp 输入框放不下一行地址,宽于 600dp
+ * 一行文字要横扫整个平板,眼睛得来回找行首。
+ */
+internal fun dialogWidth(screenWidthDp: Int): Int =
+    (screenWidthDp * 0.82f).toInt().coerceIn(280, 600).coerceAtMost(screenWidthDp)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LpDialog(onDismiss: () -> Unit, title: String? = null, content: @Composable () -> Unit) {
@@ -622,7 +635,8 @@ fun LpDialog(onDismiss: () -> Unit, title: String? = null, content: @Composable 
             contentAlignment = Alignment.Center,
         ) {
             Column(
-                Modifier.widthIn(max = 420.dp).fillMaxWidth()
+                Modifier.width(dialogWidth(
+                    androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp).dp)
                     // ★ 吞掉点击:不吞的话点面板里的空白也会走到上面那层的 onDismiss
                     .clickable(interactionSource = remember { MutableInteractionSource() },
                         indication = null, onClick = {})

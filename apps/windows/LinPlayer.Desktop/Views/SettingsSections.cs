@@ -902,25 +902,21 @@ public static class SettingsSections
     // ---------------------------------------------------------------- 弹幕
 
     /// <summary>
-    /// 弹幕源与屏蔽词。
+    /// 弹幕源与屏蔽词。<b>极简</b>【用户 2026-09-10】:加源是一颗按钮 + 一个两格的弹窗。
     ///
-    /// <para>这一整组以前<b>一个入口都没有</b>:核心层十四条 <c>danmaku.*</c> 命令里
-    /// 只有 <c>autoLoad</c> 被调过 —— 加源、看官方源为什么不可用、屏蔽词,
-    /// 三件事在两端都没有界面。</para>
-    /// <para>屏蔽词落在核心层而不是各端各存一份:它要跟着「备份与还原」走
-    /// (见 <c>docs/backup-format.md</c>),而且自动加载和手动搜索必须用同一份。</para>
+    /// <para><b>顺序有用</b>:搜索结果按这张表的顺序分组(核心层 searchAllGrouped),
+    /// 常用的源排第一位就排最上面 —— 没有这一条的话排序就是个摆设。</para>
+    /// <para>屏蔽词落核心层:它跟着「备份与还原」走,自动加载和手动搜索得用同一份。</para>
     /// </summary>
     public static Control Danmaku(CoreClient core)
     {
         var official = Note("正在看官方源可不可用…");
         var list = new StackPanel { Spacing = 6 };
         var hint = Hint();
-        var name = new TextBox { Watermark = "名称", Width = 140, MinHeight = 32 };
-        var url = new TextBox { Watermark = "接口地址(粘贴整条即可)", Width = 340, MinHeight = 32 };
         var words = new TextBox
         {
             AcceptsReturn = true, MinHeight = 96, MaxHeight = 180,
-            TextWrapping = TextWrapping.NoWrap, Watermark = "一行一个词",
+            TextWrapping = TextWrapping.NoWrap, Watermark = "屏蔽词,一行一个",
         };
         var users = Note("");
 
@@ -928,28 +924,34 @@ public static class SettingsSections
 
         async Task Save()
         {
-            try
-            {
-                await core.DanmakuSetDanmakuConfig(new { sources });
-                hint.Text = $"已保存,{sources.Count} 个自建源。";
-            }
+            try { await core.DanmakuSetDanmakuConfig(new { sources }); }
             catch (Exception e) { hint.Text = LibraryPage.Advice(e); }
         }
 
         void Paint()
         {
             list.Children.Clear();
-            if (sources.Count == 0) list.Children.Add(Note("还没有自建源。只用官方源也能看。"));
+            if (sources.Count == 0) { list.Children.Add(Note("还没有自建源")); return; }
             foreach (var (s, i) in sources.Select((s, i) => (s, i)))
             {
-                var del = new Button { Classes = { "ghost" }, Content = "删除" };
                 var at = i;
-                del.Click += async (_, _) =>
+                var up = new Button { Classes = { "ghost" }, Content = "↑", IsEnabled = i > 0 };
+                var down = new Button
                 {
+                    Classes = { "ghost" }, Content = "↓", IsEnabled = i < sources.Count - 1,
+                };
+                var del = new Button { Classes = { "ghost" }, Content = "删除" };
+                async void Move(int d)
+                {
+                    var item = sources[at];
                     sources.RemoveAt(at);
+                    sources.Insert(at + d, item);
                     Paint();
                     await Save();
-                };
+                }
+                up.Click += (_, _) => Move(-1);
+                down.Click += (_, _) => Move(1);
+                del.Click += async (_, _) => { sources.RemoveAt(at); Paint(); await Save(); };
                 list.Children.Add(Row(
                     new TextBlock
                     {
@@ -959,11 +961,11 @@ public static class SettingsSections
                     },
                     new TextBlock
                     {
-                        Text = Str(s, "api_url"), Width = 330, Classes = { "dim" },
+                        Text = Str(s, "api_url"), Width = 300, Classes = { "dim" },
                         VerticalAlignment = VerticalAlignment.Center,
                         TextTrimming = TextTrimming.CharacterEllipsis,
                     },
-                    del));
+                    up, down, del));
             }
         }
 
@@ -982,35 +984,38 @@ public static class SettingsSections
                 Dispatcher.UIThread.Post(() =>
                 {
                     official.Text = Bool(o, "enabled")
-                        ? $"官方源可用:{Str(o, "name")}"
+                        ? $"弹弹Play 官方源:可用"
                         // ★ 「没有」和「坏了」是两件事,核心层把原因写清楚了,原样转给用户
-                        : "官方源不可用 —— " + Str(o, "reason");
+                        : "弹弹Play 官方源不可用 —— " + Str(o, "reason");
                     sources = cfg.ValueKind == JsonValueKind.Array
                         ? cfg.EnumerateArray().Where(x => !Bool(x, "official")).ToList() : [];
                     Paint();
                     words.Text = string.Join("\n", Strings(bw, "words"));
-                    users.Text = $"屏蔽用户 {Strings(bw, "users").Length} 个(只能从弹弹Play 屏蔽表导入)";
+                    users.Text = $"屏蔽用户 {Strings(bw, "users").Length} 个";
                 });
             }
             catch (Exception e) { hint.Text = LibraryPage.Advice(e); }
         }
         _ = Reload();
 
-        var add = new Button { Classes = { "primary" }, Content = "添加" };
+        var add = new Button { Classes = { "primary" }, Content = "添加源" };
         add.Click += async (_, _) =>
         {
-            var u = (url.Text ?? "").Trim();
-            if (u.Length == 0) { hint.Text = "先把接口地址填上。"; return; }
-            /* 鉴权方式**不让用户选** —— 他也不知道什么是 pathToken。
-               核心层从地址里推(setDanmakuConfig 里的 DeriveAuth),推错了也比
-               给一个四选一的下拉框强:那个框选错了同样不报错,只是搜不到。 */
+            /* 鉴权方式**不问用户** —— 他也不知道什么是 pathToken。核心层从地址里推
+               (setDanmakuConfig 里的 DeriveAuth),推错了也比给一个四选一的下拉框强:
+               那个框选错了同样不报错,只是搜不到。 */
+            var nameBox = new TextBox { Watermark = "弹幕源名字", MinHeight = 32 };
+            var urlBox = new TextBox { Watermark = "弹幕源链接", MinHeight = 32, MinWidth = 360 };
+            var body = new StackPanel { Spacing = 10, Children = { nameBox, urlBox } };
+            if (!await Dialogs.Show(add, "添加弹幕源", body, "添加", "取消")) return;
+            var u = (urlBox.Text ?? "").Trim();
+            if (u.Length == 0) { hint.Text = "地址是空的,没加。"; return; }
             sources.Add(JsonSerializer.SerializeToElement(new
             {
                 id = "u" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                name = (name.Text ?? "").Trim() is { Length: > 0 } n ? n : "自建源",
+                name = (nameBox.Text ?? "").Trim() is { Length: > 0 } n ? n : "自建源",
                 api_url = u,
             }));
-            name.Text = ""; url.Text = "";
             Paint();
             await Save();
         };
@@ -1023,7 +1028,7 @@ public static class SettingsSections
             try
             {
                 await core.DanmakuSetBlockwords(new { words = ws });
-                hint.Text = $"已保存 {ws.Length} 个屏蔽词。下一次加载弹幕时生效。";
+                hint.Text = $"已保存 {ws.Length} 个屏蔽词。";
             }
             catch (Exception e) { hint.Text = LibraryPage.Advice(e); }
         };
@@ -1046,8 +1051,7 @@ public static class SettingsSections
                 var xml = await sr.ReadToEndAsync();
                 // 合并落库由核心层做 —— 两端各写一份合并逻辑,漏掉去重的那边会越导越长
                 var r = await core.DanmakuImportBlocklist(new { xml });
-                hint.Text = $"导入 {Num(r, "total_words"):0} 个词、{Num(r, "total_users"):0} 个用户" +
-                    $"(这份文件里跳过 {Num(r, "skipped_count"):0} 条没启用的)。";
+                hint.Text = $"导入 {Num(r, "total_words"):0} 个词、{Num(r, "total_users"):0} 个用户。";
                 await Reload();
             }
             catch (Exception e) { hint.Text = LibraryPage.Advice(e); }
@@ -1059,11 +1063,9 @@ public static class SettingsSections
             Children =
             {
                 official,
-                Note("自建源填弹弹Play 兼容接口的地址就行,鉴权方式由地址推导,不用你选。"),
                 list,
-                Row(name, url, add),
-                new TextBlock { Text = "屏蔽词", Classes = { "h2" }, Margin = new Thickness(0, 10, 0, 0) },
-                Note("一行一个。命中的弹幕直接不上屏,自动加载和手动搜索都算。"),
+                add,
+                new TextBlock { Text = "屏蔽", Classes = { "h2" }, Margin = new Thickness(0, 10, 0, 0) },
                 words,
                 Row(saveWords, import),
                 users,

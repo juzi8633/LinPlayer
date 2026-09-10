@@ -52,6 +52,7 @@ import xyz.linplayer.app.data.block
 import xyz.linplayer.app.data.obj
 import xyz.linplayer.app.data.strList
 import xyz.linplayer.app.ui.Route
+import xyz.linplayer.app.ui.components.LongShotTarget
 import xyz.linplayer.app.ui.components.BlockBox
 import xyz.linplayer.app.ui.components.BtnKind
 import xyz.linplayer.app.ui.components.Dim2
@@ -104,6 +105,9 @@ fun LibraryPage(nav: NavController, entry: NavBackStackEntry) {
     val c = Lp.colors
     val scope = rememberCoroutineScope()
     val grid = rememberLazyGridState()
+    // 截长屏认的就是这个滚动容器(设置里开了才画按钮,见 LongShot)
+    LongShotTarget(grid)
+
 
     // ★ 键必须带 viewId —— 库 A 和库 B 是两页,共用一个键会串数据
     val ck = "lib.${route.viewId}"
@@ -120,14 +124,22 @@ fun LibraryPage(nav: NavController, entry: NavBackStackEntry) {
 
     val hasFilter = genre != null || minRating.second > 0
 
+    /* ☠ **这条命令收的是 `parent_id` + 一个嵌套的 `query` 对象**,不是平铺参数。
+       平铺传过去核心层一个都读不到:`parent_id` 空 = 不限库、`query` 缺 = 默认分页,
+       于是**每个媒体库点进去都是同一份全站列表**,而且不报错。
+       这个写法(buildMap 展开成 args)以前躲开了 check-android-args.py 的正则,
+       闸门已经补上,别再改回平铺。 */
     suspend fun fetch(offset: Int) {
-        val a = buildMap<String, Any> {
-            put("view_id", route.viewId)
-            put("offset", offset); put("limit", PAGE)
+        val q = buildMap<String, Any> {
+            put("start_index", offset); put("limit", PAGE)
             put("sort_by", sort.second)
             put("sort_order", if (sort.second == "SortName") "Ascending" else "Descending")
-            if (minRating.second > 0) put("min_rating", minRating.second)
-            genre?.let { put("genres", it) }
+            if (minRating.second > 0) put("rating_min", minRating.second)
+            genre?.let { put("genres", jsonArrayOf(listOf(it))) }
+        }
+        val a = buildMap<String, Any> {
+            put("parent_id", route.viewId)
+            put("query", args(*q.toList().toTypedArray()))
         }
         when (val r = app.block("emby.listItemsPage", args(*a.toList().toTypedArray()))) {
             is Block.Ok -> {

@@ -11,6 +11,9 @@ import (
 	"fmt"
 	"net/url"
 	"sort"
+	"strconv"
+	"strings"
+	"sync"
 )
 
 // Person 演职人员。
@@ -66,8 +69,66 @@ type ItemDetail struct {
 	// Series → 季数;Season → 集数。手机端详情页拿它决定要不要画季选择条。
 	ChildCount *int64 `json:"child_count"`
 
+	// BgmID 媒体库刮到的 Bangumi 条目号。弹幕匹配拿它换官方原名去搜 ——
+	// 中文名和弹幕源收录的日文名对不上时,那是唯一能对上的一路。
+	// ★ 分集自己没有这条元数据,所以要**回头问它所属的剧**(见 seriesBgmID)。
+	BgmID *int64 `json:"bgm_id"`
+
 	Children []Item   `json:"children"` // Series/Season → 剧集;Movie/Episode → 空
 	People   []Person `json:"people"`
+}
+
+// bgmFromProviders 从 Emby 的 ProviderIds 里抠 Bangumi 条目号。
+//
+// ★ 键名各家刮削器写法不一(`Bangumi` / `bangumi` / `bgm`),**大小写不敏感**地比 ——
+// 比死一个写法的话换个刮削插件就静默失效,而症状只是「弹幕没匹配上」。
+func bgmFromProviders(j map[string]any) *int64 {
+	for k, v := range jmap(j, "ProviderIds") {
+		lk := strings.ToLower(k)
+		if lk != "bangumi" && lk != "bgm" {
+			continue
+		}
+		sv, _ := v.(string)
+		if n, err := strconv.ParseInt(strings.TrimSpace(sv), 10, 64); err == nil && n > 0 {
+			return &n
+		}
+	}
+	return nil
+}
+
+var (
+	seriesBgmMu  sync.Mutex
+	seriesBgmTab = map[string]*int64{}
+)
+
+// seriesBgmID 问一次这部剧的 Bangumi 条目号,进程内记住。
+//
+// ☠ 不能每集都问:连看一部番会多打 24 次 Emby。而一部剧的条目号在这几集之间不会变。
+// 取不到就记 nil —— 记住「没有」和记住「有」一样重要,否则每集都白跑一趟。
+func (c *Client) seriesBgmID(ctx context.Context, s *Session, seriesID string) *int64 {
+	if seriesID == "" {
+		return nil
+	}
+	seriesBgmMu.Lock()
+	if v, ok := seriesBgmTab[seriesID]; ok {
+		seriesBgmMu.Unlock()
+		return v
+	}
+	seriesBgmMu.Unlock()
+
+	var out *int64
+	u := fmt.Sprintf("%s/Users/%s/Items/%s?Fields=ProviderIds",
+		s.Server, url.PathEscape(s.UserID), url.PathEscape(seriesID))
+	if b, err := c.getBytes(ctx, s, u); err == nil {
+		var j map[string]any
+		if json.Unmarshal(b, &j) == nil {
+			out = bgmFromProviders(j)
+		}
+	}
+	seriesBgmMu.Lock()
+	seriesBgmTab[seriesID] = out
+	seriesBgmMu.Unlock()
+	return out
 }
 
 // Detail 条目详情。
@@ -83,7 +144,7 @@ func (c *Client) Detail(ctx context.Context, s *Session, itemID string, withChil
 	// 比画质标签有用得多。★ 电影没有 Status,Taglines 常为空数组 ——
 	// 两者都是可空,前端没值就**整行不画**,不留空位。
 	u := fmt.Sprintf("%s/Users/%s/Items/%s?Fields=Overview,Genres,ProductionYear,"+
-		"CommunityRating,PremiereDate,People,Taglines,OfficialRating,Status,ChildCount",
+		"CommunityRating,PremiereDate,People,Taglines,OfficialRating,Status,ChildCount,ProviderIds",
 		s.Server, url.PathEscape(s.UserID), url.PathEscape(itemID))
 
 	b, err := c.getBytes(ctx, s, u)
@@ -173,6 +234,12 @@ func (c *Client) Detail(ctx context.Context, s *Session, itemID string, withChil
 		}
 	}
 
+	// 分集自己没有条目号,回头问剧(问一次就记住,见 seriesBgmID)
+	bgm := bgmFromProviders(j)
+	if bgm == nil {
+		bgm = c.seriesBgmID(ctx, s, jstr(j, "SeriesId"))
+	}
+
 	return &ItemDetail{
 		ID:          id,
 		Name:        jstr(j, "Name"),
@@ -194,6 +261,8 @@ func (c *Client) Detail(ctx context.Context, s *Session, itemID string, withChil
 		SeriesID:   jstrPtr(j, "SeriesId"),
 		SeasonNo:   jint(j, "ParentIndexNumber"),
 		EpisodeNo:  jint(j, "IndexNumber"),
+
+		BgmID: bgm,
 
 		OfficialRating: jstrPtrNonEmpty(j, "OfficialRating"),
 		Status:         jstrPtrNonEmpty(j, "Status"),

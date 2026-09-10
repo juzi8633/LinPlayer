@@ -39,6 +39,7 @@ import xyz.linplayer.app.data.long
 import xyz.linplayer.app.data.obj
 import xyz.linplayer.app.data.str
 import xyz.linplayer.app.ui.Route
+import xyz.linplayer.app.ui.components.LongShotTarget
 import xyz.linplayer.app.ui.components.Dim3
 import xyz.linplayer.app.ui.components.EmptyState
 import xyz.linplayer.app.ui.components.LpIconButton
@@ -63,6 +64,9 @@ fun AggregatePage(nav: NavController) {
     val app = LocalApp.current
     val scope = rememberCoroutineScope()
     val list = rememberLazyListState()
+    // 截长屏认的就是这个滚动容器(设置里开了才画按钮,见 LongShot)
+    LongShotTarget(list)
+
 
     // 一台服务器一组:规模统计 + 继续观看
     var groups by xyz.linplayer.app.data.keepState<List<Overview>>("agg.groups") { emptyList() }

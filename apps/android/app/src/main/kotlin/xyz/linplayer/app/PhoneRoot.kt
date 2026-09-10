@@ -37,6 +37,7 @@ import xyz.linplayer.app.data.LocalApp
 import xyz.linplayer.app.data.ToastKind
 import xyz.linplayer.app.ui.Route
 import xyz.linplayer.app.ui.components.LpRowSkeleton
+import xyz.linplayer.app.ui.components.LongShotButton
 import xyz.linplayer.app.ui.components.LpTabBar
 import xyz.linplayer.app.ui.components.Skeleton
 import xyz.linplayer.app.ui.pages.AggregatePage
@@ -188,12 +189,17 @@ private fun MainShell() {
                 composable<Route.Player> { PlayerPage(nav, it) }
             }
         }
-        // 播放页是全屏页,没有底栏
-        if (tab >= 0) Box(Modifier.align(Alignment.BottomCenter)) {
-            LpTabBar(tab) {
-                nav.switchTab(when (it) { 0 -> Route.Home; 1 -> Route.Aggregate; else -> Route.Servers })
+        /* 播放页是全屏页,没有底栏。
+           ☠ 截长屏时底栏必须让开:长图是一片片切出来拼的,底栏留着的话
+             它会**在每一片里各印一条**,一路排下来像出了什么故障。 */
+        if (tab >= 0 && !xyz.linplayer.app.ui.components.LongShot.capturing.value) {
+            Box(Modifier.align(Alignment.BottomCenter)) {
+                LpTabBar(tab) {
+                    nav.switchTab(when (it) { 0 -> Route.Home; 1 -> Route.Aggregate; else -> Route.Servers })
+                }
             }
         }
+        LongShotButton(Modifier.align(Alignment.BottomEnd))
     }
     }
 }

@@ -66,6 +66,7 @@ import xyz.linplayer.app.data.long
 import xyz.linplayer.app.data.obj
 import xyz.linplayer.app.data.str
 import xyz.linplayer.app.ui.Route
+import xyz.linplayer.app.ui.components.LongShotTarget
 import xyz.linplayer.app.ui.components.BlockBox
 import xyz.linplayer.app.ui.components.Body
 import xyz.linplayer.app.ui.components.Dim3
@@ -191,6 +192,9 @@ private data class Rank(
 fun RankingPage(nav: NavController) {
     val app = LocalApp.current
     val list = rememberLazyListState()
+    // 截长屏认的就是这个滚动容器(设置里开了才画按钮,见 LongShot)
+    LongShotTarget(list)
+
     var cats by remember { mutableStateOf<Block<List<Pair<String, String>>>>(Block.Loading) }
     var cur by remember { mutableStateOf<String?>(null) }
     var block by remember { mutableStateOf<Block<List<Rank>>>(Block.Loading) }

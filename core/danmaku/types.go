@@ -119,6 +119,9 @@ type MatchInput struct {
 	// Genres 条目的类型 / 标签(Emby Genres + Tags)。**只用来决定官方源参不参与**,
 	// 不参与评分 —— 见 AllowOfficialFor。空表 = 不知道,按「允许」处理。
 	Genres []string `json:"genres"`
+	// BgmID Bangumi 条目号(媒体库刮到什么就传什么)。给了就用它换官方名字来搜,
+	// 见 withBgmTitles。nil / 0 = 媒体库没有这条元数据。
+	BgmID *int64 `json:"bgm_id"`
 }
 
 // SourceGroup 一个源下的搜索结果。

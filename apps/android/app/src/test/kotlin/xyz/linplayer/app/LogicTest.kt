@@ -11,6 +11,10 @@ import xyz.linplayer.app.data.Item
 import xyz.linplayer.app.data.Page
 import xyz.linplayer.app.data.Session
 import xyz.linplayer.app.data.UiPrefs
+import xyz.linplayer.app.ui.components.dialogWidth
+import xyz.linplayer.app.ui.components.longShotHeight
+import xyz.linplayer.app.ui.components.longShotSlices
+import xyz.linplayer.app.ui.pages.moved
 import xyz.linplayer.app.ui.player.DanmakuStyle
 import xyz.linplayer.app.ui.player.DmItem
 import xyz.linplayer.app.ui.player.dmFirstAtOrAfter
@@ -598,5 +602,47 @@ class LogicTest {
         assertEquals(1, dmFirstAtOrAfter(xs, 1.0))
         assertEquals(4, dmFirstAtOrAfter(xs, 1.5))
         assertEquals(5, dmFirstAtOrAfter(xs, 9.0))
+    }
+
+    /**
+     * 弹窗宽度要**按屏幕比例**给。
+     *
+     * ☠ 原来写死「最宽 420dp」:手机上等于满幅(几个选项占一整屏),
+     * 平板上只占半屏多一点。同一个数字在两种屏上各给出一种毛病。
+     */
+    @Test fun `弹窗宽度跟着屏幕按比例走`() {
+        val phone = dialogWidth(360)
+        val tablet = dialogWidth(800)
+        assertTrue("手机上要比满幅窄一圈,实得 $phone / 360", phone in 280..330)
+        assertTrue("平板上要跟着放大,实得 $tablet(手机是 $phone)", tablet > phone + 150)
+        // 极窄的分屏窗口下不许比屏幕还宽 —— 那会把按钮挤出可见区
+        assertTrue("窄屏不许超出屏幕,实得 ${dialogWidth(300)}", dialogWidth(300) <= 300)
+    }
+
+    /**
+     * 长截屏拼版:第一帧整张,之后每帧**只取最底下滚过的那几行**。
+     *
+     * ☠ 每帧都整张贴的话重叠区会盖掉上一帧,长图里一屏内容出现两次;
+     * 而按「请求的距离」而不是「真滚掉的距离」贴,到底那一帧会留一条大空白。
+     */
+    @Test fun `长截屏按真滚掉的距离拼`() {
+        val s = longShotSlices(100, listOf(100, 40))
+        assertEquals(3, s.size)
+        assertEquals(240, longShotHeight(100, listOf(100, 40)))
+        assertEquals(0, s[0].srcTop); assertEquals(100, s[0].height); assertEquals(0, s[0].dstTop)
+        assertEquals(0, s[1].srcTop); assertEquals(100, s[1].height); assertEquals(100, s[1].dstTop)
+        // 最后一帧只滚了 40:取的是这一帧最底下 40 行,不是整张
+        assertEquals(60, s[2].srcTop); assertEquals(40, s[2].height); assertEquals(200, s[2].dstTop)
+        // 一步都没滚(到底了)= 只有一屏
+        assertEquals(100, longShotHeight(100, listOf(0)))
+    }
+
+    /** 弹幕源排序:越界不许把表打乱 —— 到头了再点一下应该什么都不发生。 */
+    @Test fun `挪动一项越界时原样返回`() {
+        val xs = listOf("a", "b", "c")
+        assertEquals(listOf("b", "a", "c"), xs.moved(0, 1))
+        assertEquals(listOf("a", "c", "b"), xs.moved(2, 1))
+        assertEquals(xs, xs.moved(0, -1))
+        assertEquals(xs, xs.moved(2, 3))
     }
 }

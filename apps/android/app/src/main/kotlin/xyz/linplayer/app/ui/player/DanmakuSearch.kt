@@ -76,6 +76,9 @@ fun DanmakuSearchDialog(itemId: String, title: String, onClose: () -> Unit) {
     LaunchedEffect(itemId) {
         val d = runCatching { app.call("emby.itemDetail", args("item_id" to itemId)) }
             .getOrNull().obj() ?: return@LaunchedEffect
+        /* 默认词仍是剧名,**不是 `bgm:id`** —— bgm.tv 打不通时那串换不出名字,
+           搜出来是 0 条,而框里摆着一个用户看不懂的词。条目号那条路留给
+           自动匹配(它带着原标题兜底)和用户自己粘链接。 */
         (d.str("series_name") ?: d.str("name"))?.takeIf { it.isNotBlank() }?.let { keyword = it }
     }
     var groups by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
@@ -154,7 +157,7 @@ fun DanmakuSearchDialog(itemId: String, title: String, onClose: () -> Unit) {
                 LpButton("关闭", onClick = onClose)
             }
             Spacer(Modifier.height(Sp.x10))
-            LpField(keyword, { keyword = it }, "片名")
+            LpField(keyword, { keyword = it }, "片名,或者一条 Bangumi 条目链接")
             Spacer(Modifier.height(Sp.x6))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 LpButton(if (searching) "搜索中…" else "搜索",
