@@ -203,6 +203,12 @@ func baseOptions(hwdec, shaderCacheDir, confDir string) [][2]string {
 		[2]string{"keep-open", "yes"},
 		// N1:CVE-2026-8461。迁移必带清单的第一条,在这里就带上,别等以后补
 		[2]string{"vd", "-magicyuv"},
+		/* ☠ **`index` 这个默认值对图形字幕等于没开。** mkv 的 cue 索引通常只给
+		   视频轨,字幕轨没有条目 —— 于是 `index` 档判定「没索引」,预读就不做。
+		   而 PGS 这类字幕包稀疏、每包持续好几秒:seek 落在一句字幕的中间时,
+		   那一包在 seek 点之前,永远不会被解出来。表现正是「时不时不出现」,
+		   而下一句照常出来,所以看着像随机。代价是每次 seek 多读一小段。 */
+		[2]string{"demuxer-mkv-subtitle-preroll", "yes"},
 	)
 	if shaderCacheDir != "" {
 		// libmpv 没有配置目录,这两项不显式给就**不缓存**:每次起播重编整条

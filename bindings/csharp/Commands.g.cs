@@ -128,6 +128,7 @@ public static class LinPlayerCommandNames
         "player.setDanmakuEnabled",
         "player.setDanmakuStyle",
         "player.getDanmakuStyle",
+        "player.danmakuLayout",
         "player.danmakuHeatmap",
         "player.setPlaybackPrefs",
         "player.setScreenshotDir",
@@ -411,7 +412,7 @@ public static class LinPlayerCommandsExtensions
     public static Task<JsonElement> AccountUpdateAccount(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("account.updateAccount", args, ct);
 
-    // ---- 播放器 · player.* (48 条) ----
+    // ---- 播放器 · player.* (49 条) ----
     public static Task<JsonElement> PlayerAddSubtitle(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("player.addSubtitle", args, ct);
     public static Task<JsonElement> PlayerChapterInfo(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -462,6 +463,8 @@ public static class LinPlayerCommandsExtensions
         => c.CallAsync("player.setDanmakuStyle", args, ct);
     public static Task<JsonElement> PlayerGetDanmakuStyle(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("player.getDanmakuStyle", args, ct);
+    public static Task<JsonElement> PlayerDanmakuLayout(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("player.danmakuLayout", args, ct);
     public static Task<JsonElement> PlayerDanmakuHeatmap(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("player.danmakuHeatmap", args, ct);
     public static Task<JsonElement> PlayerSetPlaybackPrefs(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)

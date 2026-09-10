@@ -118,6 +118,7 @@ object LinPlayerCommandNames {
         "player.setDanmakuEnabled",
         "player.setDanmakuStyle",
         "player.getDanmakuStyle",
+        "player.danmakuLayout",
         "player.danmakuHeatmap",
         "player.setPlaybackPrefs",
         "player.setScreenshotDir",
@@ -399,7 +400,7 @@ suspend fun LinPlayerCommands.accountTestConnection(args: Map<String, Any?>? = n
 suspend fun LinPlayerCommands.accountUpdateAccount(args: Map<String, Any?>? = null): JsonElement =
     call("account.updateAccount", args)
 
-// ---- 播放器 · player.* (48 条) ----
+// ---- 播放器 · player.* (49 条) ----
 suspend fun LinPlayerCommands.playerAddSubtitle(args: Map<String, Any?>? = null): JsonElement =
     call("player.addSubtitle", args)
 suspend fun LinPlayerCommands.playerChapterInfo(args: Map<String, Any?>? = null): JsonElement =
@@ -450,6 +451,8 @@ suspend fun LinPlayerCommands.playerSetDanmakuStyle(args: Map<String, Any?>? = n
     call("player.setDanmakuStyle", args)
 suspend fun LinPlayerCommands.playerGetDanmakuStyle(args: Map<String, Any?>? = null): JsonElement =
     call("player.getDanmakuStyle", args)
+suspend fun LinPlayerCommands.playerDanmakuLayout(args: Map<String, Any?>? = null): JsonElement =
+    call("player.danmakuLayout", args)
 suspend fun LinPlayerCommands.playerDanmakuHeatmap(args: Map<String, Any?>? = null): JsonElement =
     call("player.danmakuHeatmap", args)
 suspend fun LinPlayerCommands.playerSetPlaybackPrefs(args: Map<String, Any?>? = null): JsonElement =

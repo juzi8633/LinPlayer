@@ -2,9 +2,10 @@ package player
 
 // 弹幕显示设置 + 布局 + 热力图(用户 2026-09-09 点名的九项)。
 //
-// 为什么布局在这里而不在 UI 侧:渲染器在核心层(danmaku.go 每拍重算 pos),
-// 而「一条弹幕排在第几行」必须和「它在哪一帧画在哪」用同一份数字。
-// 分成两处的下场是行高改了但避让没改 —— 弹幕互相压着,而两边代码都「对」。
+// 为什么排版留在核心层、绘制交给 UI:排一次要遍历上万条并逐轨算避让,
+// 那是「换了设置才重来一次」的活;而画一帧只是把定好的坐标乘个缩放,
+// 那是「每帧都要做」的活。两端各写一份排版的下场是 PC 和手机上同一集
+// 弹幕排得不一样,而两边代码都「对」。
 
 import (
 	"context"
@@ -34,6 +35,10 @@ var (
 	sty   = dmStyleOf(config.DefaultPrefs())
 	// dmRaw 灌进来的原始语料。布局的输入,style 一变就重排一次。
 	dmRaw []danmakuItem
+
+	dmMu sync.Mutex
+	// dmItems 排好版的那一份。UI 层一次性取走,自己按帧插位置。
+	dmItems []danmakuItem
 )
 
 func dmStyleOf(p config.Prefs) dmStyle {
@@ -200,9 +205,8 @@ func displayText(d danmakuItem) string {
 
 // textWidth 估算文本像素宽。
 //
-// ★ 只能估:精确宽度得问 libass,而 osd-overlay 这条路拿不到测量结果
-//   (compute_bounds 是另一套 API,走它要每帧多一次同步等待)。
-//   估宽只影响「一轨能塞多密」,偏一点不会画错。
+// ★ 只能估:精确宽度得问两端各自的排字引擎,而排版在核心层跑。
+//   估宽只影响「一轨能塞多密」和「什么时候完全走出左边」,偏一点不会画错。
 func textWidth(text string, scale float64) float64 {
 	w := 0.0
 	for _, r := range text {
@@ -312,6 +316,11 @@ func registerDanmakuStyle() {
 		return styleReply(config.Current().PrefsOf()), nil
 	})
 
+	// player.danmakuLayout 排好版的弹幕。灌完语料、改完设置各取一次。
+	bus.Register("player.danmakuLayout", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
+		return danmakuLayoutReply(), nil
+	})
+
 	// player.danmakuHeatmap 当前这一集的弹幕密度。两端画同一份数据。
 	bus.Register("player.danmakuHeatmap", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
 		n := 120
@@ -321,6 +330,41 @@ func registerDanmakuStyle() {
 		dur, _ := numArg(a, "duration")
 		return danmakuHeatmap(n, dur), nil
 	})
+}
+
+// player.danmakuLayout 把排好版的这一份整个交给 UI。
+//
+// ★ 一次取走、UI 自己按帧插位置 —— 不是每帧来问一次。
+//   每帧一次跨语言往返是上一版走 mpv `osd-overlay` 时的做法,
+//   每秒 120 次,而那 120 次全排在 mpv 的核心线程上(见 danmaku.go 顶上那段)。
+//
+// 字段名用单字母:一集上万条,`"time"` 换成 `"t"` 省掉的是几百 KB 的
+// 跨语言字符串。这是唯一一处这么写的地方,所以在这里说清楚:
+// t=时刻 m=模式(1滚 4底 5顶) l=轨道 w=估算宽 c=RGB u=正文
+func danmakuLayoutReply() map[string]any {
+	s := curStyle()
+	dmMu.Lock()
+	items := dmItems
+	dmMu.Unlock()
+
+	out := make([]map[string]any, 0, len(items))
+	for i := range items {
+		d := &items[i]
+		out = append(out, map[string]any{
+			"t": d.Time, "m": d.Mode, "l": d.lane, "w": d.w, "c": d.Color, "u": d.Text,
+		})
+	}
+	return map[string]any{
+		"res_x": danmakuResX, "res_y": danmakuResY,
+		"lane_height": laneHeight * s.Scale,
+		// 这两个时长已经把速度算进去了:UI 不该再知道 speed 这一档怎么折算
+		"roll_seconds": rollSeconds / s.Speed,
+		"fix_seconds":  fixSeconds,
+		"font_size":    40 * s.Scale,
+		"opacity":      s.Opacity,
+		"bold":         s.Bold,
+		"items":        out,
+	}
 }
 
 func styleReply(p config.Prefs) map[string]any {

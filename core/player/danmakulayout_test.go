@@ -152,10 +152,43 @@ func TestHeatmapNormalizes(t *testing.T) {
 	}
 }
 
-// ASS 的颜色是 BGR,弹幕源给的是 RGB。红色进去必须是 &H0000FF& 出来。
+// 交给 UI 的那份必须**已经把设置折算进去**:缩放折进字号和行高,
+// 速度折进滚动时长。不折的话两端各折一遍,而两边折法只要差一点点,
+// 同一集弹幕在 PC 和手机上就排得不一样。
+func TestLayoutReplyFoldsStyleIn(t *testing.T) {
+	s := testStyle()
+	s.Scale = 2.0
+	s.Speed = 2.0
+	s.Opacity = 0.5
+	s.Bold = true
+	styMu.Lock()
+	sty = s
+	styMu.Unlock()
+	dmMu.Lock()
+	dmItems = []danmakuItem{{Time: 1, Mode: 5, Count: 1, Text: "样", Color: 0xFF0000, w: 52, lane: 3}}
+	dmMu.Unlock()
+
+	r := danmakuLayoutReply()
+	if got := r["font_size"].(float64); got != 80 {
+		t.Fatalf("缩放 2× 该给 80 号字,实得 %v", got)
+	}
+	if got := r["lane_height"].(float64); got != laneHeight*2 {
+		t.Fatalf("行高没跟着缩放走,实得 %v", got)
+	}
+	if got := r["roll_seconds"].(float64); got != rollSeconds/2 {
+		t.Fatalf("速度 2× 该把滚动时长折半,实得 %v", got)
+	}
+	if r["opacity"].(float64) != 0.5 || r["bold"].(bool) != true {
+		t.Fatalf("透明度 / 粗体没带出去:%v %v", r["opacity"], r["bold"])
+	}
+}
+
+// 颜色**原样是 RGB** 交给 UI。
 //
-// ☠ 白色和灰色换不换都一样,所以这个 bug 能活很久 —— 判据必须用纯红。
-func TestBuildLayersSwapsRgbToBgr(t *testing.T) {
+// ☠ 上一版走 ASS,那边的颜色是 BGR,于是核心层在出口处做了一次红蓝对调。
+// 现在出口是两端的画笔(都吃 RGB),那次对调必须消失 —— 留着的表现是
+// 红色弹幕变蓝,而白色灰色看不出来,能活很久。判据只能用纯红。
+func TestLayoutReplyKeepsRgb(t *testing.T) {
 	styMu.Lock()
 	sty = testStyle()
 	styMu.Unlock()
@@ -163,29 +196,8 @@ func TestBuildLayersSwapsRgbToBgr(t *testing.T) {
 	dmItems = []danmakuItem{{Time: 0, Mode: 5, Count: 1, Text: "红", Color: 0xFF0000, w: 26}}
 	dmMu.Unlock()
 
-	_, fix := buildLayers(0.5)
-	if !strings.Contains(fix, `\c&H0000FF&`) {
-		t.Fatalf("红色(RGB FF0000)该写成 ASS 的 &H0000FF&,实得:%s", fix)
-	}
-}
-
-// 透明度 / 粗体 / 缩放要真的写进 ASS 标签里。
-func TestBuildLayersAppliesStyle(t *testing.T) {
-	s := testStyle()
-	s.Opacity = 0.5
-	s.Bold = true
-	s.Scale = 2.0
-	styMu.Lock()
-	sty = s
-	styMu.Unlock()
-	dmMu.Lock()
-	dmItems = []danmakuItem{{Time: 0, Mode: 5, Count: 1, Text: "样", Color: 0xFFFFFF, w: 52}}
-	dmMu.Unlock()
-
-	_, fix := buildLayers(0.5)
-	for _, want := range []string{`\fs80`, `\b1`, `\alpha&H7F&`} {
-		if !strings.Contains(fix, want) {
-			t.Fatalf("ASS 里没写 %s,实得:%s", want, fix)
-		}
+	it := danmakuLayoutReply()["items"].([]map[string]any)
+	if got := it[0]["c"].(uint32); got != 0xFF0000 {
+		t.Fatalf("红色该原样是 0xFF0000,实得 %#06X", got)
 	}
 }

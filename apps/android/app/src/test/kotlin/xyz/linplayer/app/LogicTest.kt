@@ -12,6 +12,9 @@ import xyz.linplayer.app.data.Page
 import xyz.linplayer.app.data.Session
 import xyz.linplayer.app.data.UiPrefs
 import xyz.linplayer.app.ui.player.DanmakuStyle
+import xyz.linplayer.app.ui.player.DmItem
+import xyz.linplayer.app.ui.player.dmFirstAtOrAfter
+import xyz.linplayer.app.ui.player.dmRollX
 import xyz.linplayer.app.ui.player.SubStyle
 import xyz.linplayer.app.ui.pages.Stream
 import xyz.linplayer.app.ui.pages.Version
@@ -572,5 +575,28 @@ class LogicTest {
         // 判据用 toString 不用 delta:2.0000000000000004 和 2.0 的差在 1e-9 之内,
         // 而读数上它就是一长串 —— delta 那种写法**看不见这个 bug**
         assertEquals("2.0", v.toString())
+    }
+
+    /**
+     * 一条滚动弹幕要走完 `画面宽 + 自己的宽`,不是只走画面宽。
+     *
+     * ☠ 只走画面宽的话,寿命到点时左边缘正好在 0 —— 整条字还完整地贴在屏幕左侧,
+     * 下一帧被直接抹掉。表现是**长弹幕走到左边突然消失**,而短的看不太出来。
+     */
+    @Test fun `滚动弹幕要走到整条离开左边为止`() {
+        val w = 400.0
+        assertEquals(1000.0, dmRollX(width = 1000.0, w = w, age = 0.0, roll = 8.0), 1e-9)
+        val end = dmRollX(width = 1000.0, w = w, age = 8.0, roll = 8.0)
+        assertTrue("寿命到点时整条必须已经出了左边,实得左边缘 $end(宽 $w)", end + w <= 1e-9)
+    }
+
+    /** 二分要找**第一条** t >= from。找到后面那条的表现是屏上少几条弹幕。 */
+    @Test fun `二分找的是第一条不小于起点的`() {
+        fun at(t: Double) = DmItem(t = t, mode = 1, lane = 0, w = 10.0, color = 0xFFFFFF, text = "x")
+        val xs = listOf(at(0.0), at(1.0), at(1.0), at(1.0), at(5.0))
+        assertEquals(0, dmFirstAtOrAfter(xs, -1.0))
+        assertEquals(1, dmFirstAtOrAfter(xs, 1.0))
+        assertEquals(4, dmFirstAtOrAfter(xs, 1.5))
+        assertEquals(5, dmFirstAtOrAfter(xs, 9.0))
     }
 }

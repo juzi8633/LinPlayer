@@ -44,32 +44,6 @@ func RegisterCommands(version string) {
 		}, nil
 	})
 
-	// ---- 弹幕(SPEC §7.5:走 osd-overlay,不占字幕轨)----
-
-	bus.Register("debug.danmakuLoad", func(ctx context.Context, seq int64, args map[string]any) (any, error) {
-		n := intArg(args, "count", 500)
-		span := floatArg(args, "span", 60)
-		danmakuLoad(n, span)
-		return map[string]any{"loaded": n}, nil
-	})
-
-	bus.Register("debug.danmakuStart", func(ctx context.Context, seq int64, args map[string]any) (any, error) {
-		if f := intArg(args, "fpsFilter", 0); f > 0 {
-			applyFpsFilter(f)
-		}
-		hz := intArg(args, "hz", 60)
-		danmakuStart(hz)
-		return map[string]any{"hz": hz}, nil
-	})
-
-	bus.Register("debug.danmakuStop", func(ctx context.Context, seq int64, args map[string]any) (any, error) {
-		danmakuStop()
-		return map[string]any{"stopped": true}, nil
-	})
-
-	bus.Register("debug.danmakuStats", func(ctx context.Context, seq int64, args map[string]any) (any, error) {
-		return danmakuStats(), nil
-	})
 }
 
 func intArg(a map[string]any, k string, def int) int {

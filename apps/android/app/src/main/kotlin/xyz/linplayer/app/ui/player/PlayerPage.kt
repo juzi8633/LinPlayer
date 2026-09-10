@@ -188,6 +188,12 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
             (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toFloatOrNull()
         }
     }
+    /* ☠ **弹幕要自己加载,不能等用户去拨那个开关。**
+       上一版只有「拨开关」和「重新匹配」两条路会去匹配 —— 而开关是**落库**的:
+       用户上一集打开过,这一集进来面板上写着「已打开」,却一条弹幕都没取。
+       表现就是「不会自动加载弹幕」,而且看上去还像是开着的。
+       ★ 挂在 itemId 上:换一集就重来一遍。匹配不上不弹错(九成片子没弹幕)。 */
+    LaunchedEffect(route.itemId) { startDanmakuFor(app, route.itemId) }
     /** 跟手 seek 的预览值。**松手才发命令** —— 跟着滑发是每帧一条,把核心层的 seek 闩打乱。 */
     var seekPreview by remember { mutableStateOf<Double?>(null) }
     var volume by remember { mutableFloatStateOf(1f) }
@@ -488,6 +494,11 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
             ExoSurface(exo, subOff = subOff, fit = videoFit, hintAr = srcAr,
                 m = Modifier.fillMaxSize())
         else VideoSurface(app.core, Modifier.fillMaxSize())
+
+        /* 弹幕层。**画在这儿而不是交给 mpv** —— 两个内核下都要有,
+           而 mpv 的 osd-overlay 在 Exo 那条路上根本不存在(见 DanmakuLayer 顶上那段)。 */
+        if (DanmakuStyle.enabled.value) DanmakuLayer(
+            DanmakuStyle.layout.value, position, paused, speed, Modifier.fillMaxSize())
 
 
         /* 未出画时的黑幕。**判据是「时间真的往前走了」**。

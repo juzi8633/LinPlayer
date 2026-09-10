@@ -1090,16 +1090,20 @@ mpv 是 0 顶 / 100 底,libass 是 0 = 底部默认、越大越往上。换算�
 
 ---
 
-## Exo 内核下没有弹幕(2026-09-09)
+## 弹幕画在 View 层,和内核无关(2026-09-10)
 
-弹幕的渲染终点是 **mpv 的 `osd-overlay`**(核心层 `core/player/danmaku.go`)。
-Exo 那条路上 mpv 手里根本没有这一片,`pushOverlay` 拿不到句柄直接返回 ——
-而 `player.danmakuSet` **照样返回成功、照样报「挂上 N 条」,画面上一条都没有**。
+弹幕**不走 mpv**。渲染在 `ui/player/DanmakuLayer.kt`:一个 Compose `Canvas`,
+盖在 `SurfaceView` / `ExoSurface` 上面,用 `withFrameNanos` 自己走帧。
+所以 mpv 和 Exo 两个内核下都有,播放页那一项不再按内核分支。
 
-所以播放页「更多」里的**弹幕入口在 `exo != null` 时整个不画**,
-和「画面增强」同一个理由(那一项是 mpv 的 glsl-shaders,Exo 下同样是空转)。
-设置页里的弹幕源和屏蔽词不受影响:那两件事跟内核无关。
+排版仍在核心层(`player.danmakuLayout` 一次取走),UI 只做两件事:
+按帧插 x、把字画上去。**两端各写一份排版会漂**,这条口径不能松。
 
-要让 Exo 也有弹幕的话,正路是把弹幕的 ASS 事件喂给**已经在跑的那个 libass**
-(`core/ffi/libass_android.go` 现在只喂字幕轨),不是在 Compose 里再写一套排版 ——
-再写一套等于「一份布局两处实现」,两边都会各自漂。
+三件只有画在 View 层才成立的事:
+
+- **位置得自己对表。** `player.status` 4Hz 一拍,直接拿它画的表现是弹幕每秒只动
+  4 下、一格一格地跳。做法是每收到一拍就对一次表,两拍之间按帧时钟往前推,
+  倍速要乘进去,暂停要停。
+- **两支 `Paint` 跨帧复用**(`remember`)。每帧新建的话 GC 直接落进渲染帧里。
+- **不能遍历全表。** 一集上万条,靠「按时刻升序 + 二分找起点 + `t > now` 就 break」
+  把每帧的活压到几十条。

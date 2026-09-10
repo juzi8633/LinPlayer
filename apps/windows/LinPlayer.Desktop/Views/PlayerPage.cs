@@ -109,6 +109,10 @@ public sealed class PlayerPage : UserControl
     /// <summary>从哪台服务器播。空 = 当前活跃那台。见构造函数的 serverId 参数。</summary>
     private readonly string _serverId = "";
     private readonly MpvGlView _view = new();
+
+    /* 弹幕层。**画在这棵树里,不交给 mpv**(见 DanmakuLayer 的类注释)。
+       它排在 _view 之后、_top 之前:压在画面上、被 OSD 压住。 */
+    private readonly DanmakuLayer _dm = new();
     /// <summary>进度条。 自绘,不是 Slider —— 理由见 <see cref="PlayerBar"/> 的注释。</summary>
     private readonly PlayerBar _bar = new();
     /// <summary>悬停/拖动时浮在进度条上方的时间气泡。</summary>
@@ -760,7 +764,7 @@ public sealed class PlayerPage : UserControl
             Background = Brushes.Black,
             // 气泡排在 _bottom <b>之后</b> —— 它要画在控制条上面,而不是被压在下面
             // 弹幕搜索排在 _bottom 之后:它是「旁边那扇窗」,不该被控制条压住
-            Children = { _view, _top, _bottom, _dmPanel, _skip, _bubble },
+            Children = { _view, _dm, _top, _bottom, _dmPanel, _skip, _bubble },
         };
         _root = root;
         Content = root;
@@ -1720,11 +1724,12 @@ public sealed class PlayerPage : UserControl
             if (!on)
             {
                 await _core.PlayerDanmakuSet(new { items = Array.Empty<object>() });
+                _dm.Layout = null;
                 _bar.Heat = [];
                 _bar.InvalidateVisual();
                 return;
             }
-            await AutoLoadDanmaku(false);
+            await AutoLoadDanmaku(true);
         }
         catch (Exception e) { Toast.Show(LibraryPage.Advice(e)); }
     }
@@ -1767,12 +1772,59 @@ public sealed class PlayerPage : UserControl
         var items = await _core.DanmakuAutoLoad(new { input });
         if (items.ValueKind != JsonValueKind.Array || items.GetArrayLength() == 0)
         {
-            Toast.Show("这一集没匹配到弹幕,可以手动搜一下");
+            // ☠ 这一句以前不看 loud,于是每起播一集就弹一次「没匹配到」
+            if (loud) Toast.Show("这一集没匹配到弹幕,可以手动搜一下");
             return;
         }
         await _core.PlayerDanmakuSet(new { items });
+        // 灌完必须重取排版 —— 不取的话画面上还是上一集那一份(或者空的)
+        await RefreshDanmakuLayout();
         if (loud) Toast.Show($"挂上 {items.GetArrayLength()} 条弹幕");
         await RefreshHeatmap();
+    }
+
+    /// <summary>把排好版的那一份取回来交给绘制层。灌完语料、改完设置都要调。</summary>
+    private async Task RefreshDanmakuLayout()
+    {
+        if (!_dmOn) { _dm.Layout = null; return; }
+        try { _dm.Layout = DmLayout.Parse(await _core.PlayerDanmakuLayout(new { })); }
+        catch { _dm.Layout = null; }
+    }
+
+    /// <summary>
+    /// 起播时的弹幕。<b>不能等用户去点那个开关</b> —— 开关是落库的:
+    /// 上一集打开过,这一集进来按钮还亮着「弹幕 ●」却一条都没取。
+    ///
+    /// <para><b>先清</b>:核心层存的是上一集的语料,这一集匹配不上时它会原样留着。</para>
+    /// </summary>
+    /// <summary>正在放的这一部的<b>剧名</b>。剧集取 series_name,电影取 name。取不到给空串。</summary>
+    private async Task<string> SeriesTitle()
+    {
+        if (NoEmby || _itemId == "" || Nav.Session is not { } s) return "";
+        try
+        {
+            var d = await _core.EmbyItemDetail(new
+            {
+                s.server, s.token, s.user_id, s.device_id, server_id = _serverId,
+                item_id = _itemId, with_children = false,
+            });
+            return Str(d, "series_name") is { Length: > 0 } sn ? sn : Str(d, "name");
+        }
+        catch { return ""; }  // 取不到片名就让用户自己敲 —— 这里弹红字帮不上忙
+    }
+
+    private async Task StartDanmaku()
+    {
+        try
+        {
+            _dm.Layout = null;
+            await _core.PlayerDanmakuSet(new { items = Array.Empty<object>() });
+            var p = await _core.PrefsGetPrefs();
+            _dmOn = p.TryGetProperty("danmaku_enabled", out var v) && v.ValueKind == JsonValueKind.True;
+            Dispatcher.UIThread.Post(() => _dmBtn.Content = _dmOn ? "弹幕 ●" : "弹幕");
+            if (_dmOn) await AutoLoadDanmaku(false);
+        }
+        catch { /* 弹幕是锦上添花,取不到不该拦住播放,也不该弹红字 */ }
     }
 
     /// <summary>把弹幕密度喂给进度条。关掉热力图时喂空表 —— 不喂的话上一集那条还留着。</summary>
@@ -1804,6 +1856,7 @@ public sealed class PlayerPage : UserControl
                 _dmOn = p.TryGetProperty("danmaku_enabled", out var v) && v.ValueKind == JsonValueKind.True;
                 _dmBtn.Content = _dmOn ? "弹幕 ●" : "弹幕";
                 ApplyStyleReply(r);
+                _ = RefreshDanmakuLayout();
             });
         }
         catch { /* 读不回来就用默认值起手 —— 面板不该因为这个消失 */ }
@@ -1995,8 +2048,15 @@ public sealed class PlayerPage : UserControl
             },
         };
         _dmPanel.IsVisible = true;
-        // 片名先填好:九成情况下用户就是想搜正在放的这一部
-        if (_title.Length > 0) box.Text = _title;
+        /* 片名先填好:九成情况下用户就是想搜正在放的这一部。
+           ☠ **要的是剧名,不是这一集的名字。** 播放页标题对剧集往往是
+             「第 12 集」或者单集标题 —— 拿它去弹幕源搜是**永远搜不到**,
+             而用户看到的只是「都没搜到」,会以为源坏了。 */
+        box.Text = _title;
+        _ = SeriesTitle().ContinueWith(t =>
+        {
+            if (t.Result.Length > 0) Dispatcher.UIThread.Post(() => box.Text = t.Result);
+        });
         box.Focus();
     }
 
@@ -2043,6 +2103,8 @@ public sealed class PlayerPage : UserControl
                 var r = await _core.PlayerSetDanmakuStyle(args);
                 // 回的是**钳过之后**的值 —— 照它刷读数才不会显示一个核心层没接受的数
                 ApplyStyleReply(r);
+                // 缩放 / 速度 / 范围 / 行数 / 合并这五项一改就是另一套分轨结果
+                await RefreshDanmakuLayout();
                 await RefreshHeatmap();
             }
             catch (Exception e) { Toast.Show(LibraryPage.Advice(e)); }
@@ -3393,6 +3455,7 @@ public sealed class PlayerPage : UserControl
         {
             _tracksLoaded = true;
             _duration = dur;
+            _ = StartDanmaku();
             _ = LoadTracks();
             _ = LoadChapters();
             _ = LoadEpisodes();
@@ -3474,6 +3537,8 @@ public sealed class PlayerPage : UserControl
         if (!_bubble.IsVisible) _time.Text = dur > 0 ? Clock(pos) : "加载中…";
         _total.Text = dur > 0 ? Clock(dur) : "";
         _pause.Content = paused ? Ico.Play : Ico.Pause;
+        // 弹幕层每 250ms 对一次表,两拍之间它自己按帧往前推
+        _dm.Sync(_position, paused, _speedValue);
     }
 
     private async Task LoadTracks()

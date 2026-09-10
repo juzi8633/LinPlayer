@@ -76,16 +76,12 @@ func registerDanmakuFeed() {
 			return nil, bus.NewErr(bus.EInvalid, "items 不是弹幕列表")
 		}
 		n := danmakuSet(list)
-		// 开着的时候换语料要重启循环,否则新语料要等下一次开关才上屏
-		if dmOn.Load() {
-			danmakuStop()
-			danmakuStart(danmakuHz)
-		}
 		bus.Logf("info", "弹幕语料已更新:%d 条", n)
 		return map[string]any{"count": n}, nil
 	})
 
-	// player.setDanmakuEnabled 开关 + 落库。
+	// player.setDanmakuEnabled 开关 + 落库。**只落库**,不碰渲染 ——
+	// 画不画由 UI 层自己看这个值决定(绘制在 UI 层,见 danmaku.go 顶上那段)。
 	//
 	// ★ 落在 prefs 里而不是只存内存:用户关掉弹幕是**长期意愿**,
 	//   下一集又自己开起来等于没关。
@@ -103,14 +99,6 @@ func registerDanmakuFeed() {
 		if err := c.Save(); err != nil {
 			return nil, bus.NewErr(bus.EInternal, "配置保存失败: %v", err)
 		}
-		if on {
-			danmakuStart(danmakuHz)
-		} else {
-			danmakuStop()
-		}
 		return map[string]any{"enabled": on}, nil
 	})
 }
-
-// danmakuHz 重发频率。60 是 uosc_danmaku 的默认值。
-const danmakuHz = 60

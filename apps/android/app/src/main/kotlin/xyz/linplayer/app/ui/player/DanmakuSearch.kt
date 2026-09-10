@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,6 +69,15 @@ fun DanmakuSearchDialog(itemId: String, title: String, onClose: () -> Unit) {
     val app = LocalApp.current
     val scope = rememberCoroutineScope()
     var keyword by remember { mutableStateOf(title) }
+    /* ☠ **默认词必须是剧名,不是这一集的名字。** 播放页传下来的 title 对剧集
+       往往是「第 12 集」或者单集标题 —— 拿它去弹幕源搜是**永远搜不到**,
+       而用户看到的只是「都没搜到」,会以为源坏了。
+       条目详情里的 series_name 才是剧名;电影没有这个字段,name 就是片名。 */
+    LaunchedEffect(itemId) {
+        val d = runCatching { app.call("emby.itemDetail", args("item_id" to itemId)) }
+            .getOrNull().obj() ?: return@LaunchedEffect
+        (d.str("series_name") ?: d.str("name"))?.takeIf { it.isNotBlank() }?.let { keyword = it }
+    }
     var groups by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
     var status by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
@@ -118,6 +128,8 @@ fun DanmakuSearchDialog(itemId: String, title: String, onClose: () -> Unit) {
                 DanmakuStyle.enabled.value = true
             }
         }.onFailure { app.report(it); return }
+        // 灌完必须重取排版 —— 不取的话画面上还是上一份
+        DanmakuStyle.reloadLayout(app)
         app.toast("挂上 " + (items as? JsonArray)?.size + " 条弹幕", ToastKind.Ok)
         onClose()
     }

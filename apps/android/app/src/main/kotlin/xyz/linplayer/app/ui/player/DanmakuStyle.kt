@@ -13,17 +13,14 @@ import xyz.linplayer.app.ui.pages.args
 /**
  * 弹幕显示设置(用户 2026-09-09 点名的九项)。
  *
- * ## 为什么这里只存不画
+ * ## 分工
  *
- * 弹幕的排版和绘制**全在核心层**(`core/player/danmakustyle.go` 分轨、
- * `core/player/danmaku.go` 每拍重算位置,最后走 mpv 的 `osd-overlay`)。
- * 这个对象只做三件事:读回落库的值、把改动发过去、给面板刷读数。
+ * **排版在核心层**(`core/player/danmakustyle.go`:合并、分轨、排不下的丢掉),
+ * **绘制在 View 层**([DanmakuLayer])。这个对象是中间那一层:读回落库的值、
+ * 把改动发过去、拿回排好版的那一份交给绘制层。
  *
- * ☠ **Exo 内核下弹幕不上屏。** 渲染那条路的终点是 mpv 的 osd-overlay,
- *   而 Exo 那条路上 mpv 手里根本没有这一片 —— `player.danmakuSet` 照样返回成功、
- *   照样报「挂上 N 条」,画面上一条都没有。所以播放页的「弹幕」入口在 Exo 下
- *   **整个不画**(和「画面增强」同一个理由,见 [PlayerPanel])。
- *   设置页那一份不受影响:加源和屏蔽词跟内核无关。
+ * ★ 设置一改就要**重新取一次排版** —— 缩放、速度、范围、行数、合并这五项
+ *   一改都会换一套分轨结果。不重取的表现是读数变了而画面没变。
  */
 object DanmakuStyle {
 
@@ -52,6 +49,15 @@ object DanmakuStyle {
 
     val loaded = mutableStateOf(false)
 
+    /** 排好版的那一份。null = 还没灌语料。 */
+    val layout = mutableStateOf<DmLayout?>(null)
+
+    /** 重新取一次排版。灌完语料、改完设置都要调。 */
+    suspend fun reloadLayout(app: AppState) {
+        layout.value = parseDmLayout(
+            runCatching { app.call("player.danmakuLayout") }.getOrNull().obj())
+    }
+
     suspend fun load(app: AppState) {
         val r = runCatching { app.call("player.getDanmakuStyle") }.getOrNull().obj() ?: return
         r.dbl("area")?.let { area.doubleValue = it }
@@ -66,6 +72,7 @@ object DanmakuStyle {
         enabled.value = runCatching { app.call("prefs.getPrefs") }
             .getOrNull().obj().bool("danmaku_enabled")
         loaded.value = true
+        reloadLayout(app)
     }
 
     /**
@@ -93,6 +100,7 @@ object DanmakuStyle {
         merge.value = r.bool("merge")
         bold.value = r.bool("bold")
         heatmap.value = r.bool("heatmap")
+        reloadLayout(app)
     }
 
     /* ---- 纯函数。拆出来是为了可测 —— 这两条规则的全部内容就是这几行。 ---- */

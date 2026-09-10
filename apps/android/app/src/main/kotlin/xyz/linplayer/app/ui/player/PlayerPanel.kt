@@ -169,12 +169,8 @@ fun PlayerPanel(
                        而 `player.setShaderLevel` 照样返回成功。
                        一颗「点开永远没效果」的按钮比没有它更糟。 */
                     if (exo == null) Triple("quality", null, "画面增强") else null,
-                    /* ☠ **Exo 内核下也没有「弹幕」。** 渲染那条路的终点是 mpv 的
-                       osd-overlay,Exo 那条路上 mpv 手里根本没有这一片 ——
-                       `player.danmakuSet` 照样返回成功、照样报「挂上 N 条」,
-                       画面上一条都没有。和「画面增强」同一个理由。
-                       设置页里的弹幕源和屏蔽词不受影响:那两件事跟内核无关。 */
-                    if (exo == null) Triple("danmaku", null, "弹幕") else null,
+                    // 弹幕两个内核下都有:它画在 View 层,和 mpv 没关系(见 DanmakuLayer)
+                    Triple("danmaku", null, "弹幕"),
                     Triple("substyle", null, "字幕样式"),
                 )
             }
@@ -396,8 +392,11 @@ private suspend fun toggleDanmaku(
     DanmakuStyle.enabled.value = on
     runCatching { app.call("player.setDanmakuEnabled", args("enabled" to on)) }
         .onFailure { app.report(it); return }
-    if (on) loadDanmakuFor(app, itemId, loud = false)
-    else runCatching { app.call("player.danmakuSet", argsEmptyItems()) }
+    if (on) loadDanmakuFor(app, itemId, loud = true)
+    else {
+        runCatching { app.call("player.danmakuSet", argsEmptyItems()) }
+        DanmakuStyle.layout.value = null
+    }
 }
 
 /**
@@ -466,7 +465,18 @@ private suspend fun pick(
  * ★ 匹配不上**不弹错**:九成片子本来就没有弹幕,弹一次错等于骂用户一次。
  *   `danmaku.autoLoad` 分不够时返回 null,那是正常结果不是失败。
  */
-private suspend fun loadDanmakuFor(
+/**
+ * 起播时的弹幕。**换一集必须先清**:核心层存的是上一集的语料,
+ * 这一集匹配不上时它会原样留着 —— 表现是新一集播着上一集的弹幕。
+ */
+internal suspend fun startDanmakuFor(app: xyz.linplayer.app.data.AppState, itemId: String) {
+    DanmakuStyle.layout.value = null
+    runCatching { app.call("player.danmakuSet", argsEmptyItems()) }
+    DanmakuStyle.load(app)
+    if (DanmakuStyle.enabled.value) loadDanmakuFor(app, itemId, loud = false)
+}
+
+internal suspend fun loadDanmakuFor(
     app: xyz.linplayer.app.data.AppState, itemId: String, loud: Boolean = false,
 ) {
     val d = runCatching { app.call("emby.itemDetail", args("item_id" to itemId)) }
@@ -490,18 +500,21 @@ private suspend fun loadDanmakuFor(
             mapOf("input" to kotlinx.serialization.json.JsonObject(input))))
     }.getOrNull()
     if (items == null || items is kotlinx.serialization.json.JsonNull) {
-        app.toast("这一集没匹配到弹幕,可以手动搜一下")
+        // ☠ 这一句以前不看 loud,于是每起播一集就弹一次「没匹配到」
+        if (loud) app.toast("这一集没匹配到弹幕,可以手动搜一下")
         return
     }
     runCatching {
         app.call("player.danmakuSet",
             kotlinx.serialization.json.JsonObject(mapOf("items" to items)))
     }.onFailure { app.report(it); return }
+    // 灌完必须重取排版 —— 不取的话画面上还是上一集那份(或者空的)
+    DanmakuStyle.reloadLayout(app)
     if (loud) app.toast("挂上 " + (items as? kotlinx.serialization.json.JsonArray)?.size + " 条弹幕",
         ToastKind.Ok)
 }
 
-private fun argsEmptyItems() = kotlinx.serialization.json.JsonObject(
+internal fun argsEmptyItems() = kotlinx.serialization.json.JsonObject(
     mapOf("items" to kotlinx.serialization.json.JsonArray(emptyList())))
 
 private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectTapClose(onClose: () -> Unit) {
