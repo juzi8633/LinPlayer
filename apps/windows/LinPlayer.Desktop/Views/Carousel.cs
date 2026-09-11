@@ -51,6 +51,21 @@ public static class Carousel
 
         var left = Arrow("‹", HorizontalAlignment.Left);
         var right = Arrow("›", HorizontalAlignment.Right);
+        /* 翻页键也要跟着缩。窗口拉窄之后卡只剩 104 宽,而两颗 40px 的按钮
+           左右各占一块 —— 加起来把一整张卡盖掉了。 */
+        Responsive.Watch(sv, avail =>
+        {
+            var d = Responsive.S(avail, ButtonSize, 26);
+            foreach (var b in new[] { left, right })
+            {
+                b.Width = b.Height = d;
+                b.CornerRadius = new CornerRadius(d / 2);
+                b.FontSize = Responsive.Font(avail, 20, 14);
+                b.Margin = new Thickness(
+                    b.HorizontalAlignment == HorizontalAlignment.Left ? -4 : 0,
+                    artHeight / 2 - d / 2, b.HorizontalAlignment == HorizontalAlignment.Left ? 0 : -4, 0);
+            }
+        });
         // 对齐**图区中线**,不是整张卡的中线(卡下面还有两行标题,按整张卡居中会偏低);
         // 左右各压进去 4px,压在最边上那张卡的边缘上。
         foreach (var (b, side) in new[] { (left, HorizontalAlignment.Left), (right, HorizontalAlignment.Right) })

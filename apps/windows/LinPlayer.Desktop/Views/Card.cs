@@ -1,3 +1,4 @@
+using System;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Avalonia;
@@ -108,8 +109,19 @@ public sealed class Card : Button
     /// </summary>
     internal static int Made;
 
-    /// <summary>标题行高。12.5px 字配 17px 行高。</summary>
-    private const double LineHeight = 17;
+    /// <summary>
+    /// 标题字号与行高,<b>按卡片实宽算</b>。
+    ///
+    /// <para>158 宽的卡配 12.5px 字 / 17px 行高;卡缩到 104 时还用 12.5px,
+    /// 两行标题就占掉卡面三分之一,而副标题会被挤出去。
+    /// 字号走 <see cref="Responsive.Font"/> 那条「缩一半幅度」的曲线:
+    /// 尺寸可以缩到 0.62,字号缩到那儿就读不了了。</para>
+    /// </summary>
+    private static (double Size, double Line) TitleType(double cardWidth)
+    {
+        var fs = Math.Clamp(12.5 * (0.5 + cardWidth / 158.0 / 2), 10.5, 12.5);
+        return (fs, Math.Round(fs * 1.36));
+    }
 
     /* 手型光标和这几支画刷**全站共用一份**。
        每张卡各 new 一个的话:Cursor 是个平台资源(每次都去问一次系统),
@@ -141,7 +153,8 @@ public sealed class Card : Button
         // 没有封面时才显示的占位文字(而不是一块空砖)
         var ph = new TextBlock
         {
-            Text = title ?? item.Name, FontSize = 12, Margin = new Thickness(10),
+            Text = title ?? item.Name, FontSize = TitleType(w).Size - 0.5,
+            Margin = new Thickness(10),
             Foreground = PlaceholderInk,
             TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
@@ -170,11 +183,12 @@ public sealed class Card : Button
             Child = new Panel { Children = { skel, ph, img, Badges(item, w) } },
         };
 
+        var (titleSize, lineHeight) = TitleType(w);
         var caption = new StackPanel { Spacing = 2 };
         caption.Children.Add(new TextBlock
         {
-            Text = title ?? item.DisplayTitle, FontSize = 12.5, MaxLines = titleLines,
-            LineHeight = LineHeight, Height = LineHeight * titleLines,
+            Text = title ?? item.DisplayTitle, FontSize = titleSize, MaxLines = titleLines,
+            LineHeight = lineHeight, Height = lineHeight * titleLines,
             VerticalAlignment = VerticalAlignment.Top,
             TextWrapping = TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis,
         });
@@ -183,7 +197,7 @@ public sealed class Card : Button
         {
             caption.Children.Add(new TextBlock
             {
-                Text = subtitle, FontSize = 11.5, MaxLines = 1,
+                Text = subtitle, FontSize = titleSize - 1, MaxLines = 1,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 Foreground = PlaceholderInk,
             });

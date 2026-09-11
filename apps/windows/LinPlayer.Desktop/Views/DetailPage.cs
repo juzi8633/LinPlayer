@@ -75,9 +75,24 @@ public sealed class DetailPage : PageBase
     /// <summary>主播放按钮 —— 换版本时要把它指向的版本一起换掉。</summary>
     private Button? _play;
 
+    /* 换档时要重新量的四块。**按槽存不按表存** —— 用列表的话每次重画都会再挂一份,
+       而详情页的重画路径是真实存在的(见 Redraw 那一段),挂两份就是同一块画两遍。 */
+    private Action? _rescaleHead, _rescaleEpisodes, _rescalePeople, _rescaleCollection;
+
     public DetailPage(CoreClient core, string server, string itemId)
     {
         _core = core; _server = server;
+
+        /* 窗口能拉到任意大小之后,**页面里那些写死的尺寸得自己跟上**
+           (用户 2026-09-11:「里面的样式也要能够自由缩放才行呀」)。
+           档位由 Responsive 量化到 8 档,所以这里不会每帧重建。 */
+        Responsive.Watch(this, _ =>
+        {
+            _rescaleHead?.Invoke();
+            _rescaleEpisodes?.Invoke();
+            _rescalePeople?.Invoke();
+            _rescaleCollection?.Invoke();
+        });
 
         var body = new StackPanel { Spacing = 14 };
         /* 返回按钮在**数据回来之前**就得能点:详情拉了 10 秒还在转的时候,
@@ -294,6 +309,7 @@ public sealed class DetailPage : PageBase
 
     private void PaintCollection(JsonElement r)
     {
+        _rescaleCollection = () => PaintCollection(r);
         var host = new StackPanel { Spacing = 18 };
         void Section(string title, string field, bool wide)
         {
@@ -304,8 +320,9 @@ public sealed class DetailPage : PageBase
             host.Children.Add(Carousel.Rail(items,
                 it => new Card(_core, _server, it, wide,
                     x => Nav.Push(new DetailPage(_core, _server, x.Id)),
-                    width: wide ? EpisodeCardWidth : 168),
-                wide ? EpisodeCardWidth * 9 / 16 : 168 * 3 / 2, out _));
+                    width: wide ? EpisodeCardWidth : Responsive.S(Bounds.Width, 168, 112)),
+                wide ? EpisodeCardWidth * 9 / 16
+                    : Responsive.S(Bounds.Width, 168, 112) * 3 / 2, out _));
         }
         // 影片在前:合集绝大多数是电影系列,把它排在剧集后面等于每次都要多滚一屏
         Section("影片", "movies", false);
@@ -435,14 +452,14 @@ public sealed class DetailPage : PageBase
            用户正在读的简介会被顶走。 */
         if (isShow)
         {
-            _episodesHost.Content = Skeleton.Grid(true, 8, 214);
+            _episodesHost.Content = Skeleton.Grid(true, 8, EpisodeCardWidth);
             body.Children.Add(Loose(_episodesHost));
         }
         // 合集的成员和分集共用这个挂点:两者是同一件事(「这个条目下面有什么」),
         // 各挂一个的话重画时要记得清两处,而漏清的表现是内容叠两份。
         else if (type == "BoxSet")
         {
-            _episodesHost.Content = Skeleton.Grid(false, 8, 168);
+            _episodesHost.Content = Skeleton.Grid(false, 8, Responsive.S(Bounds.Width, 168, 112));
             body.Children.Add(Loose(_episodesHost));
         }
 
@@ -456,16 +473,24 @@ public sealed class DetailPage : PageBase
         if (people.Count > 0)
         {
             body.Children.Add(H2($"演职人员 · {people.Count} 人"));
-            body.Children.Add(Carousel.Rail(people, PersonCell, 84, out _));
+            // 头像 84 在窄窗口上一排只摆得下三个,换档要整条重建(虚拟化下只造屏上那几个)
+            var peopleHost = new ContentControl();
+            _rescalePeople = () =>
+            {
+                var av = Responsive.S(Bounds.Width, 84, 56);
+                peopleHost.Content = Carousel.Rail(people, x => PersonCell(x, av), av, out _);
+            };
+            _rescalePeople();
+            body.Children.Add(peopleHost);
         }
     }
 
     /// <summary>演职人员一格:圆头像 + 姓名 + 角色。</summary>
-    private Control PersonCell(JsonElement p)
+    private Control PersonCell(JsonElement p, double size)
     {
         var av = new Border
         {
-            Width = 84, Height = 84, CornerRadius = new CornerRadius(999), ClipToBounds = true,
+            Width = size, Height = size, CornerRadius = new CornerRadius(999), ClipToBounds = true,
             Background = Tok.Of("PanelAlt"),
         };
         if (Bool(p, "has_primary"))
@@ -502,7 +527,7 @@ public sealed class DetailPage : PageBase
         cell.Click += (_, _) => Nav.Push(new PersonPage(_core, _server, pid, pname));
         cell.Content = new StackPanel
         {
-            Width = 100, Spacing = 6, Margin = new Thickness(0, 0, 10, 6),
+            Width = size * 100 / 84, Spacing = 6, Margin = new Thickness(0, 0, 10, 6),
             Children =
             {
                 av,
@@ -548,6 +573,7 @@ public sealed class DetailPage : PageBase
             VerticalAlignment = VerticalAlignment.Top,
             Background = Tok.Of("PanelAlt"),
         };
+        TextBlock? crumbRef = null;
         if (Bool(d, "has_primary"))
         {
             var im = new Image { Stretch = Stretch.UniformToFill, Opacity = 0, Classes = { "art" } };
@@ -578,12 +604,14 @@ public sealed class DetailPage : PageBase
                 crumb.PointerPressed += (_, _) => Nav.Push(new DetailPage(_core, _server, seriesId));
             }
             head.Children.Add(crumb);
+            crumbRef = crumb;
         }
-        head.Children.Add(new TextBlock
+        var titleRef = new TextBlock
         {
             Text = name,
             FontSize = 34, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap,
-        });
+        };
+        head.Children.Add(titleRef);
 
         /* 元信息做成<b>一排小片</b>,不是一串用「·」连起来的长句。
            连成一句的问题不是不好看:它<b>不换行</b>,类型一多就被挤出可视区,
@@ -646,6 +674,23 @@ public sealed class DetailPage : PageBase
             Orientation = Orientation.Horizontal, Spacing = 26,
             Children = { poster, head },
         };
+        /* ☠☠ **窄窗口上这一行必须改成上下排。**
+           海报本身就 220 宽,内容区只剩 330 时它和右边那一列是抢同一条宽度 ——
+           StackPanel 不报错,只是把标题、小片、简介、播放键整片挤到画面外面去。
+           620 是实测的分界:低于它右列已经窄到简介一行放不下十个字。
+           海报与标题的字号另外按档缩,比例(2:3 / 16:9)原样保住。 */
+        _rescaleHead = () =>
+        {
+            var w = Bounds.Width;
+            var narrow = w > 1 && w < 620;
+            headRow.Orientation = narrow ? Orientation.Vertical : Orientation.Horizontal;
+            headRow.Spacing = narrow ? 14 : 26;
+            poster.Width = Responsive.S(w, still ? 392 : 220, still ? 208 : 116);
+            poster.Height = poster.Width * (still ? 220.0 / 392 : 330.0 / 220);
+            titleRef.FontSize = Responsive.Font(w, 34, 21);
+            if (crumbRef is not null) crumbRef.FontSize = Responsive.Font(w, 15, 12.5);
+        };
+        _rescaleHead();
         // 返回按钮盖在背景图上,不压在它上面一行 —— 压在上面的话图是从页面
         // 中间才开始的,顶上留一条黑边。换父之前先 Loose 一手,见它的注释。
         _back.Margin = new Thickness(0, 0, 0, 14);
@@ -907,7 +952,7 @@ public sealed class DetailPage : PageBase
 
         if (audio.Count > 1)
         {
-            var box = new ComboBox { MinWidth = 190 };
+            var box = new ComboBox { MinWidth = Responsive.S(Bounds.Width, 190, 130) };
             var labels = new List<string> { "自动(按设置里的偏好)" };
             labels.AddRange(audio.Select(StreamLabel));
             box.ItemsSource = labels;
@@ -920,7 +965,7 @@ public sealed class DetailPage : PageBase
 
         if (subs.Count > 0)
         {
-            var box = new ComboBox { MinWidth = 190 };
+            var box = new ComboBox { MinWidth = Responsive.S(Bounds.Width, 190, 130) };
             // 第 0 项「自动」= -1(交给核心层),第 1 项「不加载」= -2,再往后才是真流
             var labels = new List<string> { "自动(按设置里的偏好)", "不加载字幕" };
             labels.AddRange(subs.Select(StreamLabel));
@@ -977,7 +1022,7 @@ public sealed class DetailPage : PageBase
 
         Dispatcher.UIThread.Post(() =>
         {
-            var box = new ComboBox { MinWidth = 190 };
+            var box = new ComboBox { MinWidth = Responsive.S(Bounds.Width, 190, 130) };
             box.ItemsSource = lines
                 .Select((l, i) => Str(l, "name") is { Length: > 0 } n ? n : $"线路 {i + 1}")
                 .ToList();
@@ -1299,6 +1344,11 @@ public sealed class DetailPage : PageBase
         host.Children.Add(bar);
 
         host.Children.Add(railHost);
+        // 换档整条重建。shown 要先拷一份 —— ShowSeason 第一句就是 shown.Clear()
+        _rescaleEpisodes = () =>
+        {
+            if (shown.Count > 0) ShowSeason([.. shown]);
+        };
         return host;
     }
 
@@ -1307,7 +1357,7 @@ public sealed class DetailPage : PageBase
     /// <para>214(默认 256):分集列表是<b>用来找集的</b>,一屏看得到的越多越好 ——
     /// 单张再大也提供不了更多信息(同一部剧的剧照长得都差不多)。</para>
     /// </summary>
-    private const double EpisodeCardWidth = 214;
+    private double EpisodeCardWidth => Responsive.S(Bounds.Width, 214, 140);
 
     /// <summary>
     /// 挂在按钮下面的一列可选项。

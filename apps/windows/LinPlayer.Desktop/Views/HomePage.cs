@@ -475,11 +475,19 @@ public sealed class HomePage : PageBase
     {
         var shown = items.Take(20).ToList();
         using var _m = Core.Perf.Measure($"排 {shown.Count} 张卡(虚拟化,只造看得见的)");
-        // 图区高度:翻页按钮要对齐图的中线,不是整张卡的中线(卡下面还有两行标题)
-        var w = wide ? 256.0 : 158.0;
-        return Carousel.Rail(shown,
-            it => new Card(_core!, _server, CardItem.From(it), wide, _onOpen),
-            wide ? w * 9 / 16 : w * 3 / 2, out _, gap: 12);
+        /* 轨道里的卡宽必须**跟着窗口缩**。写死 256 的话,400px 宽的窗口上
+           一条轨道只看得见一张半 —— 而横向轨道的全部意义就是一眼看到一排。
+           模板是照着数据现造的,所以换档必须**整条重建**(虚拟化下只造屏上那几张,
+           不贵);Responsive.Watch 已经把档位量化到 8 档,拖窗口不会每帧重建。 */
+        var host = new ContentControl();
+        Responsive.Watch(host, avail =>
+        {
+            var w = Responsive.CardMin(avail, wide);
+            host.Content = Carousel.Rail(shown,
+                it => new Card(_core!, _server, CardItem.From(it), wide, _onOpen, width: w),
+                wide ? w * 9 / 16 : w * 3 / 2, out _, gap: 12);
+        });
+        return host;
     }
 
     /// <summary>

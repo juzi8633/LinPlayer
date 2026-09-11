@@ -56,8 +56,16 @@ public sealed class MediaGrid : ContentControl
         SizeChanged += (_, _) => Relayout();
     }
 
-    /// <summary>一张卡<b>最少</b>多宽。真实宽度按行宽均分,见 <see cref="Relayout"/>。</summary>
-    private double MinCardWidth => _width ?? (_wide ? 256.0 : 158.0);
+    /// <summary>
+    /// 一张卡<b>最少</b>多宽。真实宽度按行宽均分,见 <see cref="Relayout"/>。
+    ///
+    /// <para>☠ 这个数**必须跟着可用宽度缩**(<see cref="Responsive"/>)。写死 158 的话
+    /// 窗口拉到 300 宽时一行只放得下一张巨卡 —— 那不是「卡片变大了」,
+    /// 那是网格失效了。下限由 <c>Responsive.CardMin</c> 保证一行还能并两张。</para>
+    /// </summary>
+    private double MinCardWidth => _width is { } w
+        ? Responsive.S(Bounds.Width, w, w * 0.62)
+        : Responsive.CardMin(Bounds.Width, _wide);
 
     /// <summary>这一版算出来的卡片实宽。行里的 Card 就按它建。</summary>
     private double _cardWidth;

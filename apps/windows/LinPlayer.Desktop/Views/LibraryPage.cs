@@ -164,10 +164,18 @@ public sealed class LibraryPage : PageBase
         /* 横向轨道,不是网格:这一页的主角是上面那排库卡,
            这两段再铺成网格会把库卡推到看不见的地方 —— 那是把一个空页面
            换成了一个主次颠倒的页面。 */
-        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-        foreach (var it in items.Take(40))
-            panel.Children.Add(new Card(core, server, it, wide, OpenDetail(core, server)));
-        block.Children.Add(Carousel.Wrap(panel, wide ? 256.0 * 9 / 16 : 158.0 * 3 / 2));
+        /* 卡宽跟着窗口缩,而且换档整条重建(走 Rail 顺带虚拟化 ——
+           原来是 StackPanel + Take(40),四十张卡一次全造)。 */
+        var railHost = new ContentControl();
+        var shown = items.Take(40).ToList();
+        Responsive.Watch(railHost, avail =>
+        {
+            var w = Responsive.CardMin(avail, wide);
+            railHost.Content = Carousel.Rail(shown,
+                it => new Card(core, server, it, wide, OpenDetail(core, server), width: w),
+                wide ? w * 9 / 16 : w * 3 / 2, out _);
+        });
+        block.Children.Add(railHost);
         host.Children.Add(block);
     }
 
@@ -254,6 +262,8 @@ public sealed class LibraryGridPage : PageBase
     private readonly ComboBox _sort = new() { Width = 150, MinHeight = 34 };
     private readonly ComboBox _genre = new() { Width = 150, MinHeight = 34 };
     private readonly ComboBox _year = new() { Width = 120, MinHeight = 34 };
+    /// <summary>筛选条三个下拉的基准宽。换档时按比例缩,见构造里的 Responsive.Watch。</summary>
+    private static readonly double[] FilterWidths = [150, 150, 120];
     private int _loaded;
     private int _total = -1;
     private bool _busy;
@@ -291,17 +301,29 @@ public sealed class LibraryGridPage : PageBase
         }
         var body = new StackPanel { Spacing = 14, Children = { head, bar, _first, _grid, _status } };
 
+        var box = new Border
+        {
+            // 不封顶(和 PageBase.Scrolled 同一条口径,用户点名去掉留白)
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Padding = new Thickness(18, 18, 18, 26), Child = body,
+        };
         var sv = new ScrollViewer
         {
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            Content = new Border
-            {
-                // 不封顶(和 PageBase.Scrolled 同一条口径,用户点名去掉留白)
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                Padding = new Thickness(18, 18, 18, 26), Child = body,
-            },
+            Content = box,
         };
+        /* 这一页自己搭了滚动容器,吃不到 PageBase.Scrolled 里那条水槽规则 ——
+           所以水槽和筛选条的宽度在这儿自己接一次。漏了的表现是:全站都跟着窗口缩,
+           **只有媒体库详情页**还是宽水槽 + 一条被切掉最后一项的筛选条。 */
+        Responsive.Watch(sv, avail =>
+        {
+            var g = avail > 1 && avail < 640 ? 10d : 18d;
+            box.Padding = new Thickness(g, g, g, g + 8);
+            var combos = new[] { _sort, _genre, _year };
+            for (var i = 0; i < combos.Length; i++)
+                combos[i].Width = Responsive.S(avail, FilterWidths[i], FilterWidths[i] * 0.66);
+        });
         // 滚到底再拉下一页。 没有这个的表现是「这个库只有 60 部」——
         // 不报错、不空白,纯粹少一半内容。
         sv.ScrollChanged += (_, _) =>

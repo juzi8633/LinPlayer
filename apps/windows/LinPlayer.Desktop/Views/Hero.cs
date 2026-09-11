@@ -31,8 +31,13 @@ public sealed class Hero : Border
     /// <summary>交叉淡入时长。</summary>
     private static readonly TimeSpan Fade = TimeSpan.FromMilliseconds(620);
 
-    /// <summary>艺术字 / 标题那一格的固定高度。见 <see cref="RenderBody"/> 里那段。</summary>
-    private const double TitleSlot = 92;
+    /// <summary>
+    /// 艺术字 / 标题那一格的高度。见 <see cref="RenderBody"/> 里那段。
+    ///
+    /// <para>★ 它<b>跟着头图宽度缩</b>:92 是按 1030 内容宽定的,而头图高本身就是
+    /// <c>宽 × 0.30</c>。窗口拉窄之后图只剩 140 高,标题格还占 92 —— 标签行被挤出画面。</para>
+    /// </summary>
+    private double TitleSlot => Responsive.S(Bounds.Width, 92, 52);
 
     private readonly CoreClient _core;
     private readonly Action<CardItem>? _onOpen;
@@ -328,9 +333,15 @@ public sealed class Hero : Border
     /// </summary>
     private void Resize()
     {
+        /* ☠ 换档之后**已经画出来的那一格不会自己变**:标题是翻页时画的,
+           而拖窗口不翻页。不同步的表现是「窗口缩小了,标题还是大的、还压着标签行」。 */
+        SyncTitleScale();
+
         /* 0.30 而不是 0.27:完整剧照是按<b>高度</b>去 fit 的(槽比 16:9 宽得多),
            高一点右边那张图就大一圈,而这一块的主角就是那张图。 */
-        var h = Math.Clamp(Bounds.Width * 0.30, 280, 460);
+        /* ☠ 下限 280 在窄窗口上是**错的**:窗口拉到 360 宽时这块图占掉 78% 的高度,
+           整个首页只剩头图。下限跟着一起缩(到 150),比例才还是「一条横幅」。 */
+        var h = Math.Clamp(Bounds.Width * 0.30, Responsive.S(Bounds.Width, 280, 150), 460);
         if (Math.Abs(h - Height) > 0.5) Height = h;
         SyncFeather();
     }
@@ -675,6 +686,7 @@ public sealed class Hero : Border
         {
             Height = TitleSlot, HorizontalAlignment = HorizontalAlignment.Left, Child = title,
         };
+        _titleSlot = titleSlot;
         // 先摆文字标题;艺术字取到了再换上去(取不到就一直是文字,不留空)
         title.Content = TitleText(ItemName(it));
         _ = SwapLogo(title, logo, Id(it));
@@ -740,7 +752,7 @@ public sealed class Hero : Border
         {
             Source = bmp,
             Stretch = Stretch.Uniform,
-            MaxHeight = TitleSlot - 4, MaxWidth = 460,
+            MaxHeight = TitleSlot - 4, MaxWidth = Responsive.S(Bounds.Width, 460, 180),
             HorizontalAlignment = HorizontalAlignment.Left,
             Effect = Shadow(),
         });
@@ -751,15 +763,45 @@ public sealed class Hero : Border
     /// <para>字号字重要压得住一张照片,而且照样得配投影:36px Bold 落在剧照的高光上
     /// 一样会糊掉。艺术字那条路共用同一道投影。</para>
     /// </summary>
-    private static Control TitleText(string name) => new TextBlock
+    private Control TitleText(string name)
     {
-        Text = name, FontSize = 36, FontWeight = FontWeight.Bold,
-        LetterSpacing = -0.6, LineHeight = 42,
-        MaxWidth = 720, MaxLines = 2, TextWrapping = TextWrapping.Wrap,
-        TextTrimming = TextTrimming.CharacterEllipsis,
-        Foreground = Brushes.White,
-        Effect = Shadow(),
-    };
+        // 36px 是按 1030 内容宽定的;400 宽的窗口上它一行只装得下四个字
+        var fs = Responsive.Font(Bounds.Width, 36, 22);
+        return new TextBlock
+        {
+            Text = name, FontSize = fs, FontWeight = FontWeight.Bold,
+            LetterSpacing = -0.6, LineHeight = Math.Round(fs * 7 / 6),
+            MaxWidth = Responsive.S(Bounds.Width, 720, 240),
+            MaxLines = 2, TextWrapping = TextWrapping.Wrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Foreground = Brushes.White,
+            Effect = Shadow(),
+        };
+    }
+
+    /// <summary>当前那一格标题。换档时要就地改尺寸,见 <see cref="SyncTitleScale"/>。</summary>
+    private Border? _titleSlot;
+
+    /// <summary>把当前档位的尺寸套到已经画好的标题上。没画过就什么都不做。</summary>
+    private void SyncTitleScale()
+    {
+        if (_titleSlot is null) return;
+        var slot = TitleSlot;
+        if (Math.Abs(_titleSlot.Height - slot) < 0.5) return;
+        _titleSlot.Height = slot;
+        switch ((_titleSlot.Child as ContentControl)?.Content)
+        {
+            case TextBlock t:
+                t.FontSize = Responsive.Font(Bounds.Width, 36, 22);
+                t.LineHeight = Math.Round(t.FontSize * 7 / 6);
+                t.MaxWidth = Responsive.S(Bounds.Width, 720, 240);
+                break;
+            case Image img:
+                img.MaxHeight = slot - 4;
+                img.MaxWidth = Responsive.S(Bounds.Width, 460, 180);
+                break;
+        }
+    }
 
     private static IEffect Shadow() => new DropShadowEffect
     {

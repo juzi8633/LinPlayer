@@ -47,6 +47,16 @@ internal static class Program
             Console.WriteLine($"PROBE 装上了={ok} 家族={LinPlayer.Desktop.Core.UiFont.Current?.Name ?? "(无)"}");
             return;
         }
+        /* 响应式缩放自检:`LP_SCALEPROBE=1 LinPlayer.exe` 打几行就退。
+           壳这一层没有单测工程,而缩放曲线是纯算术 —— 不给它一个能跑的门禁,
+           改坏了只会在真机上表现成「窗口缩了里面没缩」,而编译全绿。 */
+        if (Environment.GetEnvironmentVariable("LP_SCALEPROBE") is { Length: > 0 })
+        {
+            var bad = Views.Responsive.SelfCheck(Console.WriteLine);
+            Console.WriteLine(bad == 0 ? "PROBE 缩放 全部通过" : $"PROBE 缩放 {bad} 条不过");
+            Environment.ExitCode = bad == 0 ? 0 : 1;
+            return;
+        }
         /* 选集栏卡死自检:`LP_SCROLLPROBE=1 LinPlayer.exe` 打一行就退,不开窗口。
            判据是「目标去不了时,驱动器退不退得出来」—— 退不出来 = 之后每次点
            左右翻页按钮 Run() 都当场 return,按钮从此是死的(用户 2026-09-08 报的
