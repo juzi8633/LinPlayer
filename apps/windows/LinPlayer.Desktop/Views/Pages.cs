@@ -25,11 +25,9 @@ public abstract class PageBase : UserControl
     /// <para>平滑滚动<b>不在这里装</b> —— 装在 <see cref="Smooth.Install"/>(类级处理器,
     /// 全应用一次)。装在这儿的话,自己 new ScrollViewer 的那 6 处页面就漏了。</para>
     /// </summary>
-    protected static ScrollViewer Scrolled(Control content) => new()
+    protected static ScrollViewer Scrolled(Control content)
     {
-        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-        Content = new Border
+        var box = new Border
         {
             /* <b>不封顶</b>(2026-09-02 用户点名:「媒体库页面右边有留白,
                媒体库详情页也有…不需要这个留白」)。
@@ -39,8 +37,23 @@ public abstract class PageBase : UserControl
             HorizontalAlignment = HorizontalAlignment.Stretch,
             Padding = new Thickness(18, 18, 18, 26),
             Child = content,
-        },
-    };
+        };
+        var sv = new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Content = box,
+        };
+        /* 窄窗口把水槽从 18 收到 10(用户 2026-09-11:「窗口做到支持任意大小」)。
+           水槽是按 1280 宽定的比例;窗口收到 500 时左右各 18 已经吃掉 7% 的可用宽,
+           卡片跟着少一列。挂在这一处 = 全站页面一起变,各页自己写就会漏。 */
+        sv.SizeChanged += (_, e) =>
+        {
+            var g = e.NewSize.Width < 640 ? 10d : 18d;
+            if (Math.Abs(box.Padding.Left - g) > 0.5) box.Padding = new Thickness(g, g, g, g + 8);
+        };
+        return sv;
+    }
 
     protected static TextBlock H1(string t) => new() { Text = t, Classes = { "h1" } };
     protected static TextBlock H2(string t) => new() { Text = t, Classes = { "h2" } };
@@ -132,16 +145,34 @@ public sealed class AddServerPage : PageBase
             if (msg is not null) hint.Text = msg;
         }
 
+        Task Tell(string title, string detail) => Dialogs.Tell(this, title, detail);
+
+        /* 「测试连接」= **真登一次**(用户 2026-09-11)。
+           只探 /System/Info/Public 的话,地址对而密码错的服务器照样报「连上了」,
+           用户点「登录」才发现不行 —— 两句话自相矛盾。填了账号就连账号一起验。
+           ★ 结果走**弹窗**不走那行小字:小字在按钮下面,填完密码一弹键盘就看不见了,
+             而用户看到的是「点了没反应」。弹窗要点一下才消失,跑不掉。 */
         test.Click += async (_, _) =>
         {
             Busy(true, "正在连接…");
             try
             {
-                var info = await core.AccountTestConnection(new { server = WithScheme(server.Text ?? "") });
-                hint.Text = $"连上了:{Get(info, "name")} · 版本 {Get(info, "version")}";
+                var info = await core.AccountTestConnection(new
+                {
+                    server = WithScheme(server.Text ?? ""),
+                    username = user.Text ?? "",
+                    password = pass.Text ?? "",
+                });
+                var who = Get(info, "user_name");
+                var head = $"{Get(info, "name")} · 版本 {Get(info, "version")}";
+                var tail = who.Length > 0
+                    ? $"已用「{who}」登录成功。"
+                    : "(没填账号,只验了地址通不通)";
+                hint.Text = "连上了:" + head + " " + tail;
+                await Tell("连接成功", head + "\n" + tail);
             }
-            catch (CoreException e) { hint.Text = e.Advice; }
-            catch (Exception e) { hint.Text = e.Message; }
+            catch (CoreException e) { hint.Text = e.Advice; await Tell("连不上", e.Advice); }
+            catch (Exception e) { hint.Text = e.Message; await Tell("连不上", e.Message); }
             finally { Busy(false); }
         };
 

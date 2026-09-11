@@ -36,6 +36,7 @@ import xyz.linplayer.app.ui.components.BtnKind
 import xyz.linplayer.app.ui.components.Dim2
 import xyz.linplayer.app.ui.components.H1
 import xyz.linplayer.app.ui.components.LpButton
+import xyz.linplayer.app.ui.components.LpDialog
 import xyz.linplayer.app.ui.components.LpField
 import xyz.linplayer.app.ui.components.LpScaffold
 import xyz.linplayer.app.ui.components.Panel
@@ -61,6 +62,10 @@ fun GatePage(onDone: suspend () -> Unit, embedded: Boolean = false) {
     var pass by remember { mutableStateOf("") }
     var hint by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    /* 「测试连接」的结果走**弹窗**不走 hint(用户 2026-09-11)。
+       hint 那行小字在按钮上面,而这一屏三个输入框一弹键盘就把它顶出屏幕 ——
+       用户看到的是「点了没反应」。弹窗要点一下才消失,跑不掉。 */
+    var report by remember { mutableStateOf<Pair<String, String>?>(null) }
     var selfCheckLogin by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
 
@@ -146,14 +151,44 @@ fun GatePage(onDone: suspend () -> Unit, embedded: Boolean = false) {
                         onDone()
                     }
                 }, Modifier.weight(1f), loading = busy)
+                /* 填了账号就**真登一次**。只探 /System/Info/Public 的话,
+                   地址对而密码错的服务器照样报「连上了」,
+                   用户点「登录」才发现不行 —— 两句话自相矛盾。 */
                 LpButton("测试连接", {
-                    run {
-                        val info = app.call("account.testConnection", JsonObject(mapOf(
-                            "server" to JsonPrimitive(withScheme(server)),
-                        )))
-                        hint = "连上了:${info.obj().str("name").orEmpty()} · 版本 ${info.obj().str("version").orEmpty()}"
+                    keyboard?.hide()
+                    busy = true
+                    scope.launch {
+                        try {
+                            val d = app.call("account.testConnection", JsonObject(mapOf(
+                                "server" to JsonPrimitive(withScheme(server)),
+                                "username" to JsonPrimitive(user),
+                                "password" to JsonPrimitive(pass),
+                            ))).obj()
+                            val who = d.str("user_name").orEmpty()
+                            val head = "${d.str("name").orEmpty()} · 版本 ${d.str("version").orEmpty()}"
+                            val tail = if (who.isNotEmpty()) "已用「$who」登录成功。"
+                            else "(没填账号,只验了地址通不通)"
+                            hint = "连上了:$head $tail"
+                            report = "连接成功" to (head + "\n" + tail)
+                        } catch (e: CoreException) {
+                            hint = e.advice
+                            report = "连不上" to e.advice
+                        } catch (e: Throwable) {
+                            hint = e.message
+                            report = "连不上" to (e.message ?: "不知道为什么")
+                        } finally { busy = false }
                     }
                 }, kind = BtnKind.Secondary, loading = busy)
+            }
+        }
+    }
+
+    report?.let { (title, text) ->
+        LpDialog({ report = null }, title) {
+            Dim2(text)
+            Spacer(Modifier.height(Sp.x16))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                LpButton("知道了", { report = null })
             }
         }
     }

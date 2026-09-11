@@ -57,6 +57,8 @@ public partial class MainWindow : Window
         WireNavReclick();
 
         this.FindControl<Button>("BtnCollapse")!.Click += (_, _) => ToggleSidebar();
+        // 窗口能拉到任意大小(用户 2026-09-11),侧栏得自己让开 —— 见 ApplyResponsive
+        SizeChanged += (_, _) => ApplyResponsive();
         // 需要 Emby 会话的页面统一走 Emby():账号是网盘 / 局域网源时 Nav.Session 是 null,
         // 页面里直接解引用会抛在 Task 里 —— 没提示、不崩、就是永远停在「加载中」。
         this.FindControl<RadioButton>("NavHome")!.Checked += (_, _) => Nav.Root(Home());
@@ -238,7 +240,7 @@ public partial class MainWindow : Window
              不主动收一次,截图永远拍的是展开态,图标有没有对齐、
              服务器卡会不会被裁掉半个字,全没人看过。 */
         if (Environment.GetEnvironmentVariable("LP_SELFCHECK_COLLAPSE") == "1")
-            _ = Task.Delay(1200).ContinueWith(_ => Dispatcher.UIThread.Post(ToggleSidebar));
+            _ = Task.Delay(1200).ContinueWith(_ => Dispatcher.UIThread.Post(() => ToggleSidebar()));
         /* 自检:往 UI 线程上扔一个异常,验兜网。
             这个钩子是**必须留着**的:兜网本身没有任何外在表现 ——
              它没生效的唯一症状是「某天某个页面把进程打死了」,
@@ -1055,8 +1057,29 @@ public partial class MainWindow : Window
         return true;
     }
 
-    private void ToggleSidebar()
+    /// <summary>低于这个宽度就自动收侧栏。212px 的侧栏在 900 以下已经占掉四分之一。</summary>
+    private const double SidebarKeepWidth = 900;
+
+    /// <summary>当前这次折叠是**窗口变窄自动收的**,不是用户点的。</summary>
+    private bool _autoCollapsed;
+
+    /// <summary>
+    /// 响应式:窗口窄到放不下侧栏就自己收起来,拉宽了再自己回来。
+    ///
+    /// <para>用户手点过的收放**优先** —— 手动展开之后不再自动收,
+    /// 否则「我明明展开了它又自己关上」。</para>
+    /// </summary>
+    private void ApplyResponsive()
     {
+        var w = Bounds.Width;
+        if (w <= 1 || !this.FindControl<Border>("Sidebar")!.IsVisible) return;
+        if (!_collapsed && w < SidebarKeepWidth) { ToggleSidebar(true); }
+        else if (_collapsed && _autoCollapsed && w >= SidebarKeepWidth) { ToggleSidebar(true); }
+    }
+
+    private void ToggleSidebar(bool auto = false)
+    {
+        _autoCollapsed = auto && !_collapsed;
         _collapsed = !_collapsed;
         this.FindControl<Border>("Sidebar")!.Width = SidebarWidth;
         foreach (var rb in this.GetVisualDescendants().OfType<RadioButton>())

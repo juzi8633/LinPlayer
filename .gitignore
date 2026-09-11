@@ -144,6 +144,8 @@ bindings/csharp/obj/
 bindings/kotlin/build/
 bindings/kotlin/.gradle/
 build/kotlin-check/
+# Kotlin 2.x 的增量编译落点(gradle 8.10 起建在模块根下,不是 build/ 里)
+apps/android/.kotlin/
 
 # Avalonia 桌面端的编译产物
 apps/windows/**/bin/

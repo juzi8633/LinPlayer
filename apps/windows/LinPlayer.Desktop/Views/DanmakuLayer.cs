@@ -5,6 +5,7 @@ using System.Text.Json;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Media.Immutable;
 using Avalonia.Threading;
 
 namespace LinPlayer.Desktop.Views;
@@ -19,6 +20,11 @@ public sealed class DmItem
     public double W;
     public uint Color;
     public string Text = "";
+
+    /// <summary>排好版的字形(正文 + 描边垫底)。**跨帧复用**,见 DanmakuLayer.Render。</summary>
+    internal FormattedText? Fg, Sh;
+    /// <summary>缓存是按哪一档字号排的。字号变了(换窗口大小 / 改设置)就得重排。</summary>
+    internal int Gen = -1;
 }
 
 /// <summary>一整份排版结果 + 已经把缩放和速度折算进去的几何量。</summary>
@@ -93,7 +99,7 @@ public sealed class DanmakuLayer : Control
     public DmLayout? Layout
     {
         get => _layout;
-        set { _layout = value; Pace(); InvalidateVisual(); }
+        set { _layout = value; _liveFrom = 0; Pace(); InvalidateVisual(); }
     }
 
     /// <summary>
@@ -136,6 +142,28 @@ public sealed class DanmakuLayer : Control
         return lo;
     }
 
+    /// <summary>
+    /// 字号 / 粗细 / 透明度这一档的编号。变一次就 +1,缓存里对不上号的字形全部重排。
+    /// </summary>
+    private int _gen;
+    private double _genFont = -1;
+    private bool _genBold;
+    private byte _genAlpha;
+    /// <summary>上一帧的起点。这一帧起点往前挪过的那一段,缓存就地丢掉。</summary>
+    private int _liveFrom;
+    /// <summary>颜色 → 画刷。弹幕里不重复的颜色通常不超过十几种。</summary>
+    private readonly Dictionary<uint, IBrush> _brushes = [];
+    private IBrush _shadow = Brushes.Black;
+
+    /// <summary>
+    /// 按帧画。
+    ///
+    /// <para>☠☠ <b>一帧里不许重新排版。</b> 上一版每条弹幕每帧都 <c>new FormattedText</c>
+    /// 两次(正文 + 描边)—— 那是一次完整的文本整形,不是画一下。屏幕上 40 条
+    /// × 2 × 60Hz = 每秒 4800 次整形,外加同样多的 <c>SolidColorBrush</c> 进 GC。
+    /// 用户报的「弹幕移动起来很掉帧」就是这个。现在字形按「字号档」缓存在
+    /// <see cref="DmItem"/> 上,每帧只是把同一组字形挪个位置。</para>
+    /// </summary>
     public override void Render(DrawingContext ctx)
     {
         var l = _layout;
@@ -153,12 +181,26 @@ public sealed class DanmakuLayer : Control
         var laneH = l.LaneHeight * sy;
         var a = (byte)Math.Clamp(l.Opacity * 255, 0, 255);
         var face = l.Bold ? FaceBold : Face;
-        // 描边靠一层黑影垫底。四向描边要多画四遍,而弹幕本来就是薄薄一层
-        var shadow = new SolidColorBrush(Color.FromArgb((byte)(a * 3 / 4), 0, 0, 0));
+        if (Math.Abs(font - _genFont) > 0.5 || _genBold != l.Bold || _genAlpha != a)
+        {
+            _genFont = font; _genBold = l.Bold; _genAlpha = a; _gen++;
+            _brushes.Clear();
+            // 描边靠一层黑影垫底。四向描边要多画四遍,而弹幕本来就是薄薄一层
+            _shadow = new ImmutableSolidColorBrush(Color.FromArgb((byte)(a * 3 / 4), 0, 0, 0));
+        }
         var off = Math.Max(1.0, font * 0.05);
 
         var life = Math.Max(l.RollSeconds, l.FixSeconds);
-        for (var i = FirstAtOrAfter(l.Items, now - life); i < l.Items.Count; i++)
+        var from = FirstAtOrAfter(l.Items, now - life);
+        // 已经滚出去的那些把字形丢掉 —— 不丢的话一部番看完攒着上万份排版结果
+        for (var i = _liveFrom; i < from && i < l.Items.Count; i++)
+        {
+            l.Items[i].Fg = l.Items[i].Sh = null;
+            l.Items[i].Gen = -1;
+        }
+        _liveFrom = from;
+
+        for (var i = from; i < l.Items.Count; i++)
         {
             var d = l.Items[i];
             if (d.T > now) break;
@@ -181,12 +223,19 @@ public sealed class DanmakuLayer : Control
                     : h - 4 * sy - (d.Lane + 1) * laneH;
             }
             if (x > w || x + wPx < 0) continue;
-            var brush = new SolidColorBrush(Color.FromArgb(
-                a, (byte)(d.Color >> 16), (byte)(d.Color >> 8), (byte)d.Color));
-            FormattedText Text(IBrush b) => new(d.Text, CultureInfo.CurrentCulture,
-                FlowDirection.LeftToRight, face, font, b);
-            ctx.DrawText(Text(shadow), new Point(x + off, top + off));
-            ctx.DrawText(Text(brush), new Point(x, top));
+            if (d.Gen != _gen || d.Fg is null || d.Sh is null)
+            {
+                if (!_brushes.TryGetValue(d.Color, out var brush))
+                    _brushes[d.Color] = brush = new ImmutableSolidColorBrush(Color.FromArgb(
+                        a, (byte)(d.Color >> 16), (byte)(d.Color >> 8), (byte)d.Color));
+                d.Sh = new FormattedText(d.Text, CultureInfo.CurrentCulture,
+                    FlowDirection.LeftToRight, face, font, _shadow);
+                d.Fg = new FormattedText(d.Text, CultureInfo.CurrentCulture,
+                    FlowDirection.LeftToRight, face, font, brush);
+                d.Gen = _gen;
+            }
+            ctx.DrawText(d.Sh, new Point(x + off, top + off));
+            ctx.DrawText(d.Fg, new Point(x, top));
         }
     }
 }

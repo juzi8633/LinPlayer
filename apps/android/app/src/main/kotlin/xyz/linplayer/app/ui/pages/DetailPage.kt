@@ -3,6 +3,7 @@ package xyz.linplayer.app.ui.pages
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,6 +42,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -330,7 +332,11 @@ fun DetailPage(nav: NavController, entry: NavBackStackEntry) {
         Box(Modifier.fillMaxSize().background(toneScene(tone, c.bg))) {
             LazyColumn(Modifier.fillMaxSize(), list, contentPadding = pad) {
                 item("hero") {
-                    if (isEpisode) EpisodeHead(app, route.itemId, d, list)
+                    if (isEpisode) EpisodeHead(app, route.itemId, d, list) {
+                        d.str("series_id")?.let { sid ->
+                            nav.navigate(Route.Detail(sid, "Series"))
+                        }
+                    }
                     else SeriesHead(app, route.itemId, d, list)
                 }
 
@@ -692,6 +698,7 @@ private fun EpisodeHead(
     id: String,
     d: JsonObject?,
     list: androidx.compose.foundation.lazy.LazyListState,
+    onSeries: () -> Unit,
 ) {
     val c = Lp.colors
     val runtime = d.dbl("runtime_secs") ?: 0.0
@@ -722,9 +729,20 @@ private fun EpisodeHead(
             Modifier.align(Alignment.BottomStart).fillMaxWidth()
                 .padding(start = Sp.x16, end = Sp.x16, bottom = Sp.x12),
         ) {
+            /* 剧名**点得动**:Emby 上点集详情页的剧名就回到剧集主页,我们只把它
+               当一行说明文字画着(用户 2026-09-11)。从某一集想回到整部剧,
+               原来只能一路按返回。
+               ★ 刮削不全的库拿不到 series_id —— 那时候不加下划线也不给点,
+                 摆一个点了没反应的链接比没有更糟。 */
             d.str("series_name")?.let {
-                Text(it, color = c.fg2, fontSize = 12.sp, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis)
+                val linked = !d.str("series_id").isNullOrBlank()
+                Text(
+                    it,
+                    if (linked) Modifier.clickable(onClick = onSeries) else Modifier,
+                    color = if (linked) c.acc else c.fg2, fontSize = 12.sp, maxLines = 1,
+                    textDecoration = if (linked) TextDecoration.Underline else null,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
             Kicker(
                 listOfNotNull(

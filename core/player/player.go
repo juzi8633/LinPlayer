@@ -209,6 +209,11 @@ func baseOptions(hwdec, shaderCacheDir, confDir string) [][2]string {
 		   那一包在 seek 点之前,永远不会被解出来。表现正是「时不时不出现」,
 		   而下一句照常出来,所以看着像随机。代价是每次 seek 多读一小段。 */
 		[2]string{"demuxer-mkv-subtitle-preroll", "yes"},
+		/* ☠ 预读**回溯多远**才是决定性的那个数,而它的默认值是 1 秒。
+		   PGS 一句字幕常驻 4~8 秒:seek 落在第 5 秒时,那一包在 4 秒前,
+		   1 秒的回溯够不着 —— 于是「开了预读还是时不时不出现」。
+		   给 8 秒;代价是每次 seek 多解一小段字幕包,图形字幕本来就稀疏。 */
+		[2]string{"demuxer-mkv-subtitle-preroll-secs", "8"},
 	)
 	if shaderCacheDir != "" {
 		// libmpv 没有配置目录,这两项不显式给就**不缓存**:每次起播重编整条

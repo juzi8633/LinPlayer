@@ -125,7 +125,7 @@
 | [x] | `account.setLines` | `set_lines` | `server_id: String, lines: Vec<linplayer_core::config::ServerLine>` | `Result<(), String>` | ✅ |
 | [x] | `account.startupDeepLink` | `startup_deep_link` | `—` | `Option<String>` | ✅ |
 | [x] | `account.syncLines` | `sync_lines` | `server_id: String` | `Result<SyncedLines, String>` | ✅ |
-| [x] | `account.testConnection` | `test_connection` | `server: String` | `Result<emby::ServerInfo, String>` | ✅ |
+| [x] | `account.testConnection` | `test_connection` | `server: String, username: String, password: String` | `Result<account::TestResult, String>` | ✅ |
 | [x] | `account.updateAccount` | `update_account` | `server_id: String, name: Option<String>, remark: Option<String>, icon_url: Option<String>, allow_insecure_tls: Option<bool>, password: Option<String>` | `Result<(), String>` | ✅ |
 
 ### 播放器 · `player.*` — 43 条

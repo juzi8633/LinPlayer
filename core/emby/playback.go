@@ -63,8 +63,17 @@ var deviceProfile = map[string]any{
 			map[string]string{"Format": "sub", "Method": "External"},
 			map[string]string{"Format": "idx", "Method": "External"},
 			map[string]string{"Format": "smi", "Method": "External"},
+			/* ☠ 图形字幕的格式名**各家 fork 写法不一**(`pgssub` / `pgs` /
+			   `hdmv_pgs_subtitle`)。漏掉一个写法的后果不是「这条字幕没声明」,
+			   而是服务器把整条轨判成 Encode —— 它要转码才给,而我们不走转码流,
+			   表现就是「这个片子的 PGS 字幕整条不见了」,且一声不吭。
+			   多声明几种不会有副作用:服务器只认得其中一个。 */
 			map[string]string{"Format": "pgssub", "Method": "Embed"},
+			map[string]string{"Format": "pgs", "Method": "Embed"},
+			map[string]string{"Format": "hdmv_pgs_subtitle", "Method": "Embed"},
 			map[string]string{"Format": "dvdsub", "Method": "Embed"},
+			map[string]string{"Format": "dvbsub", "Method": "Embed"},
+			map[string]string{"Format": "vobsub", "Method": "Embed"},
 		},
 	},
 }

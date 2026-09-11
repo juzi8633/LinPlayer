@@ -3,7 +3,7 @@
         x:Class="LinPlayer.Desktop.Views.MainWindow"
         Title="LinPlayer"
         Width="1280" Height="800"
-        MinWidth="1024" MinHeight="640"
+        MinWidth="420" MinHeight="360"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource Bg}"
         ExtendClientAreaToDecorationsHint="True"

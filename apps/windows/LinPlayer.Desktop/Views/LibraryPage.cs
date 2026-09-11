@@ -280,11 +280,15 @@ public sealed class LibraryGridPage : PageBase
             Orientation = Orientation.Horizontal, Spacing = 10,
             Children = { Back(), H1(title) },
         };
-        var bar = new StackPanel
+        /* 筛选条用 WrapPanel 不用 StackPanel:三个下拉加起来 440px 宽,
+           窗口收窄之后 StackPanel 会把最后一个**直接切掉**,而且一点提示都没有。
+           换行至少还看得见。 */
+        var bar = new WrapPanel { ItemSpacing = 10, ItemHeight = double.NaN };
+        foreach (var b in new Control[] { _sort, _genre, _year })
         {
-            Orientation = Orientation.Horizontal, Spacing = 10,
-            Children = { _sort, _genre, _year },
-        };
+            b.Margin = new Thickness(0, 0, 0, 6);
+            bar.Children.Add(b);
+        }
         var body = new StackPanel { Spacing = 14, Children = { head, bar, _first, _grid, _status } };
 
         var sv = new ScrollViewer

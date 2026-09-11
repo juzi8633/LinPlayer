@@ -556,9 +556,32 @@ public sealed class DetailPage : PageBase
         }
 
         var head = new StackPanel { Spacing = 10 };
+        /* 剧名单独一行,而且**点得动** —— Emby 上点集详情页的剧名就回到剧集主页,
+           我们原来把它和集名拼成一句话(「剧名 · 第 3 集」),那一整句都是死的:
+           从某一集想回到整部剧,只能一路按返回(用户 2026-09-11)。
+           ★ 判据是拿不拿得到 series_id:刮削不全的库上这个字段是空的,
+             那时候照旧只显示文字,不摆一个点了没反应的链接。 */
+        var seriesId = Str(d, "series_id");
+        if (!string.IsNullOrEmpty(series))
+        {
+            var crumb = new TextBlock
+            {
+                Text = series, FontSize = 15, FontWeight = FontWeight.SemiBold,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Foreground = Tok.Of(seriesId.Length > 0 ? "Accent" : "Ink2"),
+                HorizontalAlignment = HorizontalAlignment.Left,
+            };
+            if (seriesId.Length > 0)
+            {
+                crumb.Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand);
+                ToolTip.SetTip(crumb, "回到《" + series + "》");
+                crumb.PointerPressed += (_, _) => Nav.Push(new DetailPage(_core, _server, seriesId));
+            }
+            head.Children.Add(crumb);
+        }
         head.Children.Add(new TextBlock
         {
-            Text = string.IsNullOrEmpty(series) ? name : $"{series} · {name}",
+            Text = name,
             FontSize = 34, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap,
         });
 

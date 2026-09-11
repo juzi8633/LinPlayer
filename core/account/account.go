@@ -13,6 +13,7 @@ package account
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"linplayer/core/bus"
@@ -256,7 +257,11 @@ func RegisterCommands(version string) {
 		return map[string]any{"added": added, "accounts": listOf(c)}, nil
 	})
 
-	// testConnection 登录**前**用的,不走会话。
+	/* testConnection 登录**前**用的,不走会话。
+	   ★ 给了用户名就**真登一次**,不是只探一下 `/System/Info/Public`。
+	     只探公开信息的话,地址写对而密码写错的服务器照样报「连上了」——
+	     用户点「登录」才发现不行,而那时候的报错和「测试通过」自相矛盾。
+	     登进去立刻登出,不落库、不切活跃会话(account_test.go 钉着这条)。 */
 	bus.Register("account.testConnection", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
 		server := str(a, "server")
 		if server == "" {
@@ -264,10 +269,67 @@ func RegisterCommands(version string) {
 		}
 		info, err := client.ProbeServer(ctx, server)
 		if err != nil {
-			return nil, &bus.Err{Code: bus.ENetwork, Msg: err.Error(), Retryable: true}
+			return nil, loginErr(err, "探测服务器")
 		}
-		return info, nil
+		user := str(a, "username")
+		if user == "" {
+			return TestResult{Name: info.Name, Version: info.Version, ID: info.ID}, nil
+		}
+		s, lr, err := client.Login(ctx, server, user, str(a, "password"), deviceIDOf(a))
+		if err != nil {
+			return nil, loginErr(err, "登录")
+		}
+		_ = client.Logout(ctx, s) // 测试用的会话不留在服务器的设备列表里
+		return TestResult{
+			Name: info.Name, Version: info.Version, ID: info.ID,
+			UserName: lr.UserName, LoggedIn: true,
+		}, nil
 	})
+}
+
+// TestResult 「测试连接」的结果。
+//
+// ★ 不是直接回 emby.ServerInfo:真登一次之后多了「登进去的是谁」这件事,
+// 而那正是用户要确认的 —— 界面上写「已用 xxx 登录成功」比「连上了」有用得多。
+type TestResult struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	ID      string `json:"id"`
+	// UserName 真登进去的那个用户名。空串 = 没给账号,只探了地址通不通。
+	UserName string `json:"user_name"`
+	LoggedIn bool   `json:"logged_in"`
+}
+
+func deviceIDOf(a map[string]any) string {
+	if d := str(a, "device_id"); d != "" {
+		return d
+	}
+	return config.Current().DeviceID
+}
+
+// loginErr 把出网错误翻成**用户照着能做下一步**的一句话。
+//
+// ★ 错误码照旧由状态码定(401 不可重试,否则界面会劝人一直点)。
+// 人话放在 Msg 里,真实原因降级进 Detail —— 两端都直接把 Msg 弹出来给用户看。
+func loginErr(err error, what string) *bus.Err {
+	switch code := emby.StatusOf(err); {
+	case code == 401 || code == 403:
+		return &bus.Err{Code: bus.EAuth, Detail: err.Error(),
+			Msg: "账号或密码不对,请重新输入账号密码。"}
+	case code == 404:
+		return &bus.Err{Code: bus.ENotFound, Detail: err.Error(),
+			Msg: "这个地址上没有 Emby 接口,检查一下服务器地址(常见是少了 /emby 或端口写错)。"}
+	case code >= 500:
+		return &bus.Err{Code: bus.EInternal, Detail: err.Error(), Retryable: true,
+			Msg: fmt.Sprintf("服务器自己出错了(HTTP %d),过一会儿再试。", code)}
+	case code != 0:
+		return &bus.Err{Code: bus.EUpstream, Detail: err.Error(),
+			Msg: fmt.Sprintf("服务器拒绝了这次%s(HTTP %d)。", what, code)}
+	}
+	/* 连不上这一类要把真实原因带出来:自签名证书、DNS 解析不了、端口不通
+	   是三件完全不同的事,而它们都长成「连不上」。 */
+	return &bus.Err{Code: bus.ENetwork, Retryable: true, Detail: err.Error(),
+		Msg: "连不上这台服务器:" + err.Error()}
 }
 
 func parseLines(v any) ([]config.ServerLine, error) {

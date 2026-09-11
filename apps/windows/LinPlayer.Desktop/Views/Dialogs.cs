@@ -25,6 +25,18 @@ internal static class Dialogs
             Text = detail, Classes = { "dim" }, TextWrapping = TextWrapping.Wrap, MaxWidth = 380,
         }, okText, "取消", danger);
 
+    /// <summary>
+    /// 只有「知道了」一颗键的告知框。
+    ///
+    /// <para>给**必须被看见**的结果用(测试连接的报错)。同一句话写在页面里的小字上
+    /// 会被弹起的键盘盖住,用户看到的是「点了没反应」;弹窗要点一下才消失。</para>
+    /// </summary>
+    public static Task Tell(Visual anchor, string title, string detail) =>
+        Show(anchor, title, new TextBlock
+        {
+            Text = detail, TextWrapping = TextWrapping.Wrap, MaxWidth = 420,
+        }, "知道了", null);
+
     public static async Task<bool> Show(Visual anchor, string title, Control body,
         string okText, string? cancelText, bool danger = false)
     {

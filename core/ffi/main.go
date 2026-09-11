@@ -141,6 +141,16 @@ func lp_init(configJSON *C.char) (ret C.int32_t) {
 		if err := paths.EnsureDirs(); err != nil {
 			bus.Logf("error", "建数据目录失败: %v", err)
 		}
+		/* ★★ 接管上一份安装的数据,**必须排在 config.Load 之前**。
+		   排在后面的话:配置读不到 → 当场生成设备 id 并保存 → 新根里落下一份空配置
+		   → 接管看见目标已存在就跳过 → 用户升级后「服务器全没了」。
+		   Rust 版栽过同一处(SPEC §16.1),顺序错了不报错。
+		   安卓的数据根由系统给,升级不会换地方,不做这件事。 */
+		if hostCfg.Platform != "android" {
+			if from, n := config.AdoptPreviousInstall(); n > 0 {
+				bus.Logf("info", "新装目录是空的,已从上一份安装接管 %d 项数据:%s", n, from)
+			}
+		}
 		if _, err := config.Load(); err != nil {
 			// ★ 配置坏了**必须冒出来**,不许静默退回空配置 ——
 			//   那会在下一次保存时把用户的账号全覆盖掉(见 core/config 包注释)

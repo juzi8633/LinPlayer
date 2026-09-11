@@ -258,7 +258,44 @@ class LibassParserFactory(private val fontsDir: String) : SubtitleParser.Factory
     override fun create(format: Format): SubtitleParser =
         if (Libass.available && Libass.isAss(format))
             LibassParser(format.id ?: "ass", format)
-        else fallback.create(format)
+        else SafeParser(fallback.create(format), format.sampleMimeType ?: "?")
+}
+
+/**
+ * ☠☠ **一句字幕解坏了不许把整片打死。**
+ *
+ * media3 1.11 的字幕解析发生在**解封装线程**上,`SubtitleParser.parse` 抛出来的
+ * 异常会被包成 `ExoPlaybackException` 一路冒到 `onPlayerError` —— 画面当场停住。
+ * 而图形字幕恰恰最容易解坏:PGS 的 RLE 段一旦被切流 / 转封装动过,
+ * `PgsParser` 读到越界就抛。用户看的是片子,不是字幕:
+ * 丢掉这一句、继续放,永远比停下来正确。
+ *
+ * ★ 只吞**这一句**,不关整条轨:下一句多半是好的。
+ */
+@OptIn(UnstableApi::class)
+internal class SafeParser(
+    private val inner: SubtitleParser,
+    private val mime: String,
+    // 记日志这一步可换掉:单测里 android.util.Log 是个会抛异常的桩,
+    // 真让它跑起来的话这条用例测的就变成了日志而不是吞异常
+    private val log: (String) -> Unit = { Logs.d("lp-subparse", it) },
+) : SubtitleParser {
+
+    override fun parse(
+        data: ByteArray, offset: Int, length: Int,
+        outputOptions: SubtitleParser.OutputOptions,
+        output: Consumer<CuesWithTiming>,
+    ) {
+        try {
+            inner.parse(data, offset, length, outputOptions, output)
+        } catch (e: Exception) {
+            log("字幕这一句解不出来,跳过($mime):" + e)
+        }
+    }
+
+    override fun reset() = inner.reset()
+
+    override fun getCueReplacementBehavior() = inner.cueReplacementBehavior
 }
 
 /**

@@ -688,6 +688,17 @@ public sealed class PlayerPage : UserControl
         Grid.SetColumn(right, 2);
         controls.Children.Add(left);
         controls.Children.Add(right);
+        /* 窗口可以拉到任意大小(用户 2026-09-11),这一排得跟着让。
+           两个 Auto 列加起来约 570px:窗口收到 500 的时候它们会**互相压住**,
+           而 Grid 不报错、只是画在一起 —— 看上去是「按钮糊成一团」。
+           收的顺序按「丢了还有别的办法」排:音量有滚轮和快捷键、±10 秒有左右方向键;
+           播放/暂停、时间、全屏、字幕一个都不收。 */
+        controls.SizeChanged += (_, e) =>
+        {
+            var w = e.NewSize.Width;
+            _volBox.IsVisible = w >= 620;
+            back10.IsVisible = fwd10.IsVisible = w >= 520;
+        };
         var progress = barRow;
 
         /* 上下两条都用**渐变蒙版**,不是一块实心黑条。
@@ -707,18 +718,21 @@ public sealed class PlayerPage : UserControl
         {
             Orientation = Orientation.Horizontal, Spacing = 10,
             VerticalAlignment = VerticalAlignment.Center,
-            Children =
-            {
-                back,
-                new TextBlock
-                {
-                    Text = title, Foreground = Brushes.White, FontSize = 16,
-                    FontWeight = FontWeight.SemiBold,
-                    TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 620,
-                    VerticalAlignment = VerticalAlignment.Center,
-                },
-                _msg,
-            },
+            // 状态字跟着返回键待在左边那一格,并且**掐短**:它偶尔会是一整句报错,
+            // 不掐的话这一格能把中间的标题挤没
+            Children = { back, _msg },
+        };
+        _msg.MaxWidth = 260;
+        _msg.TextTrimming = TextTrimming.CharacterEllipsis;
+        /* ☠ 标题**占弹性列,不占 Auto 列**(用户 2026-09-11:「标题太长以后
+           这几个功能按键都被挤走了」)。原来它和返回键一起待在 Auto 列里,
+           还带着 MaxWidth=620 —— 窗口一窄,右边那一排就被推出画面,
+           而且长片名后半截永远看不到。放进星号列之后:剩多少宽就用多少,
+           放不下的部分交给跑马灯慢慢滚,右边那排按钮一颗都不会少。 */
+        var titleText = new Marquee(title, Brushes.White)
+        {
+            Margin = new Thickness(10, 0, 10, 0),
+            VerticalAlignment = VerticalAlignment.Center,
         };
         var topRight = new StackPanel
         {
@@ -729,8 +743,10 @@ public sealed class PlayerPage : UserControl
         };
         var topRow = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
         Grid.SetColumn(topLeft, 0);
+        Grid.SetColumn(titleText, 1);
         Grid.SetColumn(topRight, 2);
         topRow.Children.Add(topLeft);
+        topRow.Children.Add(titleText);
         topRow.Children.Add(topRight);
         _top = new Border
         {

@@ -665,3 +665,25 @@ APK 装上去「聚合世界」的排行榜仍然说「这个构建没带凭据�
 - [Android libmpv LFS in CI](android.md) — CI 产物里的 .so 要校验 ELF magic
 - [桌面 check 照不到安卓](android.md) — 推前跑 scripts/check-android.sh
 - [测试必须先红](methodology.md) — 长期红的门禁 = 没有门禁
+
+---
+
+## 绿色包换目录升级会把账号丢干净(2026-09-11)
+
+用户报的是「每次更新软件就把用户数据覆盖了」。**根因不是我们写坏了文件,
+是数据根跟着 exe 走**:绿色包的承诺是「数据全在 exe 同级 `userdata/`」,
+而更新的实际动作往往是「把新包解压到另一个文件夹」—— 新目录下的 `userdata/`
+是空的,于是服务器、进度、插件状态全不见了,而且不报错。
+
+Rust 版有过这一段(`migrate_legacy`),Go 重写时没跟过来。现在是
+`config.AdoptPreviousInstall()`:数据根里**没有 `config.json` 时**,
+去安装目录的同级找 `*/userdata/config.json`,取最新的那一份,
+搬 `config.json` / `history.json` / `plugins/state.json`。
+
+- **只搬这三样。** 缓存和日志能重建,`downloads/` 可能有几十 GB,
+  而升级这一刻用户正在等启动。
+- **只找一层。** 往上再翻会扫到整个下载目录,扫到别人的文件是另一类事故。
+- **已经有配置就一个字都不动。** 覆盖用户现有账号比不接管坏得多。
+- ☠☠ **必须排在 `config.Load()` 之前。** 排在后面的话:配置读不到 → 当场生成
+  设备 id 并保存 → 新根里落下一份空配置 → 接管看见目标已存在就跳过 →
+  用户升级后「服务器全没了」。Rust 版栽过同一处(SPEC §16.1),顺序错了不报错。

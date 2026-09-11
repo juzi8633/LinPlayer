@@ -135,14 +135,21 @@ fun DanmakuLayer(
 
     // 两支笔跨帧复用:每帧新建 Paint 会把 GC 拖进渲染帧里
     val fill = remember { Paint(Paint.ANTI_ALIAS_FLAG) }
-    val stroke = remember {
-        Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
-    }
+    val shadow = remember { Paint(Paint.ANTI_ALIAS_FLAG) }
 
-    Canvas(modifier) { drawDanmaku(layout, clock.doubleValue, fill, stroke) }
+    Canvas(modifier) { drawDanmaku(layout, clock.doubleValue, fill, shadow) }
 }
 
-private fun DrawScope.drawDanmaku(l: DmLayout, now: Double, fill: Paint, stroke: Paint) {
+/**
+ * ☠☠ **描边不用 `Paint.Style.STROKE`。**
+ *
+ * 描边文字在 Android 上走的是**轮廓路径**那条路:每个字形要取 Path 再填,
+ * 绕开了字形缓存,而缓存正是普通 `drawText` 快的全部原因。屏幕上四十条弹幕
+ * 每帧各描一遍,一帧就烧掉十几毫秒 —— 用户报的「弹幕移动起来很掉帧」是这个。
+ * 换成「先画一层深色偏一点,再压上正文」:两次都吃字形缓存,代价接近零,
+ * 而看上去是同一回事(PC 那层一直就是这么画的)。
+ */
+private fun DrawScope.drawDanmaku(l: DmLayout, now: Double, fill: Paint, shadow: Paint) {
     if (size.height <= 0f || size.width <= 0f) return
     /* 按**高度**换算比例:弹幕的行数和字号是相对画面高度定的。
        宽高各自缩会把字压扁,而横向扫过多远本来就该用整块宽度。 */
@@ -151,11 +158,11 @@ private fun DrawScope.drawDanmaku(l: DmLayout, now: Double, fill: Paint, stroke:
     val laneH = (l.laneHeight * sy).toFloat()
     val alpha = (l.opacity.coerceIn(0.0, 1.0) * 255).toInt()
     fill.textSize = fontPx
-    stroke.textSize = fontPx
+    shadow.textSize = fontPx
     fill.isFakeBoldText = l.bold
-    stroke.isFakeBoldText = l.bold
-    stroke.strokeWidth = (fontPx * 0.06f).coerceAtLeast(1.5f)
-    stroke.color = 0x000000 or (alpha * 3 / 4 shl 24)
+    shadow.isFakeBoldText = l.bold
+    shadow.color = 0x000000 or (alpha * 3 / 4 shl 24)
+    val off = (fontPx * 0.05f).coerceAtLeast(1f)
 
     val life = maxOf(l.rollSeconds, l.fixSeconds)
     var i = dmFirstAtOrAfter(l.items, now - life)
@@ -190,7 +197,7 @@ private fun DrawScope.drawDanmaku(l: DmLayout, now: Double, fill: Paint, stroke:
             // 基线在字框顶下方约 0.8 个字高 —— Paint 的 textSize 是字框高不是基线高
             val baseline = topPx + fontPx * 0.8f
             fill.color = (alpha shl 24) or (d.color and 0xFFFFFF)
-            nc.drawText(d.text, x, baseline, stroke)
+            nc.drawText(d.text, x + off, baseline + off, shadow)
             nc.drawText(d.text, x, baseline, fill)
         }
     }

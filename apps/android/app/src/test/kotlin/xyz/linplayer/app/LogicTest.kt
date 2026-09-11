@@ -645,4 +645,34 @@ class LogicTest {
         assertEquals(xs, xs.moved(0, -1))
         assertEquals(xs, xs.moved(2, 3))
     }
+
+    /**
+     * ☆☆ 一句字幕解坏了不许把整片打死。
+     *
+     * media3 把 `SubtitleParser.parse` 招出的异常包成 `ExoPlaybackException`,
+     * 画面当场停住 —— 而 PGS 这类图形字幕最容易解坏。
+     */
+    @Test fun `字幕解不出来只丢这一句`() {
+        var reset = 0
+        val boom = object : androidx.media3.extractor.text.SubtitleParser {
+            override fun parse(
+                data: ByteArray, offset: Int, length: Int,
+                outputOptions: androidx.media3.extractor.text.SubtitleParser.OutputOptions,
+                output: androidx.media3.common.util.Consumer<
+                    androidx.media3.extractor.text.CuesWithTiming>,
+            ) = throw IndexOutOfBoundsException("RLE 跑出位图了")
+
+            override fun reset() { reset++ }
+
+            override fun getCueReplacementBehavior() =
+                androidx.media3.common.Format.CUE_REPLACEMENT_BEHAVIOR_MERGE
+        }
+        var said = ""
+        val safe = xyz.linplayer.app.ui.player.SafeParser(boom, "application/pgs") { said = it }
+        safe.parse(ByteArray(4), 0, 4,
+            androidx.media3.extractor.text.SubtitleParser.OutputOptions.allCues()) { }
+        assertTrue("吞了也得留一句日志,否则这类失败永远查不出来", said.contains("application/pgs"))
+        safe.reset()
+        assertEquals("reset 要透传下去", 1, reset)
+    }
 }
