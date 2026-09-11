@@ -17,6 +17,7 @@ import (
 
 	"linplayer/core/bus"
 	"linplayer/core/config"
+	"linplayer/core/system"
 )
 
 // RegisterCommands 由 lp_init 调用。version 是发行版本号(更新设置要用)。
@@ -236,10 +237,9 @@ func RegisterCommands(version string) {
 			"channel": p.UpdateChannel, "auto_check": p.UpdateAutoCheck,
 			// ★ 比较用**发行版本号**,不是编译期的包版本 —— 后者和发行包版本没有同步机制。
 			"current_version": version,
-			// ponytail: can_self_update 要等 paths.RootKind() 落地(绿色包被解压到
-			// 只写不了的地方时为 false)。**先问再做** —— 覆盖到一半才发现没权限,
-			// 用户手上就是个装不上也回不去的半吊子。在那之前保守报 false。
-			"can_self_update": false,
+			// **先问再做** —— 覆盖到一半才发现没权限,用户手上就是个装不上
+			// 也回不去的半吊子。探针是真往安装目录写一个文件再删掉。
+			"can_self_update": system.CanSelfUpdate(),
 		}, nil
 	})
 	bus.Register("prefs.setUpdateSettings", func(ctx context.Context, seq int64, a map[string]any) (any, error) {

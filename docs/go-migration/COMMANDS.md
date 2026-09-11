@@ -327,21 +327,25 @@
 | [x] | `prefs.setUpdateSettings` | `set_update_settings` | `channel: linplayer_core::update::UpdateChannel, auto_check: bool` | `Result<(), String>` | ✅ |
 | [x] | `prefs.setWritebackSettings` | `set_writeback_settings` | `settings: WritebackSettings` | `Result<(), String>` | ✅ |
 
-### 系统 · `system.*` — 13 条
+### 系统 · `system.*` — 17 条
 
 | 移植 | 新命令名 | 现有名 | 参数 | 返回 | 安卓已注册 |
 |:--:|---|---|---|---|:--:|
 | [x] | `system.afdianSponsorUrl` | `afdian_sponsor_url` | `—` | `String` | ✅ |
 | [x] | `system.afdianVerify` | `afdian_verify` | `order_no: String` | `Result<linplayer_core::sync::AfdianVerifyResult, String>` | ✅ |
 | [x] | `system.cacheSize` | `cache_size` | `—` | `Result<u64, String>` | ✅ |
+| [x] | `system.cancelUpdate` | **新增** | `-` | `Result<system::UpdateProgress, String>` | ✅ | <!-- 掐掉在跑的更新下载 -->
 | [x] | `system.capabilities` | **新增** | `-` | `{ commands: string[], ... }` | — | <!-- 本平台支持哪些命令。UI 启动时拿它隐藏入口(SPEC 5.6) -->
 | [x] | `system.checkUpdate` | `check_update` | `—` | `Result<Option<linplayer_core::update::UpdateInfo>, String>` | ✅ |
 | [x] | `system.clearCache` | `clear_cache` | `—` | `Result<(), String>` | ✅ |
 | [x] | `system.dataPaths` | `data_paths` | `—` | `DataPaths` | ✅ |
+| [x] | `system.downloadUpdate` | **新增** | `-` | `Result<system::UpdateProgress, String>` | ✅ | <!-- 开下载,立刻返回;进度轮询 system.updateProgress -->
 | [x] | `system.exportDiagnostics` | **新增** | `-` | `{ ... }` | — | <!-- 诊断导出(SPEC 5.6)。**不许带凭据** -->
+| [x] | `system.installUpdate` | **新增** | `-` | `Result<system::InstallResult, String>` | ✅ | <!-- 装上。桌面端返回 restart 后宿主自己退出;安卓端返回 apk 路径交系统装包器 -->
 | [x] | `system.openDataDir` | `open_data_dir` | `sub: Option<String>` | `Result<(), String>` | ❌ |
 | [x] | `system.pickDirectory` | `pick_directory` | `start: Option<String>` | `Result<Option<String>, String>` | ❌ |
 | [x] | `system.pickFile` | `pick_file` | `start: Option<String>, filter_name: Option<String>, extensions: Option<Vec<String>>` | `Result<Option<String>, String>` | ❌ |
 | [x] | `system.pickLocalFolder` | `pick_local_folder` | `—` | `Result<Option<String>, String>` | ❌ |
 | [x] | `system.ping` | **新增** | `-` | `{ pong: true, ... }` | — | <!-- 核心层活着吗。契约测试的第一条 -->
+| [x] | `system.updateProgress` | **新增** | `-` | `Result<system::UpdateProgress, String>` | ✅ | <!-- 轮询下载进度 -->
 <!-- END GENERATED -->

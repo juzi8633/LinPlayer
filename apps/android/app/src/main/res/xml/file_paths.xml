@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  只对外开**一个**目录:更新包落点。
+
+  ☠ 不要图省事写 `<files-path name="all" path="." />`。那会把 config.json、
+  history.json、插件状态一起变成任何拿到 content:// 的应用都能读的东西 ——
+  而我们要交出去的只有那一个 APK。
+
+  路径跟着核心层走:数据根 = filesDir(LinPlayerApp 里传的),
+  更新包 = 数据根/cache/update/(core/paths + core/system/update_install.go)。
+-->
+<paths>
+    <files-path name="lp-update" path="cache/update/" />
+</paths>

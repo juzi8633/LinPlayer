@@ -255,16 +255,20 @@ object LinPlayerCommandNames {
         "system.afdianSponsorUrl",
         "system.afdianVerify",
         "system.cacheSize",
+        "system.cancelUpdate",
         "system.capabilities",
         "system.checkUpdate",
         "system.clearCache",
         "system.dataPaths",
+        "system.downloadUpdate",
         "system.exportDiagnostics",
+        "system.installUpdate",
         "system.openDataDir",
         "system.pickDirectory",
         "system.pickFile",
         "system.pickLocalFolder",
         "system.ping",
+        "system.updateProgress",
     )
 }
 
@@ -734,13 +738,15 @@ suspend fun LinPlayerCommands.prefsSetUpdateSettings(args: Map<String, Any?>? = 
 suspend fun LinPlayerCommands.prefsSetWritebackSettings(args: Map<String, Any?>? = null): JsonElement =
     call("prefs.setWritebackSettings", args)
 
-// ---- 系统 · system.* (13 条) ----
+// ---- 系统 · system.* (17 条) ----
 suspend fun LinPlayerCommands.systemAfdianSponsorUrl(args: Map<String, Any?>? = null): JsonElement =
     call("system.afdianSponsorUrl", args)
 suspend fun LinPlayerCommands.systemAfdianVerify(args: Map<String, Any?>? = null): JsonElement =
     call("system.afdianVerify", args)
 suspend fun LinPlayerCommands.systemCacheSize(args: Map<String, Any?>? = null): JsonElement =
     call("system.cacheSize", args)
+suspend fun LinPlayerCommands.systemCancelUpdate(args: Map<String, Any?>? = null): JsonElement =
+    call("system.cancelUpdate", args)
 suspend fun LinPlayerCommands.systemCapabilities(args: Map<String, Any?>? = null): JsonElement =
     call("system.capabilities", args)
 suspend fun LinPlayerCommands.systemCheckUpdate(args: Map<String, Any?>? = null): JsonElement =
@@ -749,8 +755,12 @@ suspend fun LinPlayerCommands.systemClearCache(args: Map<String, Any?>? = null):
     call("system.clearCache", args)
 suspend fun LinPlayerCommands.systemDataPaths(args: Map<String, Any?>? = null): JsonElement =
     call("system.dataPaths", args)
+suspend fun LinPlayerCommands.systemDownloadUpdate(args: Map<String, Any?>? = null): JsonElement =
+    call("system.downloadUpdate", args)
 suspend fun LinPlayerCommands.systemExportDiagnostics(args: Map<String, Any?>? = null): JsonElement =
     call("system.exportDiagnostics", args)
+suspend fun LinPlayerCommands.systemInstallUpdate(args: Map<String, Any?>? = null): JsonElement =
+    call("system.installUpdate", args)
 suspend fun LinPlayerCommands.systemOpenDataDir(args: Map<String, Any?>? = null): JsonElement =
     call("system.openDataDir", args)
 suspend fun LinPlayerCommands.systemPickDirectory(args: Map<String, Any?>? = null): JsonElement =
@@ -761,3 +771,5 @@ suspend fun LinPlayerCommands.systemPickLocalFolder(args: Map<String, Any?>? = n
     call("system.pickLocalFolder", args)
 suspend fun LinPlayerCommands.systemPing(args: Map<String, Any?>? = null): JsonElement =
     call("system.ping", args)
+suspend fun LinPlayerCommands.systemUpdateProgress(args: Map<String, Any?>? = null): JsonElement =
+    call("system.updateProgress", args)

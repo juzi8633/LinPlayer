@@ -532,36 +532,23 @@ public static class SettingsSections
             Text = $"当前版本 {Str(s, "current_version")}",
             Classes = { "dim" }, FontSize = 12,
         });
-        // 立即检查更新。
-        //
-        // 「已是最新」和「查不动」要**分开说**。核心层已经把两者分开了
-        // (has_update=false 是确实没有,报错是限流/断网),界面不能再把它们
-        // 合并成一句「检查失败」—— 那会让用户永远等不到更新还以为自己是最新的。
+        /* 立即检查更新 —— 查到了就一路走完:下载、装上、重启。
+           「检查更新」只吐一条下载链接的那一版等于半条链路(用户 2026-09-11:
+           「不然检查更新也没啥用」)。整条流程在 Updater 里,启动自检共用同一份。 */
         var check = new Button { Classes = { "ghost" }, Content = "检查更新" };
         check.Click += async (_, _) =>
         {
             check.IsEnabled = false;
             hint.Text = "检查中…";
-            try
-            {
-                var r = await core.SystemCheckUpdate(new { });
-                if (r.TryGetProperty("has_update", out var h) && h.GetBoolean() &&
-                    r.TryGetProperty("update", out var u))
-                {
-                    var url = u.TryGetProperty("asset_url", out var a2) ? a2.GetString() ?? "" : "";
-                    if (url == "") url = u.TryGetProperty("html_url", out var w) ? w.GetString() ?? "" : "";
-                    hint.Text = $"有新版本 {Str(u, "version")}:{url}";
-                }
-                else hint.Text = "已是最新版本。";
-            }
-            catch (Exception e) { hint.Text = LibraryPage.Advice(e); }
-            finally { check.IsEnabled = true; }
+            await Updater.Check(body, core, quiet: false);
+            hint.Text = "";
+            check.IsEnabled = true;
         };
 
-        // 绿色包被解压到写不进去的地方时不能自更新。核心层这一版保守报 false,
-        // 界面就得如实说 —— 摆一个点了没反应的「立即更新」比没有更糟。
+        // 绿色包解压在写不进去的地方(多半是 Program Files)时覆盖不了。
+        // 如实说清楚 —— 摆一个点了必然失败的「立即更新」比没有更糟。
         if (!Bool(s, "can_self_update"))
-            body.Children.Add(Note("这一版还不能自动安装更新,检查到新版本会给下载地址。"));
+            body.Children.Add(Note("程序所在的文件夹写不进去,装不了更新。把整个文件夹挪到个人目录下就能自动更新。"));
         body.Children.Add(new StackPanel
         {
             Orientation = Orientation.Horizontal, Spacing = 10, Children = { check },

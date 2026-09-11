@@ -169,7 +169,7 @@ func TestCheckUpdate_挑本平台资产并清洗说明(t *testing.T) {
 	}
 }
 
-func runtimeIsWindows() bool { return assetKeywords()[0] == "windows" }
+func runtimeIsWindows() bool { return assetKeywordSets()[0][0] == "windows" }
 
 func contains(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {

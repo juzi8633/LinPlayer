@@ -265,16 +265,20 @@ public static class LinPlayerCommandNames
         "system.afdianSponsorUrl",
         "system.afdianVerify",
         "system.cacheSize",
+        "system.cancelUpdate",
         "system.capabilities",
         "system.checkUpdate",
         "system.clearCache",
         "system.dataPaths",
+        "system.downloadUpdate",
         "system.exportDiagnostics",
+        "system.installUpdate",
         "system.openDataDir",
         "system.pickDirectory",
         "system.pickFile",
         "system.pickLocalFolder",
         "system.ping",
+        "system.updateProgress",
     ];
 }
 
@@ -746,13 +750,15 @@ public static class LinPlayerCommandsExtensions
     public static Task<JsonElement> PrefsSetWritebackSettings(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("prefs.setWritebackSettings", args, ct);
 
-    // ---- 系统 · system.* (13 条) ----
+    // ---- 系统 · system.* (17 条) ----
     public static Task<JsonElement> SystemAfdianSponsorUrl(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("system.afdianSponsorUrl", args, ct);
     public static Task<JsonElement> SystemAfdianVerify(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("system.afdianVerify", args, ct);
     public static Task<JsonElement> SystemCacheSize(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("system.cacheSize", args, ct);
+    public static Task<JsonElement> SystemCancelUpdate(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("system.cancelUpdate", args, ct);
     public static Task<JsonElement> SystemCapabilities(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("system.capabilities", args, ct);
     public static Task<JsonElement> SystemCheckUpdate(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -761,8 +767,12 @@ public static class LinPlayerCommandsExtensions
         => c.CallAsync("system.clearCache", args, ct);
     public static Task<JsonElement> SystemDataPaths(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("system.dataPaths", args, ct);
+    public static Task<JsonElement> SystemDownloadUpdate(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("system.downloadUpdate", args, ct);
     public static Task<JsonElement> SystemExportDiagnostics(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("system.exportDiagnostics", args, ct);
+    public static Task<JsonElement> SystemInstallUpdate(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("system.installUpdate", args, ct);
     public static Task<JsonElement> SystemOpenDataDir(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("system.openDataDir", args, ct);
     public static Task<JsonElement> SystemPickDirectory(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -773,4 +783,6 @@ public static class LinPlayerCommandsExtensions
         => c.CallAsync("system.pickLocalFolder", args, ct);
     public static Task<JsonElement> SystemPing(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("system.ping", args, ct);
+    public static Task<JsonElement> SystemUpdateProgress(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("system.updateProgress", args, ct);
 }

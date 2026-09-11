@@ -70,12 +70,14 @@ jobs:
           # 只列**真的会被构建出来**的产物。把不存在的平台留在这儿只会让每次发布
           # 刷一串假「缺少 xxx」,久了没人看这段输出。
           #
-          # ★ 2026-09-04:Rust/Tauri 栈删除后 Linux 与 Android 暂时没有可构建的端
-          #   (Go 版那两端的 UI 还没写,见 docs/go-migration/TODO.md),所以这里
-          #   只剩 Windows 一条。等它们回来时**记得加回来** —— 漏加的表现是
-          #   发布成功、用户却下不到包,而这段检查一声不吭。
+          # ★ Linux 端的 UI 还没写(见 docs/go-migration/TODO.md),所以不列。
+          #   等它回来时**记得加回来** —— 漏加的表现是发布成功、用户却下不到包,
+          #   而这段检查一声不吭。
+          # ★ APK 的名字由安卓出包脚本决定,应用内更新按 `.apk` + ABI 认包
+          #   (core/system/update.go 的 assetKeywordSets),改名前先改那儿。
           EXPECTED=(
             "LinPlayer-Windows-v$VER.zip"
+            "app-arm64-v8a-release.apk"
           )
           MISSING=0
           for f in "${EXPECTED[@]}"; do
@@ -109,15 +111,15 @@ jobs:
           body: |
             ## LinPlayer v${{ steps.resolve.outputs.version }}
 
-            自动更新：应用每 24 小时检查一次，发现此「最新发布」即提示升级。
+            自动更新：应用内「设置 → 更新 → 检查更新」一路走完下载和安装，不用手动下包。
 
             ### 下载
             - **Windows**：`LinPlayer-Windows-v${{ steps.resolve.outputs.version }}.zip`（免安装绿色包，解压即用）
+            - **安卓**：`app-arm64-v8a-release.apk`（arm64 手机 / TV）
 
             ### 说明
             - Windows 端内置完整版 libmpv（支持 PGS/SUP 图形字幕）。
-            - **Linux / 安卓 / Android TV 暂无可用版本**：2026-09-04 删除 Rust/Tauri 栈时，
-              这几端的唯一实现一并删除，Go 版的 UI 还没写。历史版本仍可在更早的 Release 里下载。
+            - **Linux 暂无可用版本**：Go 版的 Linux UI 还没写。历史版本仍可在更早的 Release 里下载。
             - 绿色包的全部数据（账号/缓存/下载）都写在主程序同级的 `userdata/`，
               整个文件夹拷走即完成迁移；删掉文件夹即卸载干净。
 

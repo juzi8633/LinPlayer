@@ -1,9 +1,7 @@
 package system
 
 //
-// 应用内更新检查。
-// 这一版**只查不装**:查到新版本给下载地址,安装还是用户自己来
-// (设置页那句「这一版还不能自动安装更新」说的就是这个)。
+// 应用内更新检查。**装的那一半在 update_install.go**。
 //
 // ★★ 版本比较为什么不能用标准 semver:
 // CI 的版本串形如 `1.2.0-build91`,同一个 x.y.z 会出无数次预览版迭代。
@@ -142,12 +140,53 @@ func PickNewestRelease(list []release) *release {
 	return best
 }
 
-// assetKeywords 本平台资产名里必须**全部命中**的小写子串。
-func assetKeywords() []string {
-	if runtime.GOOS == "windows" {
-		return []string{"windows"}
+// assetKeywordSets 本平台该认哪个资产:每组里的小写子串要**全部命中**,组间按先后顺序优先。
+//
+// ☠ 安卓原先落在 else 分支上吃 `linux` 这个关键词 —— APK 名里没有这三个字母,
+// 于是 GOOS=android 时**永远挑不出资产**,更新只能跳网页。
+// 两组是为了多 ABI:先按本机 ABI 认,认不到再退回任意 APK
+// (现在 CI 只出 arm64 一个,但认错 ABI 的表现是「装到最后一步报解析失败」)。
+func assetKeywordSets() [][]string {
+	switch runtime.GOOS {
+	case "windows":
+		return [][]string{{"windows", ".zip"}}
+	case "android":
+		return [][]string{{".apk", androidABI()}, {".apk"}}
 	}
-	return []string{"linux"}
+	return [][]string{{"linux"}}
+}
+
+// androidABI GOARCH → APK 名里的 ABI 串(pack-android.sh 的产物名带它)。
+func androidABI() string {
+	switch runtime.GOARCH {
+	case "arm64":
+		return "arm64"
+	case "arm":
+		return "armeabi"
+	case "amd64":
+		return "x86_64"
+	}
+	return runtime.GOARCH
+}
+
+// pickAsset 按 sets 的优先顺序挑一个资产,挑不到返回 -1 → 界面引导去网页手动下。
+func pickAsset(names []string, sets [][]string) int {
+	for _, kw := range sets {
+		for i, n := range names {
+			lower := strings.ToLower(n)
+			hit := true
+			for _, k := range kw {
+				if !strings.Contains(lower, k) {
+					hit = false
+					break
+				}
+			}
+			if hit {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 // Info 查到的新版本。
@@ -234,20 +273,13 @@ func CheckUpdate(ctx context.Context, channel, currentTag string) (*Info, error)
 	if info.Name == "" {
 		info.Name = rel.TagName
 	}
-	kw := assetKeywords()
-	for _, a := range rel.Assets {
-		lower := strings.ToLower(a.Name)
-		hit := true
-		for _, k := range kw {
-			if !strings.Contains(lower, k) {
-				hit = false
-				break
-			}
-		}
-		if hit {
-			info.AssetName, info.AssetURL, info.AssetSize = a.Name, a.URL, a.Size
-			break
-		}
+	names := make([]string, len(rel.Assets))
+	for i, a := range rel.Assets {
+		names[i] = a.Name
+	}
+	if i := pickAsset(names, assetKeywordSets()); i >= 0 {
+		a := rel.Assets[i]
+		info.AssetName, info.AssetURL, info.AssetSize = a.Name, a.URL, a.Size
 	}
 	return info, nil
 }
@@ -271,6 +303,7 @@ func prettifyNotes(body string) string {
 }
 
 func registerUpdateCommands() {
+	registerInstallCommands()
 	bus.Register("system.checkUpdate", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
 		ch := config.Current().PrefsOf().UpdateChannel
 		info, err := CheckUpdate(ctx, ch, Version)
@@ -280,8 +313,11 @@ func registerUpdateCommands() {
 		if info == nil {
 			// ★ 「已是最新」要**明说**。返回 null 的话界面分不清它和「查不动」,
 			//   而这两件事对用户的下一步动作完全不同。
-			return map[string]any{"has_update": false, "current": Version}, nil
+			return map[string]any{"has_update": false, "current": Version,
+				"can_self_update": CanSelfUpdate()}, nil
 		}
-		return map[string]any{"has_update": true, "current": Version, "update": info}, nil
+		return map[string]any{"has_update": true, "current": Version, "update": info,
+			// 一次问清楚:界面要立刻决定是给「下载并安装」还是只给一条下载链接
+			"can_self_update": CanSelfUpdate()}, nil
 	})
 }

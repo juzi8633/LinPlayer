@@ -1,5 +1,10 @@
 package xyz.linplayer.app.ui.pages
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -7,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -20,7 +26,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.sp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
+import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import xyz.linplayer.app.core.Logs
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -30,6 +39,7 @@ import androidx.navigation.toRoute
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import xyz.linplayer.app.data.AppState
 import xyz.linplayer.app.data.LocalApp
 import xyz.linplayer.app.data.ToastKind
 import xyz.linplayer.app.data.arr
@@ -47,6 +57,7 @@ import xyz.linplayer.app.ui.components.BtnKind
 import xyz.linplayer.app.ui.components.LpDialog
 import xyz.linplayer.app.ui.components.LpIconButton
 import xyz.linplayer.app.ui.components.LongShotTarget
+import xyz.linplayer.app.ui.components.Dim2
 import xyz.linplayer.app.ui.components.Dim3
 import xyz.linplayer.app.ui.components.EmptyState
 import xyz.linplayer.app.ui.components.Hairline
@@ -883,20 +894,118 @@ private fun StoragePanel() {
     }
 }
 
+/**
+ * 应用内一条龙更新:查 → 下 → 交给系统装包器。
+ *
+ * ☠ 原先这里**两处都是坏的**:`system.checkUpdate` 的版本号在 `update` 子对象里,
+ * 直接 `.str("version")` 永远取到 null,于是不管有没有新版都显示「已是最新」;
+ * 而核心层挑资产用的关键词在安卓上是 `linux`,APK 名里没有,**永远挑不出包**。
+ * 两个都不报错 —— 这就是用户说的「检查更新也没啥用」。
+ */
 @Composable
 private fun AboutPanel() {
     val app = LocalApp.current
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     val caps by app.caps.collectAsStateWithLifecycle()
-    var update by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) {
-        update = runCatching { app.call("system.checkUpdate") }.getOrNull()
-            .obj().str("version")
+    var newest by remember { mutableStateOf<JsonObject?>(null) }
+    var checked by remember { mutableStateOf(false) }
+    var prog by remember { mutableStateOf<JsonObject?>(null) }
+
+    suspend fun check(): JsonObject? {
+        val r = runCatching { app.call("system.checkUpdate") }.getOrNull().obj()
+        checked = true
+        newest = if (r.bool("has_update")) r?.get("update").obj() else null
+        return newest
     }
+    LaunchedEffect(Unit) { check() }
+
     Panel(Modifier.padding(Sp.x16)) {
         LpCell("版本", value = caps.version, arrow = false)
         Hairline()
-        // 安卓端**不做应用内更新**:安装权限对一个第三方播放器是过重的要求,
-        // 而且各厂商 ROM 拦法各不相同。只提示,跳发布页
-        LpCell("检查更新", value = update?.let { "有新版 $it" } ?: "已是最新", arrow = false)
+        LpCell(
+            "检查更新",
+            value = newest.str("version")?.let { "有新版 $it" } ?: if (checked) "已是最新" else "…",
+            sub = newest?.let { "点一下就下载并安装" },
+            onClick = {
+                scope.launch {
+                    if (check() == null) app.toast("已经是最新版本")
+                    else runUpdate(app, ctx) { prog = it }
+                }
+            },
+        )
     }
+
+    if (prog != null) {
+        val got = prog.long("downloaded") ?: 0L
+        val total = prog.long("total") ?: 0L
+        LpDialog({ }, "正在更新") {
+            if (total > 0) LinearProgressIndicator(
+                progress = { (got.toFloat() / total).coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth(),
+            ) else LinearProgressIndicator(Modifier.fillMaxWidth())
+            Spacer(Modifier.height(Sp.x12))
+            Dim2(if (total > 0) "%.1f MB / %.1f MB".format(got / 1048576.0, total / 1048576.0)
+                 else "%.1f MB".format(got / 1048576.0))
+            Spacer(Modifier.height(Sp.x16))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                LpButton("取消", {
+                    scope.launch { runCatching { app.call("system.cancelUpdate") } }
+                    prog = null
+                })
+            }
+        }
+    }
+}
+
+/**
+ * 下载 → 轮询进度 → 交给系统装包器。
+ *
+ * 抽成顶层函数不只是为了短:字段名门禁按「调用点往下 30 行」判响应字段,
+ * 挤在 Composable 里的话它会把下面画进度条那几行也算进这条命令的读取范围。
+ * 轮询而不订阅事件,和下载管理器同一个口径 —— 一个活跃任务不值得开一条事件流。
+ */
+private suspend fun runUpdate(app: AppState, ctx: Context, onProgress: (JsonObject?) -> Unit) {
+    if (runCatching { app.call("system.downloadUpdate") }.onFailure { app.report(it) }.isFailure) return
+    while (true) {
+        delay(400)
+        val p = runCatching { app.call("system.updateProgress") }.getOrNull().obj() ?: continue
+        onProgress(p)
+        when (p.str("phase")) {
+            "downloading" -> continue
+            "failed" -> { onProgress(null); app.toast(p.str("error") ?: "下载失败", ToastKind.Error); return }
+            "ready" -> Unit
+            else -> { onProgress(null); return }
+        }
+        break
+    }
+    val f = runCatching { app.call("system.installUpdate") }.getOrNull().obj().str("file")
+    onProgress(null)
+    if (f == null) app.toast("安装包没准备好", ToastKind.Error)
+    else openInstaller(ctx, f) { app.toast(it, ToastKind.Info) }
+}
+
+/**
+ * 把 APK 交给系统装包器。
+ *
+ * ☠ 两道闸缺一不可:`REQUEST_INSTALL_PACKAGES` 只是「允许申请」,用户还得在系统设置里
+ * 给本应用开「安装未知应用」。没开就直接发意图的表现是**什么都不发生** ——
+ * 那正是「点了没反应」这一类最难查的形态,所以先问再发,没开就把人送过去。
+ */
+private fun openInstaller(ctx: Context, path: String, say: (String) -> Unit) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !ctx.packageManager.canRequestPackageInstalls()) {
+        say("请先允许本应用安装未知应用,然后再点一次更新")
+        runCatching {
+            ctx.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:" + ctx.packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+        return
+    }
+    // file:// 从 Android 7 起会当场 FileUriExposedException,必须过 FileProvider
+    val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".fileprovider", File(path))
+    runCatching {
+        ctx.startActivity(Intent(Intent.ACTION_VIEW)
+            .setDataAndType(uri, "application/vnd.android.package-archive")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
+    }.onFailure { say("装不起来:" + it.message) }
 }

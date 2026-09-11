@@ -10,6 +10,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- 应用内一条龙更新(U1.30)。装包这一步交给系统装包器,我们只发意图。
+         ☠ 这个权限只是「允许申请」:用户还得在系统设置里给本应用开「安装未知应用」。
+           不查 canRequestPackageInstalls() 就发意图的表现是**什么都不发生** ——
+           所以 SettingsPage 里查了,没开就把用户送到那一页去。
+         本应用只走自有渠道分发,不上 Google Play,不受该权限的上架限制。 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- 本机视频(B2)。
          ☠ **不要 MANAGE_EXTERNAL_STORAGE**:那是全盘访问,Google Play 对播放器不放行,
            而且我们根本不需要 —— 要的只是「能读到用户的视频」。
@@ -68,6 +75,18 @@
                 <data android:scheme="linplayer" />
             </intent-filter>
         </activity>
+
+        <!-- 更新包交给系统装包器要一个 content:// —— Android 7 起 file:// 会当场
+             FileUriExposedException。开放范围见 res/xml/file_paths.xml:只有更新包那一个目录。 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- U1.22 前台服务。Android 14 起 foregroundServiceType 必填 -->
         <service

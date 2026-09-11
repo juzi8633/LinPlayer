@@ -146,8 +146,29 @@ public partial class MainWindow : Window
             Perf.Log("窗口 Opened");
             await BootAsync();
             Perf.Log("BootAsync 结束");
+            AutoCheckUpdate();
         };
     }
+
+    /// <summary>
+    /// 「启动时检查更新」那个勾选框真正生效的地方。
+    ///
+    /// <para>这个偏好从落库那天起**没有任何人读过** —— 勾了不勾一个样,
+    /// 属于「摆着不生效的控件」。查到新版才弹,查不动只留一行日志。</para>
+    /// <para>延后 6 秒:首屏那几条请求才是用户在等的,更新检查排在它们后面。</para>
+    /// </summary>
+    private void AutoCheckUpdate() =>
+        _ = Task.Delay(6000).ContinueWith(_ => Dispatcher.UIThread.Post(async () =>
+        {
+            if (Program.Core is not { } core || !IsVisible) return;
+            try
+            {
+                var s = await core.PrefsGetUpdateSettings(new { });
+                if (!s.TryGetProperty("auto_check", out var v) || v.ValueKind != JsonValueKind.True) return;
+            }
+            catch { return; } // 偏好都读不出来就别打扰用户,这不是他要的功能
+            await Updater.Check(this, core, quiet: true);
+        }));
 
     /// <summary>侧栏入口 → 功能开关 id。改开关去 <see cref="Features"/>,不是这儿。</summary>
     private static readonly (string Ctl, string Id)[] NavGates =
