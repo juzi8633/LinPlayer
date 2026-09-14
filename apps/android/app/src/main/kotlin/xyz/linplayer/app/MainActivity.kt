@@ -79,7 +79,8 @@ class MainActivity : ComponentActivity() {
                 when {
                     tvDraft != null -> xyz.linplayer.app.ui.drafts.tv.TvDraftGallery(
                         tvDraft.substringAfter(":", "0").toIntOrNull() ?: 0)
-                    isTelevision() -> TvPlaceholder()
+                    // `-e lp_page tv`:在不是电视的设备上强制走 TV 形态,给真机自检用
+                    isTelevision() || SelfCheck.page == "tv" -> xyz.linplayer.app.tv.TvRoot(app)
                     else -> PhoneRoot(app)
                 }
             }
@@ -162,16 +163,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** TV 形态本轮不做(U1.16 单开一轮),留一个说清楚的空壳而不是让它跑手机版。 */
+    /** 双形态分流(SPEC §8.2):同一个 APK、同一个 Activity。 */
     private fun isTelevision(): Boolean {
         val ui = getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
         return ui.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
-    }
-}
-
-@Composable
-private fun TvPlaceholder() {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("LinPlayer 的电视版还没做好,请用手机端。")
     }
 }

@@ -6,7 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
-import xyz.linplayer.app.core.CoreClient
+import xyz.linplayer.app.core.CorePort
 
 /**
  * 视频层(SPEC §7.2 通道 A)。
@@ -21,7 +21,7 @@ import xyz.linplayer.app.core.CoreClient
  * 这是 `SPEC.md` 点名的「安卓端最容易漏的一条」,旧栈就漏着(TODO N5)。
  */
 @Composable
-fun VideoSurface(core: CoreClient, m: Modifier = Modifier) {
+fun VideoSurface(core: CorePort, m: Modifier = Modifier) {
     AndroidView(
         modifier = m,
         factory = { ctx ->

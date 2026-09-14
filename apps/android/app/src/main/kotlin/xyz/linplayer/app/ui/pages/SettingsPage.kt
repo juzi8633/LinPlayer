@@ -1025,7 +1025,7 @@ internal fun UpdateFlow(u: JsonObject?, onClose: () -> Unit) {
  * 挤在 Composable 里的话它会把下面画进度条那几行也算进这条命令的读取范围。
  * 轮询而不订阅事件,和下载管理器同一个口径 —— 一个活跃任务不值得开一条事件流。
  */
-private suspend fun runUpdate(app: AppState, ctx: Context, onProgress: (JsonObject?) -> Unit) {
+internal suspend fun runUpdate(app: AppState, ctx: Context, onProgress: (JsonObject?) -> Unit) {
     if (runCatching { app.call("system.downloadUpdate") }.onFailure { app.report(it) }.isFailure) return
     while (true) {
         delay(400)
@@ -1052,7 +1052,7 @@ private suspend fun runUpdate(app: AppState, ctx: Context, onProgress: (JsonObje
  * 给本应用开「安装未知应用」。没开就直接发意图的表现是**什么都不发生** ——
  * 那正是「点了没反应」这一类最难查的形态,所以先问再发,没开就把人送过去。
  */
-private fun openInstaller(ctx: Context, path: String, say: (String) -> Unit) {
+internal fun openInstaller(ctx: Context, path: String, say: (String) -> Unit) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !ctx.packageManager.canRequestPackageInstalls()) {
         say("请先允许本应用安装未知应用,然后再点一次更新")
         runCatching {

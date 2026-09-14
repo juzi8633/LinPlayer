@@ -65,7 +65,7 @@ data class CoreEvent(val name: String, val data: JsonElement)
  *
  * 三件事:发命令并挂起到 result、把主动事件广播成 Flow、把本地数据通道的地址存下来。
  */
-class CoreClient private constructor() : LinPlayerCommands {
+class CoreClient private constructor() : LinPlayerCommands, CorePort {
 
     private val seq = AtomicLong(0)
     private val pending = ConcurrentHashMap<Long, CancellableContinuation<JsonElement>>()
@@ -78,11 +78,11 @@ class CoreClient private constructor() : LinPlayerCommands {
         extraBufferCapacity = 256,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
-    val events: SharedFlow<CoreEvent> = _events
+    override val events: SharedFlow<CoreEvent> = _events
 
     /** 本地数据通道的基址与 token(SPEC §6)。图片 URL 从这里拼。 */
-    @Volatile var localBaseUrl: String = ""; private set
-    @Volatile var localToken: String = ""; private set
+    @Volatile override var localBaseUrl: String = ""; private set
+    @Volatile override var localToken: String = ""; private set
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
 
@@ -129,10 +129,10 @@ class CoreClient private constructor() : LinPlayerCommands {
      * 取消时**必须同时通知核心层**:只丢掉本地的 continuation 的话,核心层那边还在跑,
      * 而它的结果没人收 —— 事件队列会一直堆着。
      */
-    suspend fun callJson(
+    override suspend fun callJson(
         command: String,
-        args: JsonObject? = null,
-        onPartial: ((JsonElement) -> Unit)? = null,
+        args: JsonObject?,
+        onPartial: ((JsonElement) -> Unit)?,
     ): JsonElement = suspendCancellableCoroutine { cont ->
         val s = seq.incrementAndGet()
         pending[s] = cont
@@ -150,7 +150,7 @@ class CoreClient private constructor() : LinPlayerCommands {
         }
     }
 
-    fun setSurface(surface: Surface?, w: Int, h: Int): Int = Native.setSurface(surface, w, h)
+    override fun setSurface(surface: Surface?, w: Int, h: Int): Int = Native.setSurface(surface, w, h)
 
     fun shutdown() {
         stop = true

@@ -13,8 +13,8 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import xyz.linplayer.app.core.CoreClient
 import xyz.linplayer.app.core.CoreException
+import xyz.linplayer.app.core.CorePort
 
 /**
  * 全局状态:会话 / 能力集 / 图片地址 / 失效广播。
@@ -23,7 +23,7 @@ import xyz.linplayer.app.core.CoreException
  *   再养一份缓存等于把失效时机在 UI 抄一遍,抄错还不报错。
  *   这里只把事件转成一条 Flow,页面订阅了就重取。
  */
-class AppState(val core: CoreClient, scope: CoroutineScope) {
+class AppState(val core: CorePort, scope: CoroutineScope) {
 
     /**
      * 收尾用的作用域。**寿命跟进程,不跟 composition。**

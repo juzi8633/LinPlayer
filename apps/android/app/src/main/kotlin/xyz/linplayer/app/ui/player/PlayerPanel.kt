@@ -386,7 +386,7 @@ private fun DanmakuPanel(
 }
 
 /** 弹幕开关。开的时候顺手匹配一次并灌进渲染层。 */
-private suspend fun toggleDanmaku(
+internal suspend fun toggleDanmaku(
     app: xyz.linplayer.app.data.AppState, itemId: String, on: Boolean,
 ) {
     DanmakuStyle.enabled.value = on
@@ -537,7 +537,7 @@ private const val EXO_TRACK_OFF = "lp:off"
  * ★ 字幕多给一项「关闭字幕」:没有它的话字幕一旦打开就再也关不掉。
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-private fun exoTracks(
+internal fun exoTracks(
     exo: androidx.media3.exoplayer.ExoPlayer, kind: String,
 ): List<Triple<String, String?, String>> {
     val want = if (kind == "audio") androidx.media3.common.C.TRACK_TYPE_AUDIO
@@ -563,7 +563,7 @@ private fun exoTracks(
 }
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-private fun exoCurrent(exo: androidx.media3.exoplayer.ExoPlayer, kind: String): String? {
+internal fun exoCurrent(exo: androidx.media3.exoplayer.ExoPlayer, kind: String): String? {
     val want = if (kind == "audio") androidx.media3.common.C.TRACK_TYPE_AUDIO
     else androidx.media3.common.C.TRACK_TYPE_TEXT
     exo.currentTracks.groups.forEachIndexed { gi, g ->
@@ -580,7 +580,7 @@ private fun exoCurrent(exo: androidx.media3.exoplayer.ExoPlayer, kind: String): 
  * libass 手里那条 track 还在,画面上的特效字幕纹丝不动。
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-private fun exoPick(exo: androidx.media3.exoplayer.ExoPlayer, kind: String, id: String) {
+internal fun exoPick(exo: androidx.media3.exoplayer.ExoPlayer, kind: String, id: String) {
     val text = androidx.media3.common.C.TRACK_TYPE_TEXT
     if (id == EXO_TRACK_OFF) {
         Libass.deactivate()

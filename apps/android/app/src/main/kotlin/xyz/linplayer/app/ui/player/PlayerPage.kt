@@ -1010,7 +1010,7 @@ private fun Modifier.basicMarqueeCompat(): Modifier =
  *
  * ★ 取不到就说取不到,**不编**。
  */
-private suspend fun failureDiag(app: xyz.linplayer.app.data.AppState): String {
+internal suspend fun failureDiag(app: xyz.linplayer.app.data.AppState): String {
     val d = runCatching { app.call("player.opts") }.getOrNull().obj()
         ?: return "播放器没给出原因(诊断也没读到)。"
     val vo = d.str("current-vo").orEmpty().ifBlank { d.str("vo").orEmpty() }
@@ -1040,7 +1040,7 @@ private suspend fun failureDiag(app: xyz.linplayer.app.data.AppState): String {
  *   默认轨优先,没有默认就取第一份。
  * ★ UA 走 `LinPlayer/<版本>`(UA 三分口径)。地址里已经带着鉴权,不另附凭据。
  */
-private suspend fun loadExternalAss(
+internal suspend fun loadExternalAss(
     app: xyz.linplayer.app.data.AppState,
     subs: kotlinx.serialization.json.JsonElement?,
 ) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -1072,7 +1072,7 @@ private suspend fun loadExternalAss(
  * ★ 放在 IO 上跑,**不等它**:一次 Range 往返几百毫秒起,挡在起播前面就是
  *   每一集都多等半秒,而它失败的代价只是字形回落。
  */
-private suspend fun loadEmbeddedFonts(url: String) =
+internal suspend fun loadEmbeddedFonts(url: String) =
     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         if (!Libass.available) return@withContext
         val ua = "LinPlayer/" + xyz.linplayer.app.BuildConfig.VERSION_NAME

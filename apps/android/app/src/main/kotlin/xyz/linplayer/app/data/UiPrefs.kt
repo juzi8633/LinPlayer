@@ -68,6 +68,27 @@ object UiPrefs {
      */
     val longShot = mutableStateOf(false)
 
+    /*
+     * TV 播放手感(UI_TV.md §7.13「播放」分类后四项)。核心层没有消费点:
+     * 快进步长、长按倍速、自动下一集都是遥控器这一侧的行为;选集栏视图是纯呈现(§7.6「持久化在本机」)。
+     */
+    val tvSeekStep = mutableStateOf(10)
+    val tvHoldSpeed = mutableStateOf(3.0)
+    val tvAutoNext = mutableStateOf(true)
+    /** `compact` / `detail`。 */
+    val tvEpisodeView = mutableStateOf("compact")
+
+    fun setTv(ctx: Context, key: String, v: Any) {
+        val e = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+        when (key) {
+            "tv_seek_step" -> { tvSeekStep.value = v as Int; e.putInt(key, v) }
+            "tv_hold_speed" -> { tvHoldSpeed.value = v as Double; e.putFloat(key, v.toFloat()) }
+            "tv_auto_next" -> { tvAutoNext.value = v as Boolean; e.putBoolean(key, v) }
+            "tv_episode_view" -> { tvEpisodeView.value = v as String; e.putString(key, v) }
+        }
+        e.apply()
+    }
+
     fun load(ctx: Context) {
         val sp = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         theme.value = sp.getString(K_THEME, "system") ?: "system"
@@ -78,6 +99,10 @@ object UiPrefs {
         shotTimePos.value = sp.getString(K_SHOT_TIME_POS, "br") ?: "br"
         shotLogoPos.value = sp.getString(K_SHOT_LOGO_POS, "tl") ?: "tl"
         longShot.value = sp.getBoolean(K_LONG_SHOT, false)
+        tvSeekStep.value = sp.getInt("tv_seek_step", 10)
+        tvHoldSpeed.value = sp.getFloat("tv_hold_speed", 3f).toDouble()
+        tvAutoNext.value = sp.getBoolean("tv_auto_next", true)
+        tvEpisodeView.value = sp.getString("tv_episode_view", "compact") ?: "compact"
     }
 
     fun setShotFlag(ctx: Context, key: String, v: Boolean) {
