@@ -61,7 +61,7 @@
 | **Windows** | 🟢 出得了绿色包;**SPEC 里在范围内的命令与页面全部落地**。CI 全链路已跑通(2026-09-04 首个 Go 栈预发布 `v1.1.0-build686`) |
 | **Linux** | 🔴 **一行没写,而且旧栈实现已删** —— 2026-09-04 之前还能靠 Tauri 版发包,现在没有任何可运行的 Linux 端 |
 | **Android(手机)** | 🟢 **2026-09-06 落地**:16 页 + 平台职责全套,`pack-android.sh` 出已签名 APK(arm64 34MB / x86_64 39MB),CI 有 `build-android` job。**「有画面」这一条只验到 EGL 那一步**(模拟器 EGL 有缺陷,见 `MOBILE_BLOCKERS.md` B5),要真机复验 |
-| **Android TV** | ⚪ 没做(U1.16 不在本轮范围) |
+| **Android TV** | 🟡 **2026-09-15 页面代码落地**:`UI_TV.md` 全部页面接真核心层,`pack-android.sh tv` 出已签名 `armeabi-v7a` 包(35MB);32 张真页面出图与草稿逐张对照、10 条按键焦点断言。**没上过真电视**,§11 里标【待真机】的条目等真机 |
 
 > ⚠️ Linux 的状态从 ⚪(没开始但有旧版顶着)变成 🔴(**没有任何可用实现**)。
 > 安卓手机端已于 2026-09-06 补回(TV 形态仍缺)。
@@ -1046,7 +1046,8 @@ Ani-RSS 管理台(同 C24b)。
 - [~] **C29** `core/net/localserve` —— 只有 `/img` 那条路由(见 B1.7)
   - ⚠️ 其余路由(逃生舱资源 `/plugin/<id>/*`、SMB 本地 Range 桥、companion 网页)
     都还没有 —— 它们各自等着 C44 / C13 / C30
-- [ ] **C30** `core/companion`
+- [x] **C30** `core/companion` —— 2026-09-15 落地(`f5e53bd0`):命令 `companion.start/status/setEnabled/setNowPlaying`,
+  事件 `companion.key/open/status`;手机页只放行 20 条命令的白名单,地址带随机令牌
 
 ### 4.5 播放器
 
@@ -1143,7 +1144,7 @@ Ani-RSS 管理台(同 C24b)。
 > 出包:`bash scripts/pack-android.sh`。
 
 - [x] **U1.1** 双形态分流(`UI_MODE_TYPE_TELEVISION`)
-  - 落在 `MainActivity.isTelevision()`;TV 分支是一个说清楚的空壳(U1.16 不在本轮)
+  - 落在 `MainActivity.isTelevision()`;TV 分支进 `tv.TvRoot`(U1.16)
 - [x] **U1.2** 首登闸口 / 添加服务器
   - **同一页两种版式**(`GatePage(embedded=)`),不是两套代码
   - ⚠️ `source.formSchema` **不存在**(SPEC 和 UI_PC 都写着它,PC 端也是硬编的)——
@@ -1182,9 +1183,14 @@ Ani-RSS 管理台(同 C24b)。
   - 排行榜取数失败**向上报错不吞成空表**;赞助地址来自 `system.afdianSponsorUrl`
 - [x] **U1.15** 设置页 —— 一级列表 + 二级页;改完即生效零保存按钮;失败回滚
 - [ ] **U1.16** TV 形态 —— 规格 [`UI_TV.md`](UI_TV.md),草稿 `apps/android/.../ui/drafts/tv/`(38 张,Roborazzi 出图)
-  - 2026-09-14:规格与草稿写完,**评审中,还没落页面代码**
-  - 判据:`UI_TV.md` §11 验收清单逐条过;字阶 A / B 在真电视上拍板之前不落页面代码
-  - 前置:`core/companion`(C30)· TV 只出 `armeabi-v7a` 包 · `android:banner` · 应用内更新按形态挑安装包 · `emby.listFavorites` 加排序参数(收藏页排序,`UI_TV.md` §7.8)
+  - 2026-09-14:规格与草稿写完,评审拍板完毕,**可以落页面代码**
+  - 判据:`UI_TV.md` §11 验收清单逐条过;标【待真机】的条目要在真电视上过一遍才算完
+  - 前置:`core/companion`(C30)· TV 只出 `armeabi-v7a` 包 · `android:banner` · 应用内更新按形态挑安装包 · `emby.listFavorites` 加排序参数(收藏页排序,`UI_TV.md` §7.8)—— **五项 2026-09-15 全部落地**
+  - 2026-09-15:页面代码落地(`apps/android/.../tv/`,草稿组件库挪进 `tv/kit`)。
+    验证:32 张真页面出图(`TvPageShots`)与草稿逐张拼图对照,剩下的文字差异逐条记在 `UI_TV.md` §11.3;
+    草稿组件库回归 45 张 44 张逐像素一致;焦点断言 10 条(`TvFocusTest`),每条反向注入真 bug 看过它红;
+    安卓单测 144 条全绿;`pack-android.sh` 出 arm64(36MB)与 `pack-android.sh tv` 出 armeabi-v7a(35MB),两包都验过签
+  - 仍欠:§11 里 `[ ]` / `[~]` 的条目要真电视;慢速跳转的「服务器不接受 Range」故障牌没做(核心层没有这个信号)
   - 2026-09-14 评审定下的 15 项已写回 `UI_TV.md`:字阶 B 档 / 琥珀 / 再按一次返回 / 长按=菜单 / Hero 只留详情 / 详细视图保留简介 / 放送表日期 chip / 收藏排序走核心层 / 导航轨收起只剩图标、展开盖在内容上 / 横向行焦点钉行首 / 剧详情默认目标集所在季 / 进度条先移游标再跳 / 播完 5 秒倒计时自动下一集 / 面板二级整体替换 / 设置里不支持的项不显示
 - [x] **U1.17** 开屏
   - 判据:图标边距在 drawable 内部(viewport 108,图形只占中间约 40%);

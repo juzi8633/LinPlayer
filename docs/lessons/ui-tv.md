@@ -337,6 +337,40 @@ Paparazzi 2.0.0-alpha05 只有描边没有放大,且默认把图缩到长边 100
 它自带「遥控器方向键直接移出输入框」(`TextFieldFocusModifier.android.kt:40-77`);
 新的 `BasicTextField(TextFieldState)` 没有这层拦截,↑↓ 被当成光标移到行首行尾吃掉。**失效条件**:Gboard for TV 真机验过之后补结论。
 
+### Compose 重写期:真页面落地(2026-09-15)
+
+**9. 手动推进时钟的 Compose 测试里,按键回调写的状态「不生效」。**
+症状:`performKeyInput` 之后 `onKey` 确实进来了、`ui.osd = true` 也写了,推进 250ms 界面纹丝不动,外层函数一次都没重组。
+原因:回调里写的是全局快照,要等 `GlobalSnapshotManager` 投递到主线程发 apply 通知;`mainClock.autoAdvance = false` 时这一步不会自己发生。
+解法:测试的按键 helper 里 `performKeyInput` 之后补一句 `Snapshot.sendApplyNotifications()`。真机上没有这个问题 —— **别为它去改页面代码**。
+
+**10. 「2 秒内再按一次」的时间闩初值不能是 0。**
+`SystemClock.uptimeMillis()` 从开机算起,Robolectric 里只有几百毫秒。初值 0 时 `now - armedAt < 2000` 第一下就成立 → 播放页第一次按返回直接退出。
+真电视开机后两秒内按返回的概率很小,但机顶盒冷启动直进播放(扫码遥控打开)是真路径。初值用 `Long.MIN_VALUE / 2`。
+
+**11. 焦点搜索先在「最近的焦点组」里找,找到了就不往外走。**
+首页行首按 ← 本该进导航轨,实际跳到了下面那行的行标题「电影 ›」:行标题左缩 8dp,按 Compose 的判定算「在左边」,
+它和卡片同在 LazyColumn 这个焦点组里,轨在组外面,于是轨永远轮不到。之前没暴露,是因为那行标题在屏幕外没组合出来 ——
+**改滚动方式会让潜伏的焦点 bug 现形**。解法:行的 `focusProperties { exit = { Left → 轨的 FocusRequester } }`,轨由外壳经 `LocalRailFocus` 提供。
+
+**12. BringIntoView 请求的是焦点节点的矩形,卡片的焦点节点只有封面。**
+「往下只保证焦点项完整露出」照做之后,封面下面的标题和副标题被切在屏幕下沿。
+纵向页的 `below` 要加上 `TvDim.captionH`(40dp)。反过来,首页要「整段露出」时让段自己用 `BringIntoViewRequester` 请求,
+多个嵌套请求里 foundation 取装得下视口的最大那个,Hero 整块请求 + 钉顶 spec 的滚动量被 0 夹住 = 第一段贴真顶。
+
+**13. Lazy 行里没组合出来的项没有 FocusRequester,显式跳转会静默落空。**
+版本行按 ↓ 指定落到「当前集」E8,E8 在第 8 格还没组合 → `requestFocus` 返回 false → 退回几何搜索落到 E1。
+目标项超出第一屏时先 `scrollToItem`(Lazy 会把前一项也画进左侧内边距,正好露一截)。
+
+**14. 组件库里「重定向进组焦点」会吃掉调用方指定的焦点。**
+导航轨加了 `onEnter` 拐回当前页那一项,草稿里「焦点在媒体库」的轨一起被拐回首页 —— 草稿回归图 38 逐像素抓到的,肉眼对照很容易当成没变。
+调用方显式给了焦点项时不拐。**组件库挪进正式包后,草稿的逐像素回归要一直留着跑**。
+
+**15. `getBoundsInRoot()` 是裁到屏幕里的,拿它断言「有没有滚出屏幕」永远是绿的。**
+Hero 被滚出去一大截时它报 `top = 0dp, bottom = 2.5dp` —— 只剩露在屏幕里的那一条。
+「Hero 上沿不许滚出屏幕」写成 `getBoundsInRoot().top >= 0` 的那一版,把修复代码删掉照样绿,是反向注入才抓到的。
+要量没裁过的位置用 `fetchSemanticsNode().positionInRoot`。
+
 ---
 
 ## 跨域交叉引用
