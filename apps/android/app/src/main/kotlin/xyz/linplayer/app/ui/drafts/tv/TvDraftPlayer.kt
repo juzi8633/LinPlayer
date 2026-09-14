@@ -1,5 +1,6 @@
 package xyz.linplayer.app.ui.drafts.tv
 
+import xyz.linplayer.app.tv.kit.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -80,6 +81,7 @@ private fun BoxScope.OsdBottom(playFocused: Boolean, barFocused: Boolean = false
             played = .6f, buffered = .72f, focused = barFocused, width = 864.dp,
             chapters = listOf(.06f, .31f, .55f, .93f), intro = 0f..0.06f,
             preview = preview, previewLabel = "41:30",
+            previewThumb = { Box(Modifier.fillMaxSize().background(swatch(17))) },
         )
         Spacer(Modifier.height(TvSp.x4))
         Row {

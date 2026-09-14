@@ -12,8 +12,8 @@ import org.robolectric.ParameterizedRobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import xyz.linplayer.app.ui.drafts.tv.TvDraftFrame
-import xyz.linplayer.app.ui.drafts.tv.TypeA
-import xyz.linplayer.app.ui.drafts.tv.TypeB
+import xyz.linplayer.app.tv.kit.TypeA
+import xyz.linplayer.app.tv.kit.TypeB
 import xyz.linplayer.app.ui.drafts.tv.tvDrafts
 
 /**

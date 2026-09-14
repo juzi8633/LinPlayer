@@ -1,4 +1,4 @@
-package xyz.linplayer.app.ui.drafts.tv
+package xyz.linplayer.app.tv.kit
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -91,17 +91,8 @@ object TvDim {
     val libW = 180.dp; val libH = 101.dp
     val versionW = 190.dp; val versionH = 106.dp
     val panelW = 230.dp; val panelMaxH = 486.dp
-}
-
-/** 草稿不连网:封面一律色块。同一个 seed 恒定同一个色。 */
-fun swatch(seed: Int): Brush {
-    val hues = listOf(
-        0xFF3B4A6B to 0xFF1C2233, 0xFF6B3B4A to 0xFF331C22, 0xFF3B6B4A to 0xFF1C3322,
-        0xFF6B5A3B to 0xFF33291C, 0xFF5A3B6B to 0xFF291C33, 0xFF3B6B6B to 0xFF1C3333,
-        0xFF6B6B3B to 0xFF33331C, 0xFF4A3B6B to 0xFF221C33,
-    )
-    val (a, b) = hues[seed.mod(hues.size)]
-    return Brush.linearGradient(listOf(Color(a), Color(b)))
+    /** 卡片封面下标题 + 副标题两行的高度。焦点落在封面上,往下「完整露出」要把这两行算进去。 */
+    val captionH = 40.dp
 }
 
 val tvType: TvType
