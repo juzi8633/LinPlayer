@@ -1262,6 +1262,9 @@ mpv 真的不再画为止;JNI 薄层**不许**把它扔到别的线程去做。
 | `org.jetbrains.kotlinx:kotlinx-serialization-json` | 1.11.0 | 命令 JSON + 类型安全路由 | — |
 | `io.coil-kt.coil3:coil-compose` | 3.6.2 | 图片(§4.4) | **androidx 没有 Compose 图片加载器** |
 | `io.coil-kt.coil3:coil-network-okhttp` | 3.6.2 | Coil 的网络引擎 | 同上 |
+| `androidx.tv:tv-material` | 1.1.0 | TV 形态(`UI_TV.md` §13.2) | ★ **不引 `tv-foundation`**:1.0.0 是 8.9KB 空壳,`TvLazyRow` 等早删了 |
+| `org.robolectric:robolectric` | 4.17(仅单测) | TV 草稿出图的底座 | — |
+| `io.github.takahirom.roborazzi` | 1.74.0(仅单测 + Gradle 插件) | 不起模拟器把 Compose 渲染成 PNG(`UI_TV.md` §14.3) | 三选一实测:Paparazzi 画不出焦点放大,Google 的 Compose Screenshot 插件焦点态完全出不来 |
 
 **被否掉的**(理由见 `research/VERSIONS_VERIFIED.md`):telephoto(本轮没有大图页)、
 Paging 3(分页在核心层)、Hilt / Koin(全局只有一个单例)、shimmer 库(25 行自己写)、

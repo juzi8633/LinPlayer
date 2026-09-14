@@ -7,7 +7,9 @@
 4. **输入 = 焦点框本身就是输入框**,包一层 div 的话 Android 输入法永远不升起。
 5. **TV 的交互密度不能照搬 PC**:鼠标点击代价与距离无关,遥控器代价 = 焦点格数。
 
-> 本文件共 **2** 条。每条都标了它的原记忆文件名与类型;正文按原样搬运,未做压缩或改写。
+> 本文件共 **3** 条。前两条标了原记忆文件名与类型,正文按原样搬运;第三条是 Compose 重写期新写的。
+> ⚠️ 前两条是 **WebView + 空间导航库** 那一代的经验,里面的补丁在 Compose 下不适用(`docs/go-migration/UI_TV.md` §12 有逐条对照),
+> 但其中的产品规则(焦点框即输入框、模式 ≠ 新页面、线路只在线路页……)仍然成立。
 
 ## 本页条目
 
@@ -293,6 +295,47 @@ capture 阶段拦键（库在 window 冒泡监听，capture 先到）+ `setFocus
 第一段贴到真顶；往下仍按焦点项底（段可能比整屏高，按段会翻过头）。
 
 相关：[TV 端 UI 选型](ui-tv.md)、[测试必须先红](methodology.md)
+
+---
+
+### Compose 重写期:草稿与出图(2026-09-14)
+
+**1. 旧稿的「px」是物理像素,换到 Compose 要除以 2,而且字号偏小。**
+旧 TV 运行时 `zoom = innerWidth / 1920`(`git show rust-final:ui/tv/app/focus.ts:174-182`),
+所以旧稿 1px = 1080p 面板上 1 个物理像素 = **0.5dp**(Android TV 画布恒为 960×540dp)。
+换算后正文 8.5~10.5sp、次要信息 7~8sp,比 tvOS(正文约 14.5dp)和 tv-material 默认(bodyMedium 14sp)小约 40%。
+当年否掉「标题 52 / 按钮 64」是在 PC 显示器上看 1:1 预览定的。**失效条件**:真电视上三米外看过 A / B 两档并拍板之后,这条改成结论。
+
+**2. Roborazzi 是三个 JVM 出图工具里唯一画得出 tv-material 焦点放大的。**
+同一行卡片请求焦点后逐像素量宽度:Roborazzi 392/438/392/392px(描边 + 1.1 放大都有);
+Paparazzi 2.0.0-alpha05 只有描边没有放大,且默认把图缩到长边 1000px;Google Compose Screenshot 0.0.1-alpha16 焦点态完全没有。
+接入三个坑:① Robolectric 4.17 在 SDK 36 + JDK 21 上直接报 `Failed to interact with raw FileDescriptor internals`,
+单测要加 `--add-exports=java.base/jdk.internal.access=ALL-UNNAMED`、`--add-opens=java.base/jdk.internal.access=ALL-UNNAMED`、`--add-opens=java.base/java.io=ALL-UNNAMED`;
+② 普通 `testDebugUnitTest` 不落盘,要带 `-Proborazzi.test.record=true`;
+③ **`@Config(application = Application::class)` 必须换成空的**:清单里的 `LinPlayerApp` 一起来就加载 libmpv,JVM 上没有 .so。
+中文字形在 Robolectric Native Graphics 下能正常渲染(实测)。
+
+**3. 截图里 Lazy 列表的滚动跟随和真电视不一样。**
+`LocalBringIntoViewSpec` 的默认值按 `FEATURE_LEANBACK` 分流:真电视上是「焦点项停在 30% 处」,手机和截图环境里不是
+(`foundation 1.12.0 BringIntoViewSpec.android.kt:37-49`)。**要什么滚动行为就显式提供**,否则草稿图和真机长得不一样。
+
+**4. Lazy 列表里的项,第一帧 `requestFocus` 静默失败。**
+表现是草稿图里「初始焦点没落上」,一个反白都没有;包 `runCatching` 的话连异常都看不到。
+解法:`LaunchedEffect` 里按帧重试(`withFrameNanos` 后 `requestFocus(FocusDirection.Enter)` 看返回值),最多 10 帧。
+
+**5. tv-material `Border` 的 `inset` 正值画在外面,负值画进里面。**
+写成 `inset = (-4).dp` 想让白框画在封面外,实际画进了封面里压住图。
+
+**6. 焦点和选中必须走两条通道,而且反白之后要补一个形状记号。**
+焦点 = 反白,选中 = 琥珀。chip 选中且聚焦时整块反白,「这是选中的那个」这件事就没了 —— 要在文字下留一道琥珀短横,聚焦时也保留。
+同理,反白行里的琥珀 / 绿 / 红状态字压在白底上对比度约 2:1,要让位给反色。
+
+**7. Lazy 容器一律裁剪到自己的边界。**
+网格第一行的放大 + 外描白框被切掉一截。解法是容器往两侧出血、再配同样大小的 `contentPadding`(草稿里的 `Modifier.bleed`)。
+
+**8. 输入框要用 `BasicTextField(value: String)` 旧重载。**
+它自带「遥控器方向键直接移出输入框」(`TextFieldFocusModifier.android.kt:40-77`);
+新的 `BasicTextField(TextFieldState)` 没有这层拦截,↑↓ 被当成光标移到行首行尾吃掉。**失效条件**:Gboard for TV 真机验过之后补结论。
 
 ---
 

@@ -4,6 +4,7 @@ plugins {
     id("com.android.application")
     kotlin("plugin.compose")
     kotlin("plugin.serialization")
+    id("io.github.takahirom.roborazzi")
 }
 
 // 版本号唯一权威是仓库根的 VERSION(docs/VERSIONING.md)。写死字面量害过三次:
@@ -127,6 +128,19 @@ android {
     }
 
     buildFeatures { compose = true; buildConfig = true }
+
+    testOptions.unitTests {
+        isIncludeAndroidResources = true
+        // ☠ 不加这三个参数,Robolectric 在 SDK 36 + JDK 21 上直接起不来
+        //   (Failed to interact with raw FileDescriptor internals),而 Roborazzi 的 README 里没写
+        all {
+            it.jvmArgs(
+                "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED",
+                "--add-opens=java.base/jdk.internal.access=ALL-UNNAMED",
+                "--add-opens=java.base/java.io=ALL-UNNAMED",
+            )
+        }
+    }
     lint { abortOnError = false }
 }
 
@@ -134,6 +148,7 @@ dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2026.08.00")
     implementation(composeBom)
     androidTestImplementation(composeBom)
+    testImplementation(composeBom)
 
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -170,7 +185,16 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-compose:3.6.2")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.6.2")
 
+    // TV 形态(UI_TV.md §13.2)。★ 不引 tv-foundation:1.0.0 是 8.9KB 的空壳,TvLazyRow 早删了
+    implementation("androidx.tv:tv-material:1.1.0")
+
     testImplementation("junit:junit:4.13.2")
+    // 出图:./gradlew :app:recordRoborazziDebug(普通 testDebugUnitTest 不落盘)
+    testImplementation("org.robolectric:robolectric:4.17")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.74.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.74.0")
+    testImplementation("androidx.test.ext:junit:1.3.0")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

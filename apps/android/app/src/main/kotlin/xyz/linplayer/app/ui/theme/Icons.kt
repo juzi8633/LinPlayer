@@ -91,4 +91,10 @@ object LpIcons {
     val sync = stroke("sync", "M4 10a8 8 0 0 1 13.7-4.4L20 8M20 4v4h-4M20 14a8 8 0 0 1-13.7 4.4L4 16M4 20v-4h4")
     val camera = stroke("camera", "M3.5 8.5a2 2 0 0 1 2-2h1.9l1.3-2h6.6l1.3 2h1.9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2zM15.4 12.5a3.4 3.4 0 1 1-6.8 0 3.4 3.4 0 0 1 6.8 0")
     val aspect = stroke("aspect", "M3.5 6.5h17v11h-17zM7 10v4M17 10v4")
+
+    // TV 形态加的四个(UI_TV.md §2.5)。同一个线性族,不开第二套
+    val skipPrev = icon("skipPrev", "M6.5 5.5v13" to false, "M18.5 5.5 9.5 12l9 6.5z" to true)
+    val skipNext = icon("skipNext", "M17.5 5.5v13" to false, "M5.5 5.5 14.5 12l-9 6.5z" to true)
+    val chapter = stroke("chapter", "M4 6h9M4 12h16M4 18h9M16.5 4v4M16.5 16v4")
+    val qr = stroke("qr", "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2.5v2.5H14zM17.5 17.5H20V20h-2.5zM14 20h1M20 14v1")
 }

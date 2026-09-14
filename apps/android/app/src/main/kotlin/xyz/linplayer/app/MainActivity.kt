@@ -74,7 +74,14 @@ class MainActivity : ComponentActivity() {
             LpTheme(darkOverride = when (xyz.linplayer.app.data.UiPrefs.theme.value) {
                 "dark" -> true; "light" -> false; else -> null
             }) {
-                if (isTelevision()) TvPlaceholder() else PhoneRoot(app)
+                // TV 草稿画廊:`am start ... -e lp_page 'tvdrafts:<n>'`。不连网,不看登录态,手机上也能打开
+                val tvDraft = SelfCheck.page?.takeIf { it.startsWith("tvdrafts") }
+                when {
+                    tvDraft != null -> xyz.linplayer.app.ui.drafts.tv.TvDraftGallery(
+                        tvDraft.substringAfter(":", "0").toIntOrNull() ?: 0)
+                    isTelevision() -> TvPlaceholder()
+                    else -> PhoneRoot(app)
+                }
             }
         }
 

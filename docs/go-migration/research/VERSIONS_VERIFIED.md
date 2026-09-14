@@ -41,6 +41,9 @@
 | window(折叠屏) | **1.5.1** | Google Maven |
 | profileinstaller | **1.4.1** | Google Maven |
 | coil3 | **3.6.2** | Maven Central |
+| tv-material | **1.1.0** | Google Maven(2026-09-14 实测;tv-foundation 1.0.0 是空壳,不引) |
+| robolectric(仅单测) | **4.17** | Maven Central(2026-09-14 实测;SDK 36 + JDK 21 要加三个 `--add-opens/--add-exports`) |
+| roborazzi(仅单测) | **1.74.0** | Maven Central + Gradle Plugin Portal(2026-09-14 实测) |
 | compileSdk | **37** | `androidx.core:core-ktx:1.19.0` 要求 compile against 37;本机 `platforms/android-37.0` 已装 |
 | targetSdk | **36** | 只提 compileSdk,不顺手把运行时行为也换掉 |
 | minSdk | **24** | NDK r28 起最低支持 21;24 与本机 `platforms/android-24` 对齐 |
