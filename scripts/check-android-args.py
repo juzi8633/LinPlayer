@@ -54,6 +54,8 @@ READ_PATTERNS = [
     re.compile(r'\b\w+\(\s*a(?:rgs)?\s*,\s*"([a-z_0-9]+)"'),
     # 嵌套一层的:intArg(sub(a,"settings"), "threads", …)
     re.compile(r'\b\w+\(\s*s\s*,\s*"([a-z_0-9]+)"'),
+    # `s := settingsOf(a)` 之后直接下标取:s["skip_intro"](player.setPlaybackPrefs 就是这么读的)
+    re.compile(r'\bs\["([a-z_0-9]+)"\]'),
 ]
 
 
@@ -77,11 +79,32 @@ def go_commands():
                     if fm:
                         nxt = src.find('\nfunc ', fm.end())
                         body += src[fm.end(): nxt if nxt > 0 else len(src)]
+                # `x := helper(a)` —— 参数在同包的 helper 里读(player.play 的 resumeArg)。跟过去一起读
+                for h in set(re.findall(r'\b(\w+)\(\s*a\s*\)', body)):
+                    for hsrc in pkg_sources(base):
+                        hm = re.search(r'\nfunc ' + re.escape(h) + r'\(\s*a\s+map\[string\]any', hsrc)
+                        if hm:
+                            nxt = hsrc.find('\nfunc ', hm.end())
+                            body += hsrc[hm.end(): nxt if nxt > 0 else len(hsrc)]
                 keys = set()
                 for p in READ_PATTERNS:
                     keys |= set(p.findall(body))
+                # `list(...)` 注册的 emby 命令一律先过 sessionFrom,它认 server_id(跨服查条目靠它)
+                if src[marks[i][0]:marks[i][0] + 5] == 'list(':
+                    keys.add('server_id')
                 out.setdefault(name, set()).update(keys)
     return out
+
+
+_PKG = {}
+
+
+def pkg_sources(d):
+    """同一个 Go 包目录里全部非测试源码。"""
+    if d not in _PKG:
+        _PKG[d] = [io.open(os.path.join(d, f), encoding='utf-8', errors='ignore').read()
+                   for f in os.listdir(d) if f.endswith('.go') and not f.endswith('_test.go')]
+    return _PKG[d]
 
 
 

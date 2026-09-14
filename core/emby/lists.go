@@ -112,14 +112,15 @@ type ItemQuery struct {
 	// `Studios=<名字>` 被完全无视 —— 返回全库 1673 条,头几条的工作室对不上;
 	// 换成 `StudioIds=49567` 精确命中 1 条。所以点工作室 chip 走的是这一条。
 	StudioIds []string `json:"studio_ids"`
-	Years      []int64  `json:"years"`
-	RatingMin  *float64 `json:"rating_min"`
-	RatingMax  *float64 `json:"rating_max"`
+	Years     []int64  `json:"years"`
+	RatingMin *float64 `json:"rating_min"`
+	RatingMax *float64 `json:"rating_max"`
+	Played    *bool    `json:"played"`
 }
 
 func (q *ItemQuery) needsLocalFilter() bool {
 	return len(q.Genres) > 0 || len(q.Tags) > 0 || len(q.Studios) > 0 ||
-		len(q.Years) > 0 || q.RatingMin != nil || q.RatingMax != nil
+		len(q.Years) > 0 || q.RatingMin != nil || q.RatingMax != nil || q.Played != nil
 }
 
 // anyFold 两串列表有没有交集(不分大小写)。空的要求列表当成「不筛」。
@@ -172,6 +173,9 @@ func (q *ItemQuery) matches(it Item) bool {
 		return false
 	}
 	if q.RatingMax != nil && (it.Rating == nil || *it.Rating > *q.RatingMax) {
+		return false
+	}
+	if q.Played != nil && it.Played != *q.Played {
 		return false
 	}
 	return true
@@ -233,6 +237,9 @@ func (c *Client) Items(ctx context.Context, s *Session, parentID string, q *Item
 	// Emby 只有下界参数(无 MaxCommunityRating),上界只能靠客户端复筛
 	if q.RatingMin != nil {
 		fmt.Fprintf(&b, "&MinCommunityRating=%v", *q.RatingMin)
+	}
+	if q.Played != nil {
+		fmt.Fprintf(&b, "&IsPlayed=%t", *q.Played)
 	}
 
 	page, err := c.fetchPage(ctx, s, b.String())

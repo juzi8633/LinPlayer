@@ -8,8 +8,10 @@ import (
 )
 
 // 真服实测(Emby 4.9.5,2026-09-12):
-//   Studios = [{"Name":"天津佐伊影业有限公司","Id":49567}]  ← Id 是**数字**
-//   Tags    = null(这台全库一条都没有)
+//
+//	Studios = [{"Name":"天津佐伊影业有限公司","Id":49567}]  ← Id 是**数字**
+//	Tags    = null(这台全库一条都没有)
+//
 // Jellyfin 那边 Id 是 GUID 字符串。声明成任何一种都会在另一家上解析失败,
 // 而失败的表现是**整个条目解析报错**,不是少一个字段。
 func Test工作室与标签的解析(t *testing.T) {
@@ -99,6 +101,34 @@ func Test按工作室id筛要发StudioIds(t *testing.T) {
 	}
 	if !contains2(seen, "StudioIds=49567%2C66089") && !contains2(seen, "StudioIds=49567,66089") {
 		t.Fatalf("没发 StudioIds,实际 query: %s", seen)
+	}
+}
+
+// TV 媒体库筛选面板的「状态 · 未看 / 已看」(UI_TV.md §7.3):发 IsPlayed,
+// 服务端无视这个参数时照样本地复筛 —— 和 Genres 那条老账同一个口径,宁可少给不能给错。
+func Test按已看状态筛(t *testing.T) {
+	seen := ""
+	body := `{"Items":[
+      {"Id":"看过","Type":"Movie","UserData":{"Played":true}},
+      {"Id":"没看","Type":"Movie","UserData":{"Played":false}}
+    ],"TotalRecordCount":2}`
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.URL.RawQuery
+		_, _ = w.Write([]byte(body))
+	}))
+	defer up.Close()
+	c := NewClient("test")
+	s := &Session{Server: up.URL, Token: "t", UserID: "u", DeviceID: "d"}
+	unplayed := false
+	page, err := c.Items(context.Background(), s, "lib", &ItemQuery{Played: &unplayed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains2(seen, "IsPlayed=false") {
+		t.Fatalf("没发 IsPlayed,实际 query: %s", seen)
+	}
+	if len(page.Items) != 1 || page.Items[0].ID != "没看" {
+		t.Fatalf("服务端无视 IsPlayed 时没复筛,得到 %+v", page.Items)
 	}
 }
 

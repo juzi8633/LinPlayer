@@ -143,7 +143,12 @@ func play(ctx context.Context, s *emby.Session, itemID string, resumeSecs float6
 	playURL := startPrefetch(ctx, s, target, prefs)
 
 	whCtx := <-histCh
-	if whCtx != nil {
+	// 负数 = 调用方明说从头放:服务端进度、跨服续播、看完回零这一整段都不许再改它
+	fromStart := resumeSecs < 0
+	if fromStart {
+		resumeSecs = 0
+	}
+	if whCtx != nil && !fromStart {
 		/* ☠ **调用方没给续播位置就自己去拿**,不要默认成 0。
 		   服务器上的进度本来就在 `candidate.PositionTicks` 里(取判据那一趟顺手带回来的),
 		   而「让每个调用方各自传一份」的写法漏一处就是**那一端整个不续播、从头放**,
@@ -288,6 +293,16 @@ func startPrefetch(ctx context.Context, s *emby.Session, target *emby.PlaybackTa
 //
 // caller <= 0 的含义统一为「我不知道,你来定」,这时用服务器给的进度。
 // 调用方给了就听它的 —— 桌面端是从详情页那一份数据里读的,和服务器同源。
+// resumeArg 读起播位置参数。`from_start=true` 返回负数哨兵:resume_secs=0 的含义是
+// 「我不知道,你来定」,只靠它表达不了「从头」—— 会被服务端进度顶回续播,两边都不报错。
+func resumeArg(a map[string]any) float64 {
+	if b, _ := a["from_start"].(bool); b {
+		return -1
+	}
+	v, _ := a["resume_secs"].(float64)
+	return v
+}
+
 func resumeFor(caller float64, serverTicks int64) float64 {
 	if caller > 0 || serverTicks <= 0 {
 		return caller

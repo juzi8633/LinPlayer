@@ -34,7 +34,7 @@ func registerTransport() {
 		if err != nil {
 			return nil, err
 		}
-		resume, _ := a["resume_secs"].(float64)
+		resume := resumeArg(a)
 		msid, _ := a["media_source_id"].(string)
 		/* engine:交给谁去解码渲染。空 / "mpv" = 核心层里的 libmpv(所有平台的默认);
 		   "exo" = **调用方自己播**(安卓的 ExoPlayer),核心层只把地址和续播位置算好。
