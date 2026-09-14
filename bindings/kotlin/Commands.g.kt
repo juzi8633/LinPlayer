@@ -274,6 +274,10 @@ object LinPlayerCommandNames {
         "system.pickLocalFolder",
         "system.ping",
         "system.updateProgress",
+        "companion.start",
+        "companion.status",
+        "companion.setEnabled",
+        "companion.setNowPlaying",
     )
 }
 
@@ -788,3 +792,13 @@ suspend fun LinPlayerCommands.systemPing(args: Map<String, Any?>? = null): JsonE
     call("system.ping", args)
 suspend fun LinPlayerCommands.systemUpdateProgress(args: Map<String, Any?>? = null): JsonElement =
     call("system.updateProgress", args)
+
+// ---- 手机扫码遥控(电视端) · companion.* (4 条) ----
+suspend fun LinPlayerCommands.companionStart(args: Map<String, Any?>? = null): JsonElement =
+    call("companion.start", args)
+suspend fun LinPlayerCommands.companionStatus(args: Map<String, Any?>? = null): JsonElement =
+    call("companion.status", args)
+suspend fun LinPlayerCommands.companionSetEnabled(args: Map<String, Any?>? = null): JsonElement =
+    call("companion.setEnabled", args)
+suspend fun LinPlayerCommands.companionSetNowPlaying(args: Map<String, Any?>? = null): JsonElement =
+    call("companion.setNowPlaying", args)

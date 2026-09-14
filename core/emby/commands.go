@@ -101,8 +101,13 @@ func RegisterCommands(version string) {
 		if err != nil {
 			return nil, err
 		}
-		// 排序在这儿做:服务端那条路对某些 fork 是死的,见 [Client.Favorites]
-		SortFavorites(v, str(a, "sort"))
+		// 排序在这儿做:服务端那条路对某些 fork 是死的,见 [Client.Favorites]。
+		// sort_by 是 TV 的口径(带方向),sort 是手机的中文档位 —— 两端各传各的
+		if by := str(a, "sort_by"); by != "" {
+			SortFavoritesBy(v, by, str(a, "sort_order"))
+		} else {
+			SortFavorites(v, str(a, "sort"))
+		}
 		return v, nil
 	})
 	list("emby.listCollections", func(ctx context.Context, s *Session, a map[string]any) (any, error) {

@@ -284,6 +284,10 @@ public static class LinPlayerCommandNames
         "system.pickLocalFolder",
         "system.ping",
         "system.updateProgress",
+        "companion.start",
+        "companion.status",
+        "companion.setEnabled",
+        "companion.setNowPlaying",
     ];
 }
 
@@ -800,4 +804,14 @@ public static class LinPlayerCommandsExtensions
         => c.CallAsync("system.ping", args, ct);
     public static Task<JsonElement> SystemUpdateProgress(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("system.updateProgress", args, ct);
+
+    // ---- 手机扫码遥控(电视端) · companion.* (4 条) ----
+    public static Task<JsonElement> CompanionStart(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("companion.start", args, ct);
+    public static Task<JsonElement> CompanionStatus(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("companion.status", args, ct);
+    public static Task<JsonElement> CompanionSetEnabled(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("companion.setEnabled", args, ct);
+    public static Task<JsonElement> CompanionSetNowPlaying(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("companion.setNowPlaying", args, ct);
 }

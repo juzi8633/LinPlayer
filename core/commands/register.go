@@ -16,6 +16,7 @@ package commands
 import (
 	"linplayer/core/account"
 	"linplayer/core/aggregate"
+	"linplayer/core/companion"
 	"linplayer/core/danmaku"
 	"linplayer/core/download"
 	"linplayer/core/emby"
@@ -49,4 +50,5 @@ func RegisterAll(version string) {
 	danmaku.RegisterCommands()
 	plugincmd.RegisterCommands(version)
 	translate.RegisterCommands()
+	companion.RegisterCommands()
 }

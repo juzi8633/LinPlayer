@@ -366,6 +366,39 @@ func SortFavorites(items []Item, by string) {
 	sort.SliceStable(items, func(x, y int) bool { return less(&items[x], &items[y]) })
 }
 
+// SortFavoritesBy TV 收藏页的排序(UI_TV.md §7.8):by ∈ favorited / name / updated / rating,
+// order ∈ asc / desc(空 = 名称升序、其余降序)。favorited = 服务端原序,不动也不反转。
+//
+// ☠ 升序不能写成「降序整体反转」:没值的条目会翻到最前面。缺值判定和方向是两件事。
+func SortFavoritesBy(items []Item, by, order string) {
+	var has func(*Item) bool
+	var less func(a, b *Item) bool // 升序口径
+	switch by {
+	case "name":
+		has = func(it *Item) bool { return sortKey(it) != "" }
+		less = func(a, b *Item) bool { return sortKey(a) < sortKey(b) }
+	case "updated":
+		has = func(it *Item) bool { return sv(it.DateUpdated) != "" }
+		less = func(a, b *Item) bool { return sv(a.DateUpdated) < sv(b.DateUpdated) }
+	case "rating":
+		has = func(it *Item) bool { return it.Rating != nil }
+		less = func(a, b *Item) bool { return *a.Rating < *b.Rating }
+	default:
+		return
+	}
+	desc := order == "desc" || (order == "" && by != "name")
+	sort.SliceStable(items, func(x, y int) bool {
+		a, b := &items[x], &items[y]
+		if ha, hb := has(a), has(b); ha != hb || !ha {
+			return ha && !hb
+		}
+		if desc {
+			return less(b, a)
+		}
+		return less(a, b)
+	})
+}
+
 // sortKey 名称排序的判据:优先服务端给的 SortName(「The Matrix」在 M 上而不是 T)。
 func sortKey(it *Item) string {
 	if s := sv(it.SortName); s != "" {

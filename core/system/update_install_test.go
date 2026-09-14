@@ -145,10 +145,17 @@ func TestPickAsset安卓认的是APK(t *testing.T) {
 	if i < 0 || names[i] != "app-arm64-v8a-release.apk" {
 		t.Fatalf("安卓挑到了 %d(%v)", i, names)
 	}
-	// 只有别的 ABI 时退回任意 APK,总好过把用户丢去网页
-	only := []string{"app-x86_64-release.apk"}
-	if pickAsset(only, [][]string{{".apk", "arm64"}, {".apk"}}) != 0 {
-		t.Fatal("没有本机 ABI 时没退回任意 APK")
+	// 形态就是包:32 位进程 = TV 包,只认 TV 包;手机只认 arm64。**不许跨 ABI 退回**
+	both := []string{"app-arm64-v8a-release.apk", "app-tv-armeabi-v7a-release.apk"}
+	if i := pickAsset(both, assetKeywordSetsFor("android", "arm")); i != 1 {
+		t.Fatalf("TV(32 位)挑到了 %d:%v", i, both)
+	}
+	if i := pickAsset(both, assetKeywordSetsFor("android", "arm64")); i != 0 {
+		t.Fatalf("手机挑到了 %d:%v", i, both)
+	}
+	// 发布里漏了 TV 包:32 位盒子必须挑不到,而不是下一个装不上的手机包
+	if i := pickAsset(both[:1], assetKeywordSetsFor("android", "arm")); i != -1 {
+		t.Fatalf("没有 TV 包时 32 位挑到了手机包(%d)", i)
 	}
 	// 一个都不认就必须是 -1,让界面引导去网页,而不是随手拿第一个
 	if pickAsset([]string{"SHA256SUMS"}, [][]string{{".apk"}}) != -1 {

@@ -149,21 +149,27 @@ func PickNewestRelease(list []release) *release {
 //
 // ☠ 安卓原先落在 else 分支上吃 `linux` 这个关键词 —— APK 名里没有这三个字母,
 // 于是 GOOS=android 时**永远挑不出资产**,更新只能跳网页。
-// 两组是为了多 ABI:先按本机 ABI 认,认不到再退回任意 APK
-// (现在 CI 只出 arm64 一个,但认错 ABI 的表现是「装到最后一步报解析失败」)。
-func assetKeywordSets() [][]string {
-	switch runtime.GOOS {
+// ☠ **安卓不许退回「任意 APK」。** 形态就是包:TV 只出 32 位包(UI_TV.md §0.3),
+// 手机只出 arm64 —— 本进程是 32 位就说明装的是 TV 包。退回任意 APK 的话,
+// 32 位电视盒子会下到手机包,装到最后一步只报「安装包无效」。挑不到就引导去网页。
+func assetKeywordSets() [][]string { return assetKeywordSetsFor(runtime.GOOS, runtime.GOARCH) }
+
+func assetKeywordSetsFor(goos, goarch string) [][]string {
+	switch goos {
 	case "windows":
 		return [][]string{{"windows", ".zip"}}
 	case "android":
-		return [][]string{{".apk", androidABI()}, {".apk"}}
+		if goarch == "arm" {
+			return [][]string{{".apk", "-tv-", androidABI(goarch)}}
+		}
+		return [][]string{{".apk", androidABI(goarch)}}
 	}
 	return [][]string{{"linux"}}
 }
 
 // androidABI GOARCH → APK 名里的 ABI 串(pack-android.sh 的产物名带它)。
-func androidABI() string {
-	switch runtime.GOARCH {
+func androidABI(goarch string) string {
+	switch goarch {
 	case "arm64":
 		return "arm64"
 	case "arm":

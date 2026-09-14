@@ -52,7 +52,8 @@
 | 字幕翻译 / Whisper(桌面独占) | `translate.*` | 9 | 0 |
 | 设置与偏好 | `prefs.*` | 28 | 20 |
 | 系统 | `system.*` | 15 | 6 |
-| **合计** | | **219** | **181** |
+| 手机扫码遥控(电视端) | `companion.*` | 4 | 0 |
+| **合计** | | **223** | **181** |
 
 ### Emby 浏览与详情 · `emby.*` — 42 条
 
@@ -353,4 +354,13 @@
 | [x] | `system.pickLocalFolder` | `pick_local_folder` | `—` | `Result<Option<String>, String>` | ❌ |
 | [x] | `system.ping` | **新增** | `-` | `{ pong: true, ... }` | — | <!-- 核心层活着吗。契约测试的第一条 -->
 | [x] | `system.updateProgress` | **新增** | `-` | `Result<system::UpdateProgress, String>` | ✅ | <!-- 轮询下载进度 -->
+
+### 手机扫码遥控(电视端) · `companion.*` — 4 条
+
+| 移植 | 新命令名 | 现有名 | 参数 | 返回 | 安卓已注册 |
+|:--:|---|---|---|---|:--:|
+| [x] | `companion.start` | **新增** | `—` | `{enabled, running, url, port, error, ip_error, connected}` | — | <!-- 开关为开且没在跑就起局域网监听;幂等。电视端开机调一次,手机形态不调(UI_TV §9.3) -->
+| [x] | `companion.status` | **新增** | `—` | `{enabled, running, url, port, error, ip_error, connected}` | — | <!-- url 拿不到 IP 时为空串;error 是起服失败原话;connected = 15 秒内收到过手机页请求 -->
+| [x] | `companion.setEnabled` | **新增** | `enabled: bool` | `{enabled, running, url, port, error, ip_error, connected}` | — | <!-- 持久化 companion_enabled;关=停监听,开=换新 token 起 -->
+| [x] | `companion.setNowPlaying` | **新增** | `title: String` | `{title}` | — | <!-- 播放页起播/离页时报片名,空串=清空。事件:companion.key{key} / companion.open{item_id,type,server_id} / companion.status / account.status{} -->
 <!-- END GENERATED -->

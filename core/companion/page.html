@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#0f1216">
+<title>LinPlayer 遥控</title>
+<style>
+/* 不引任何外部资源:局域网里可能没有外网,CDN 一挂这页就是白的 */
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{background:#0f1216;color:#e8eaed;font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  display:flex;flex-direction:column;overscroll-behavior:none;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left)}
+header{padding:14px 18px 10px;display:flex;align-items:center;gap:10px}
+header .t{font-size:17px;font-weight:650}
+header .s{margin-left:auto;font-size:13px;color:#7d8792}
+main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 18px 26px}
+.pane{display:none}.pane.on{display:block}
+h2{font-size:14px;color:#8b949e;font-weight:600;margin:26px 0 10px}
+h2:first-child{margin-top:6px}
+nav{display:flex;background:#141920;border-top:1px solid #232a33;padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;background:none;border:0;color:#7d8792;font:inherit;font-size:12px;padding:10px 0 6px;
+  display:flex;flex-direction:column;align-items:center;gap:2px}
+nav button.on{color:#5b9dff}
+svg{stroke:currentColor;fill:none;stroke-linecap:round;stroke-linejoin:round}
+nav svg{width:22px;height:22px;stroke-width:1.8}
+/* 遥控盘 */
+.dpad{width:min(78vw,300px);aspect-ratio:1;margin:10px auto 0;position:relative;border-radius:999px;
+  background:#171d25;border:1px solid #262e39;touch-action:none}
+.dpad button{position:absolute;background:none;border:0;color:#c7ced6;padding:0;display:flex;
+  align-items:center;justify-content:center;touch-action:none;user-select:none;-webkit-user-select:none}
+.dpad .u,.dpad .d{left:28%;width:44%;height:30%}.dpad .u{top:0}.dpad .d{bottom:0}
+.dpad .l,.dpad .r{top:28%;height:44%;width:30%}.dpad .l{left:0}.dpad .r{right:0}
+.dpad .ok{left:29%;top:29%;width:42%;height:42%;border-radius:999px;background:#5b9dff;color:#fff;font-size:19px;font-weight:650}
+.dpad button:active{opacity:.55}
+.dpad svg{width:30px;height:30px;stroke-width:2.2}
+.rowbtn{display:flex;gap:10px;margin-top:18px}
+.rowbtn button{flex:1;height:52px;border-radius:10px;border:1px solid #2b333d;background:#171d25;color:#e8eaed;
+  font:inherit;font-size:15px;touch-action:none;user-select:none;-webkit-user-select:none}
+.rowbtn button:active{background:#20272f}
+/* 通用控件 */
+label{display:block;margin:0 0 6px;color:#8b949e;font-size:13px}
+input,select{width:100%;height:46px;padding:0 14px;margin:0 0 14px;border-radius:6px;border:1px solid #2b333d;
+  background:#171d25;color:#e8eaed;font:inherit;font-size:16px}
+textarea{width:100%;min-height:120px;padding:10px 14px;margin:0 0 14px;border-radius:6px;resize:vertical;
+  border:1px solid #2b333d;background:#171d25;color:#e8eaed;font:inherit;font-size:15px;line-height:1.5}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#5b9dff}
+button.pri{width:100%;height:50px;border:0;border-radius:10px;background:#5b9dff;color:#fff;font:inherit;font-size:16px;font-weight:600}
+button.pri:disabled{opacity:.5}
+.card{background:#171d25;border:1px solid #232a33;border-radius:10px;padding:14px;margin-bottom:10px}
+.row{display:flex;align-items:center;gap:10px;padding:14px;background:#171d25;border:1px solid #232a33;
+  border-radius:10px;margin-bottom:10px}
+.row .g{flex:1;min-width:0}
+.row .n{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .m{font-size:12px;color:#7d8792;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row button{border:0;background:#242c36;color:#c7ced6;font:inherit;font-size:13px;padding:6px 14px;border-radius:6px;flex:none}
+.row button.danger{background:#3a2226;color:#ff8b8b}
+.tag{font-size:11px;padding:2px 6px;border-radius:6px;background:#1d3557;color:#8bb8ff;margin-left:6px}
+.grp{font-size:13px;color:#8b949e;margin:18px 0 6px}
+.hint{color:#7d8792;font-size:13px;margin:10px 0 14px}
+.err{color:#ff8b8b;font-size:14px;margin:10px 0}
+#toast{position:fixed;left:50%;bottom:84px;transform:translateX(-50%);background:#242c36;color:#e8eaed;
+  padding:10px 18px;border-radius:10px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;
+  max-width:88vw;text-align:center;z-index:9}
+#toast.on{opacity:1}
+/* 正在播放 */
+.np .ti{font-size:18px;font-weight:650;margin-bottom:2px}
+.np .su{font-size:13px;color:#8b949e}
+.bar{height:6px;border-radius:999px;background:#2b333d;margin:14px 0 6px;overflow:hidden}
+.bar i{display:block;height:100%;background:#5b9dff;width:0}
+.tm{display:flex;justify-content:space-between;font-size:12px;color:#7d8792;font-variant-numeric:tabular-nums}
+.pc{display:flex;gap:6px;margin-top:14px}
+.pc button{flex:1;height:56px;border-radius:10px;border:1px solid #2b333d;background:#171d25;color:#e8eaed;
+  font:inherit;font-size:13px;padding:0}
+.pc button.main{background:#5b9dff;border-color:#5b9dff;color:#fff;font-size:15px;font-weight:600}
+.pc button:active{opacity:.6}
+</style>
+</head>
+<body>
+<header>
+  <div class="t">LinPlayer 遥控</div>
+  <div class="s" id="conn">连接中…</div>
+</header>
+
+<main>
+  <!-- 遥控 -->
+  <section class="pane on" id="p-remote">
+    <div class="dpad">
+      <button class="u" data-k="up"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
+      <button class="l" data-k="left"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+      <button class="ok" data-k="ok">OK</button>
+      <button class="r" data-k="right"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+      <button class="d" data-k="down"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+    </div>
+    <div class="rowbtn">
+      <button data-k="back">返回</button>
+      <button data-k="home">首页</button>
+      <button data-k="menu">菜单</button>
+    </div>
+    <div class="hint">按住方向键会连按。电视上在放东西时,去「播放」页控制进度。</div>
+  </section>
+
+  <!-- 播放 -->
+  <section class="pane" id="p-play">
+    <div class="np card">
+      <div class="ti" id="np-title">现在没有在播放</div>
+      <div class="su" id="np-sub">在电视上或用「搜索」挑一部片</div>
+      <div class="bar"><i id="np-bar"></i></div>
+      <div class="tm"><span id="np-pos">0:00</span><span id="np-dur">0:00</span></div>
+    </div>
+    <div class="pc">
+      <button data-seek="-600">-10分</button>
+      <button data-seek="-30">-30秒</button>
+      <button class="main" id="btn-pause">暂停</button>
+      <button data-seek="30">+30秒</button>
+      <button data-seek="600">+10分</button>
+    </div>
+    <div class="rowbtn"><button id="btn-stop">停止播放</button></div>
+  </section>
+
+  <!-- 搜索 -->
+  <section class="pane" id="p-search">
+    <label>搜全部服务器,点「打开」电视直接进详情</label>
+    <input id="q" placeholder="片名" autocapitalize="off" autocomplete="off" enterkeyhint="search">
+    <div id="sres"></div>
+  </section>
+
+  <!-- 服务器 -->
+  <section class="pane" id="p-servers">
+    <h2>已添加</h2>
+    <div id="accs"></div>
+
+    <h2>添加 Emby 服务器</h2>
+    <label>服务器地址</label>
+    <input id="a-server" placeholder="https://" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false">
+    <label>用户名</label>
+    <input id="a-user" autocapitalize="off" autocomplete="off">
+    <label>密码</label>
+    <input id="a-pass" type="password" autocomplete="off">
+    <button class="pri" id="a-go">添加并登录</button>
+    <div class="err" id="a-err"></div>
+
+    <h2>批量添加</h2>
+    <label>把分享文本整段粘进来(可以带多台、多条线路)</label>
+    <textarea id="b-text" autocapitalize="off" spellcheck="false"></textarea>
+    <label>文本里没写用户名时用这个(可留空)</label>
+    <input id="b-user" autocapitalize="off" autocomplete="off">
+    <label>文本里没写密码时用这个(可留空)</label>
+    <input id="b-pass" type="password" autocomplete="off">
+    <button class="pri" id="b-parse">解析</button>
+    <div id="b-preview"></div>
+    <div class="err" id="b-err"></div>
+  </section>
+
+  <!-- 设置 -->
+  <section class="pane" id="p-settings">
+    <h2>字幕与音轨</h2>
+    <label>音轨语言</label><select id="s-alang"></select>
+    <label>字幕语言</label><select id="s-slang"></select>
+    <label>默认开字幕</label>
+    <select id="s-sub"><option value="1">开</option><option value="0">关</option></select>
+    <button class="pri" id="s-save-prefs">保存</button>
+
+    <h2>网络代理</h2>
+    <label>类型</label>
+    <select id="s-ptype">
+      <option value="none">不使用</option><option value="http">HTTP</option><option value="https">HTTPS</option>
+      <option value="socks5">SOCKS5</option><option value="socks4">SOCKS4</option>
+    </select>
+    <label>主机</label><input id="s-phost" autocapitalize="off" autocomplete="off" spellcheck="false">
+    <label>端口</label><input id="s-pport" inputmode="numeric">
+    <button class="pri" id="s-save-proxy">保存代理</button>
+
+    <h2>存储</h2>
+    <div class="row"><div class="g"><div class="n">缓存占用</div><div class="m" id="s-cache">统计中…</div></div>
+      <button id="s-clear">清空</button></div>
+
+    <h2>Bangumi</h2>
+    <div class="hint" id="s-bgm">读取中…</div>
+    <label>Bangumi 个人访问令牌</label>
+    <input id="s-bgm-token" autocapitalize="off" autocomplete="off" spellcheck="false">
+    <button class="pri" id="s-bgm-go">连接 Bangumi</button>
+
+    <h2>弹幕屏蔽词</h2>
+    <label>一行一个</label>
+    <textarea id="s-words" autocapitalize="off" spellcheck="false"></textarea>
+    <button class="pri" id="s-save-words">保存屏蔽词</button>
+  </section>
+</main>
+
+<nav>
+  <button class="on" data-p="remote"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="3"/><circle cx="12" cy="8" r="1.6"/><path d="M10 14h4M10 17.5h4"/></svg>遥控</button>
+  <button data-p="play"><svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg>播放</button>
+  <button data-p="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>搜索</button>
+  <button data-p="servers"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/></svg>服务器</button>
+  <button data-p="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>设置</button>
+</nav>
+
+<div id="toast"></div>
+
+<script>
+/* 接口一律 POST <本页地址>/api/<名字>。地址取自 location.pathname:里面带着一次性 token */
+const BASE = location.pathname.replace(/\/$/, "");
+async function api(name, body) {
+  const r = await fetch(BASE + "/api/" + name, { method: "POST", body: JSON.stringify(body || {}) });
+  let j;
+  try { j = await r.json(); } catch { throw new Error("电视没响应(HTTP " + r.status + ")"); }
+  if (j.error) throw new Error(j.error);
+  return j.data;
+}
+const $ = (id) => document.getElementById(id);
+let toastTimer;
+function toast(m) {
+  const t = $("toast");
+  t.textContent = m; t.classList.add("on");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("on"), 2200);
+}
+const fail = (e) => toast(String(e.message || e));
+const fmt = (s) => {
+  s = Math.max(0, Math.floor(s || 0));
+  const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, x = s % 60, p = (n) => String(n).padStart(2, "0");
+  return h ? `${h}:${p(m)}:${p(x)}` : `${m}:${p(x)}`;
+};
+/* 用 textContent 拼行,不用 innerHTML 塞服务器给的片名 —— 片名里带尖括号就会被当成标签 */
+function row(name, meta, buttons) {
+  const d = document.createElement("div");
+  d.className = "row";
+  const g = document.createElement("div"); g.className = "g";
+  const n = document.createElement("div"); n.className = "n"; n.textContent = name;
+  const m = document.createElement("div"); m.className = "m"; m.textContent = meta;
+  g.append(n, m); d.append(g);
+  for (const [label, fn, cls] of buttons) {
+    const b = document.createElement("button");
+    b.textContent = label; if (cls) b.className = cls; b.onclick = fn;
+    d.append(b);
+  }
+  return d;
+}
+function note(box, cls, text) {
+  const d = document.createElement("div"); d.className = cls; d.textContent = text;
+  box.append(d);
+}
+
+/* ---------- 标签 ---------- */
+let pane = "remote";
+document.querySelectorAll("nav button").forEach((b) => {
+  b.onclick = () => {
+    pane = b.dataset.p;
+    document.querySelectorAll("nav button").forEach((x) => x.classList.toggle("on", x === b));
+    document.querySelectorAll(".pane").forEach((p) => p.classList.toggle("on", p.id === "p-" + pane));
+    if (pane === "servers") loadAccounts();
+    if (pane === "settings") loadSettings();
+    schedule();
+  };
+});
+
+/* ---------- 遥控 ----------
+   按下即发不等松手;方向键按住每 220ms 连发,比电视端移焦节奏稍慢,免得冲过头 */
+const REPEAT = new Set(["up", "down", "left", "right"]);
+let repeatTimer;
+const sendKey = (k) => api("key", { key: k }).catch(fail);
+document.querySelectorAll("[data-k]").forEach((b) => {
+  const k = b.dataset.k;
+  const stopRepeat = () => clearInterval(repeatTimer);
+  b.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    sendKey(k);
+    if (navigator.vibrate) navigator.vibrate(8);
+    stopRepeat();
+    if (REPEAT.has(k)) repeatTimer = setInterval(() => sendKey(k), 220);
+  });
+  for (const ev of ["pointerup", "pointercancel", "pointerleave"]) b.addEventListener(ev, stopRepeat);
+  b.addEventListener("contextmenu", (e) => e.preventDefault());
+});
+
+/* ---------- 播放 ---------- */
+let np = null; // 最近一次的播放状态;null = 没在播
+const playing = (p) => !!p && (!!p.item_id || p.duration > 0);
+function renderPlaying(title, p) {
+  np = playing(p) ? p : null;
+  $("np-title").textContent = np ? (title || "正在播放") : "现在没有在播放";
+  $("np-sub").textContent = np ? (np.paused ? "已暂停" : "播放中") : "在电视上或用「搜索」挑一部片";
+  $("np-bar").style.width = np && np.duration > 0 ? Math.min(100, (np.position / np.duration) * 100) + "%" : "0";
+  $("np-pos").textContent = fmt(np ? np.position : 0);
+  $("np-dur").textContent = fmt(np ? np.duration : 0);
+  $("btn-pause").textContent = np && np.paused ? "继续" : "暂停";
+}
+$("btn-pause").onclick = () => {
+  if (!np) return toast("现在没有在播放");
+  api("player.setPause", { paused: !np.paused }).then(poll).catch(fail);
+};
+document.querySelectorAll("[data-seek]").forEach((b) => {
+  b.onclick = () => {
+    if (!np) return toast("现在没有在播放");
+    let pos = Math.max(0, np.position + Number(b.dataset.seek));
+    if (np.duration > 0) pos = Math.min(pos, np.duration - 1);
+    api("player.seek", { pos }).then(poll).catch(fail);
+  };
+});
+$("btn-stop").onclick = () => {
+  if (!np) return toast("现在没有在播放");
+  api("player.stopPlayback", { pos: np.position }).then(() => { toast("已停止"); poll(); }).catch(fail);
+};
+
+/* ---------- 轮询 ----------
+   只在页面可见时轮,切到后台即停;播放页 1 秒(要走进度条),其它页 4 秒 */
+let pollTimer;
+async function poll() {
+  try {
+    const s = await api("state", {});
+    $("conn").textContent = "已连接";
+    renderPlaying(s.title, s.player);
+  } catch {
+    $("conn").textContent = "电视没响应";
+  }
+}
+function schedule() {
+  clearInterval(pollTimer);
+  if (document.hidden) return;
+  pollTimer = setInterval(poll, pane === "play" ? 1000 : 4000);
+  poll();
+}
+document.addEventListener("visibilitychange", schedule);
+
+/* ---------- 搜索 ---------- */
+const TYPE = { Movie: "电影", Series: "剧集", Episode: "单集" };
+let sTimer, sSeq = 0;
+$("q").addEventListener("input", () => {
+  clearTimeout(sTimer);
+  const q = $("q").value.trim();
+  const box = $("sres");
+  if (!q) { box.textContent = ""; return; }
+  sTimer = setTimeout(async () => {
+    const my = ++sSeq; // 慢的旧请求晚回来时不许盖掉新结果
+    box.textContent = "";
+    note(box, "hint", "搜索中…");
+    try {
+      const groups = await api("emby.aggregateSearch", { query: q });
+      if (my !== sSeq) return;
+      box.textContent = "";
+      if (!groups || !groups.length) return note(box, "hint", "没有找到");
+      for (const g of groups) {
+        note(box, "grp", g.server_name || g.server_id);
+        if (g.error) { note(box, "err", "这台没搜成:" + g.error); continue; }
+        for (const it of g.items || []) {
+          const meta = [TYPE[it.type_] || it.type_, it.year, it.series_name].filter(Boolean).join(" · ");
+          box.append(row(it.name, meta, [["打开", () =>
+            api("open", { item_id: it.id, type: it.type_, server_id: g.server_id })
+              .then(() => toast("已在电视上打开")).catch(fail)]]));
+        }
+      }
+    } catch (e) {
+      if (my !== sSeq) return;
+      box.textContent = "";
+      note(box, "err", String(e.message));
+    }
+  }, 400);
+});
+
+/* ---------- 服务器 ---------- */
+async function loadAccounts() {
+  const box = $("accs");
+  try {
+    const list = await api("account.listAccounts", {});
+    box.textContent = "";
+    if (!list || !list.length) return note(box, "hint", "还没有服务器,在下面添加一台。");
+    for (const a of list) {
+      const btns = [];
+      if (!a.active) btns.push(["切换", () => api("account.setActiveServer", { server_id: a.server })
+        .then(() => { toast("已切换"); loadAccounts(); }).catch(fail)]);
+      btns.push(["删除", () => {
+        if (!confirm(`删除「${a.name}」?`)) return;
+        api("account.removeAccount", { server_id: a.server })
+          .then(() => { toast("已删除"); loadAccounts(); }).catch(fail);
+      }, "danger"]);
+      const r = row(a.name, a.remark || a.line_url || a.server, btns);
+      if (a.active) {
+        const t = document.createElement("span"); t.className = "tag"; t.textContent = "当前";
+        r.querySelector(".n").append(t);
+      }
+      box.append(r);
+    }
+  } catch (e) {
+    box.textContent = "";
+    note(box, "err", "读不到服务器列表:" + e.message);
+  }
+}
+async function busy(btn, label, fn) {
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = label;
+  try { await fn(); } finally { btn.disabled = false; btn.textContent = old; }
+}
+$("a-go").onclick = () => busy($("a-go"), "连接中…", async () => {
+  $("a-err").textContent = "";
+  try {
+    await api("emby.login", {
+      server: $("a-server").value.trim(), username: $("a-user").value.trim(), password: $("a-pass").value,
+    });
+    $("a-server").value = $("a-user").value = $("a-pass").value = "";
+    toast("已添加并登录");
+    loadAccounts();
+  } catch (e) { $("a-err").textContent = String(e.message); }
+});
+
+/* 批量添加分两步:先解析给用户核对,确认了再登录落库 —— 贴错的文本不该直接往电视里塞几台服务器 */
+let parsed = [];
+$("b-parse").onclick = () => busy($("b-parse"), "解析中…", async () => {
+  const box = $("b-preview");
+  $("b-err").textContent = ""; box.textContent = "";
+  try {
+    parsed = (await api("account.batchParse", { text: $("b-text").value })) || [];
+    if (!parsed.length) return note(box, "hint", "没解析出服务器地址");
+    for (const b of parsed) {
+      const first = (b.lines || [])[0] || {};
+      box.append(row(first.name || first.url || "(无线路)",
+        `${(b.lines || []).length} 条线路 · 用户名 ${b.username || "用下面填的"}`, []));
+    }
+    const go = document.createElement("button");
+    go.className = "pri"; go.textContent = `添加这 ${parsed.length} 台`;
+    go.onclick = () => busy(go, "逐台登录中…", addParsed);
+    box.append(go);
+  } catch (e) { $("b-err").textContent = String(e.message); }
+});
+async function addParsed() {
+  const box = $("b-preview");
+  try {
+    const res = await api("account.batchAddServers", {
+      blocks: parsed, fallback_username: $("b-user").value.trim(), fallback_password: $("b-pass").value,
+    });
+    box.textContent = "";
+    let ok = 0;
+    for (const r of res || []) {
+      if (r.error) note(box, "err", `${r.name}:${r.error}`); else ok++;
+    }
+    note(box, "hint", `成功添加 ${ok} 台`);
+    if (ok) { $("b-text").value = ""; parsed = []; loadAccounts(); }
+  } catch (e) { $("b-err").textContent = String(e.message); }
+}
+
+/* ---------- 设置 ---------- */
+const LANGS = [["", "自动"], ["chi", "中文"], ["yue", "粤语"], ["jpn", "日语"], ["eng", "英语"], ["kor", "韩语"],
+  ["fre", "法语"], ["ger", "德语"], ["spa", "西班牙语"], ["rus", "俄语"], ["tha", "泰语"]];
+for (const id of ["s-alang", "s-slang"]) {
+  for (const [v, l] of LANGS) {
+    const o = document.createElement("option"); o.value = v; o.textContent = l; $(id).append(o);
+  }
+}
+let proxy = {}; // 回写时带上手机页没展示的字段(账号密码、媒体走代理),否则一保存就清空
+const human = (n) => n >= 1 << 30 ? (n / (1 << 30)).toFixed(1) + " GB" : (n / (1 << 20)).toFixed(1) + " MB";
+async function loadSettings() {
+  const tasks = [
+    api("prefs.getPrefs", {}).then((p) => {
+      $("s-alang").value = p.audio_lang || "";
+      $("s-slang").value = p.sub_lang || "";
+      $("s-sub").value = p.sub_enabled ? "1" : "0";
+    }),
+    api("prefs.getProxy", {}).then((p) => {
+      proxy = p || {};
+      $("s-ptype").value = proxy.type || "none";
+      $("s-phost").value = proxy.host || "";
+      $("s-pport").value = proxy.port || "";
+    }),
+    api("system.cacheSize", {}).then((c) => { $("s-cache").textContent = human(c.bytes || 0); }),
+    api("sync.bangumiAccount", {}).then((a) => {
+      $("s-bgm").textContent = a ? "已连接:" + (a.username || "Bangumi 账号") : "还没有连接 Bangumi";
+    }),
+    api("danmaku.getBlockwords", {}).then((b) => { $("s-words").value = (b.words || []).join("\n"); }),
+  ];
+  // 各块各自出结果,一块读失败不拖住其它块
+  for (const t of tasks) t.catch((e) => toast("读设置失败:" + e.message));
+}
+$("s-save-prefs").onclick = () => busy($("s-save-prefs"), "保存中…", () =>
+  api("prefs.setPrefs", {
+    audio_lang: $("s-alang").value, sub_lang: $("s-slang").value, sub_enabled: $("s-sub").value === "1",
+  }).then(() => toast("已保存")).catch(fail));
+$("s-save-proxy").onclick = () => busy($("s-save-proxy"), "保存中…", () =>
+  api("prefs.setProxy", {
+    config: { ...proxy, type: $("s-ptype").value, host: $("s-phost").value.trim(), port: Number($("s-pport").value) || 0 },
+  }).then(() => toast("代理已保存")).catch(fail));
+$("s-clear").onclick = () => {
+  if (!confirm("清空电视上的图片和视频缓存?")) return;
+  api("system.clearCache", {}).then((c) => {
+    toast("已清空"); $("s-cache").textContent = human(c.bytes || 0);
+  }).catch(fail);
+};
+$("s-bgm-go").onclick = () => busy($("s-bgm-go"), "连接中…", async () => {
+  try {
+    const a = await api("sync.bangumiLoginToken", { token: $("s-bgm-token").value.trim() });
+    $("s-bgm-token").value = "";
+    $("s-bgm").textContent = "已连接:" + ((a && a.username) || "Bangumi 账号");
+    toast("Bangumi 已连接");
+  } catch (e) { fail(e); }
+});
+$("s-save-words").onclick = () => busy($("s-save-words"), "保存中…", () =>
+  api("danmaku.setBlockwords", {
+    words: $("s-words").value.split("\n").map((s) => s.trim()).filter(Boolean),
+  }).then(() => toast("屏蔽词已保存")).catch(fail));
+
+schedule();
+</script>
+</body>
+</html>
