@@ -2,6 +2,10 @@
 # Android 出包。照 scripts/pack-win.sh 的形状。
 #
 #   bash scripts/pack-android.sh [abi ...]      # 默认只有 arm64-v8a(x86_64 要显式传)
+#   bash scripts/pack-android.sh tv             # TV 包 = armeabi-v7a【用户定 2026-09-14】
+#
+# ★ 32 位包一律叫 `app-tv-armeabi-v7a-release.apk`:应用内更新靠名字里的 `-tv-`
+#   认 TV 包(core/system/update.go 的 assetKeywordSetsFor),改名前先改那儿。
 #
 # ☠ **「编译通过」不是交付。** 这个脚本的判据是「装得上的、已签名的 APK」,
 #   而验签必须看**产物本身**:
@@ -16,10 +20,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-${LOCALAPPDATA:-}/Android/Sdk}}"
 OUT="$ROOT/build/android"
-ABIS=("$@")
+ABIS=()
+for a in "$@"; do [ "$a" = tv ] && ABIS+=(armeabi-v7a) || ABIS+=("$a"); done
 # ★ 默认只编 arm64-v8a【用户定 2026-09-06】。x86_64 只有模拟器用得上,
-#   32 位留给 TV。要别的 ABI 就当参数传进来,映射表都还在。
+#   32 位是 TV。要别的 ABI 就当参数传进来,映射表都还在。
 [ ${#ABIS[@]} -eq 0 ] && ABIS=(arm64-v8a)
+apk_name() { [ "$1" = armeabi-v7a ] && echo "app-tv-$1-release.apk" || echo "app-$1-release.apk"; }
 
 fail=0
 bad() { fail=$((fail + 1)); echo "  ✗ $1"; }
@@ -31,16 +37,19 @@ bash scripts/build-core-android.sh "${ABIS[@]}" >/dev/null || { bad "核心层�
 ok "liblpcore.so + libmpv.so × ${#ABIS[@]}"
 
 echo "== 2. assembleRelease =="
-( cd apps/android && ANDROID_HOME="$SDK" ./gradlew --no-daemon assembleRelease -q ) \
+abis_csv="$(IFS=,; echo "${ABIS[*]}")"
+( cd apps/android && ANDROID_HOME="$SDK" ./gradlew --no-daemon assembleRelease -Plp.abis="$abis_csv" -q ) \
   || { bad "assembleRelease 失败"; exit 1; }
 
 mkdir -p "$OUT"
-rm -f "$OUT"/*.apk
-shopt -s nullglob
 found=0
-for apk in apps/android/app/build/outputs/apk/release/*.apk; do
+# ★ 只认这次要出的 ABI:release 目录里可能还躺着上一次别的 ABI 的包,
+#   按通配全拷就会把旧包当新包发出去;也不清空 $OUT —— 手机包和 TV 包是分两次出的
+for abi in "${ABIS[@]}"; do
+  apk="apps/android/app/build/outputs/apk/release/app-$abi-release.apk"
+  [ -f "$apk" ] || { bad "没出 $abi 的包:$apk"; continue; }
   found=1
-  base="$(basename "$apk")"
+  base="$(apk_name "$abi")"
   cp -f "$apk" "$OUT/$base"
 
   echo "== 3. 验签 $base =="

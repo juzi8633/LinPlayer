@@ -28,8 +28,8 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
-    <!-- 手机形态:触摸屏必需。漏了这一条的表现是「装在 TV 上找不到」的反面 ——
-         声明成 TV 应用会让手机商店看不到它 -->
+    <!-- 两条都必须 required=false:电视没有触摸屏,默认的 required=true 会让
+         电视桌面和商店把本应用当成「不兼容」藏掉;leanback 反过来会让手机看不到它 -->
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
@@ -37,6 +37,7 @@
         android:name=".LinPlayerApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
+        android:banner="@drawable/tv_banner"
         android:label="@string/app_name"
         android:supportsRtl="false"
         android:networkSecurityConfig="@xml/network_security_config"
@@ -63,7 +64,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
-                <!-- TV 形态本轮不做,但入口留着:分流靠 UiModeManager,不是两个 Activity -->
+                <!-- TV 入口。分流靠 UiModeManager,不是两个 Activity;缺 banner 电视桌面是一块空白磁贴 -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
 

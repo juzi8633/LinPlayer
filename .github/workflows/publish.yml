@@ -78,6 +78,7 @@ jobs:
           EXPECTED=(
             "LinPlayer-Windows-v$VER.zip"
             "app-arm64-v8a-release.apk"
+            "app-tv-armeabi-v7a-release.apk"
           )
           MISSING=0
           for f in "${EXPECTED[@]}"; do
@@ -111,7 +112,8 @@ jobs:
 
           ### 下载
           - **Windows**:\`LinPlayer-Windows-v$VER.zip\`(免安装绿色包,解压即用)
-          - **安卓**:\`app-arm64-v8a-release.apk\`(arm64 手机 / TV)
+          - **安卓手机**:\`app-arm64-v8a-release.apk\`
+          - **安卓 TV**:\`app-tv-armeabi-v7a-release.apk\`(32 位,电视盒子;装之前在电视上确认支持 armeabi-v7a)
 
           ### 说明
           - 应用内「设置 → 更新 → 检查更新」可以一路走完下载和安装,不用手动下包。

@@ -111,18 +111,16 @@ android {
        ★ **手机端只出 arm64-v8a**【用户定 2026-09-06】。2019 年以后的安卓手机
          全是 arm64,x86_64 只有模拟器用得上 —— 为了一台不存在的设备
          每次构建多编一份 34MB 的 native,不划算。
-         32 位(armeabi-v7a)留给 TV 盒子,不在这个包里。
-       ★ 要给模拟器出包就显式传 ABI:
-             bash scripts/fetch-libmpv-android.sh x86_64
-             bash scripts/build-core-android.sh  x86_64
-         三个脚本的 ABI 映射表都还在,只是不默认编。
+         32 位(armeabi-v7a)是 TV 包【用户定 2026-09-14】,由 `pack-android.sh tv` 出。
+       ★ 名单从 `-Plp.abis=a,b` 读,默认 arm64-v8a —— 出包脚本传,这里不写第二份。
+         给模拟器出包:`bash scripts/pack-android.sh x86_64`。
        ★ isUniversalApk = false:不出那个「什么都有」的包。留着它的下场是
          发布时手一滑传的就是它,用户下 103MB 用 34MB。 */
     splits {
         abi {
             isEnable = true
             reset()
-            include("arm64-v8a")
+            include(*((findProperty("lp.abis") as String?) ?: "arm64-v8a").split(",").toTypedArray())
             isUniversalApk = false
         }
     }
@@ -187,6 +185,9 @@ dependencies {
 
     // TV 形态(UI_TV.md §13.2)。★ 不引 tv-foundation:1.0.0 是 8.9KB 的空壳,TvLazyRow 早删了
     implementation("androidx.tv:tv-material:1.1.0")
+    // 手机扫码遥控的二维码(UI_TV.md §7.1 / §9)。核心层零依赖、没有编码器;
+    // 手写 QR(纠错码 + 掩码择优)几百行且没法自证对错,用官方参考实现
+    implementation("com.google.zxing:core:3.5.3")
 
     testImplementation("junit:junit:4.13.2")
     // 出图:./gradlew :app:recordRoborazziDebug(普通 testDebugUnitTest 不落盘)

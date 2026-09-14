@@ -284,6 +284,22 @@ jobs:
           LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
         run: bash scripts/pack-android.sh arm64-v8a
 
+      # TV 只出 32 位包(UI_TV.md §0.3)。凭据同上一步:这一步同样会重编 liblpcore.so
+      - name: Pack Android TV
+        shell: bash
+        env:
+          LP_VERSION: ${{ needs.version.outputs.version }}
+          DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
+          DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          LP_SYNC_PROXY_BASE: ${{ secrets.LP_SYNC_PROXY_BASE }}
+          LP_SYNC_PROXY_KEY: ${{ secrets.LP_SYNC_PROXY_KEY }}
+          LP_BANGUMI_REDIRECT_URI: ${{ secrets.LP_BANGUMI_REDIRECT_URI }}
+          LP_AFDIAN_SPONSOR_URL: ${{ secrets.LP_AFDIAN_SPONSOR_URL }}
+          LP_ICON_LIBRARY_SOURCES: ${{ secrets.LP_ICON_LIBRARY_SOURCES }}
+          LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
+        run: bash scripts/pack-android.sh tv
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
