@@ -355,7 +355,7 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
         val e = exo ?: return@LaunchedEffect
         while (true) {
             val p = e.currentPosition / 1000.0
-            if (p > position + 0.05) everMoved = true
+            if (advancedNaturally(position, p)) everMoved = true
             position = p
             e.duration.takeIf { it > 0 }?.let { duration = it / 1000.0 }
             paused = !e.playWhenReady
@@ -381,7 +381,7 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
             if (ev.name != "player.status") return@collect
             val o = ev.data as? JsonObject
             val p = o.dbl("position") ?: 0.0
-            if (p > position + 0.05) everMoved = true
+            if (advancedNaturally(position, p)) everMoved = true
             position = p
             duration = o.dbl("duration") ?: duration
             paused = o.bool("paused")

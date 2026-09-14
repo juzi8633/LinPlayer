@@ -20,7 +20,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
+	"linplayer/core/bus"
 	"linplayer/core/httpx"
 )
 
@@ -42,7 +44,19 @@ func loadWith(url string, startSec float64, headers map[string]string, ua string
 	}
 	setProp("user-agent", ua)
 
-	if err := command(loadArgs(url, startSec)...); err != nil {
+	legacy := loadfileLegacy.Load()
+	err := mpvCommand(loadArgs(url, startSec, legacy)...)
+	if err != nil && startSec > 1 {
+		/* ☠ 两种 mpv 的 loadfile 语法不兼容(见 loadArgs),而安卓和桌面打包的 libmpv
+		   正好一边一种。被拒是参数解析阶段的事,mpv 什么都没做,换一种写法重发是安全的;
+		   试出来哪种能用就记住,之后每次起播都直接用它。 */
+		if err2 := mpvCommand(loadArgs(url, startSec, !legacy)...); err2 == nil {
+			loadfileLegacy.Store(!legacy)
+			bus.Logf("info", "loadfile 换用%s语法(这份 libmpv:%s)", syntaxName(!legacy), Prop("mpv-version"))
+			err = nil
+		}
+	}
+	if err != nil {
 		return fmt.Errorf("loadfile 失败: %w", err)
 	}
 	/* ★★ 把交给 mpv 的地址**自己记一份**,别回头去问 mpv 的 `path` 属性。
@@ -59,6 +73,9 @@ func loadWith(url string, startSec float64, headers map[string]string, ua string
 	thumbs.close()
 	return nil
 }
+
+// mpvCommand 发 loadfile 用的出口。单测里换成按版本语法校验参数的假 mpv。
+var mpvCommand = command
 
 // loadArgs 拼 loadfile 的参数表。
 //
@@ -78,12 +95,29 @@ func loadWith(url string, startSec float64, headers map[string]string, ua string
 //
 // -1 = 追加到播放列表末尾。replace 模式下这个位置具体填什么不影响结果,
 // 但**必须占住** —— 空着的话选项就滑到 index 那一格上去了。
-func loadArgs(url string, startSec float64) []string {
+//
+// ☠☠ **0.37 及以前没有 index 这一格,选项就在第 3 位**(legacy=true)。
+// 安卓打包的 libmpv 是 v0.36.0-549:同一句四段式在那边回 -4,
+// 表现又是「有观看记录的片子播不了」(2026-09-14,移动端 mpv 内核)。
+func loadArgs(url string, startSec float64, legacy bool) []string {
 	args := []string{"loadfile", url, "replace"}
 	if startSec > 1 {
-		args = append(args, "-1", "start="+strconv.FormatFloat(startSec, 'f', 3, 64))
+		if !legacy {
+			args = append(args, "-1")
+		}
+		args = append(args, "start="+strconv.FormatFloat(startSec, 'f', 3, 64))
 	}
 	return args
+}
+
+// loadfileLegacy 这份 libmpv 用的是不是 0.37 及以前的 loadfile 语法。起播时试出来的。
+var loadfileLegacy atomic.Bool
+
+func syntaxName(legacy bool) string {
+	if legacy {
+		return "旧(无 index)"
+	}
+	return "新(带 index)"
 }
 
 // joinHeaders 把头表拼成 mpv 认的 `K: V,K: V` 形式。
@@ -105,3 +139,6 @@ func joinHeaders(h map[string]string) string {
 	}
 	return strings.Join(parts, ",")
 }
+
+// resetLoadfileSyntax 单测用:清掉试出来的 loadfile 写法。
+func resetLoadfileSyntax() { loadfileLegacy.Store(false) }

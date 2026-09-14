@@ -7,7 +7,7 @@
 4. **改 mpv 选项前先确认它在这颗库里真的存在**(不同 build 会砍选项),写错是静默 no-op。
 5. **画质档位的「不生效」多半不是档位表**:双显卡默认跑核显、放大类 shader 有尺寸门槛、计算着色器在 ANGLE 上没法派发 —— 三种在屏幕上长得一模一样,都是「画面没变」。
 
-> 本文件共 **22** 条。每条都标了它的原记忆文件名与类型;正文按原样搬运,未做压缩或改写。
+> 本文件共 **23** 条。每条都标了它的原记忆文件名与类型;正文按原样搬运,未做压缩或改写。
 
 ## 本页条目
 
@@ -1696,3 +1696,33 @@ mpv 的这一项默认是 `index`:**只有字幕轨在 cue 索引里有条目才
 - 焦点在输入框里就别转:搜弹幕输个 `s` 会顺手截张图,没有任何提示。
 
 键名映射由 `LP_KEYPROBE` 钉住(纯映射,进得了 CI)。
+
+## 安卓 libmpv 是 0.36:loadfile 没有 index 那一格(2026-09-14)
+
+**症状**:移动端 mpv 内核,**有观看记录的片子播不了**;从头放的片子、ExoPlayer 内核、桌面端都正常。
+
+**根因**:`loadfile` 的签名在 mpv 0.38 改过 ——
+
+| 版本 | 签名 |
+|---|---|
+| 0.37 及以前 | `loadfile <url> [<flags> [<options>]]` |
+| 0.38 起 | `loadfile <url> [<flags> [<index> [<options>]]]` |
+
+(原文:mpv 仓库 `DOCS/man/input.rst` 的 v0.37.0 / v0.38.0 两个 tag;`DOCS/interface-changes.rst` 0.38 节「move the `options` argument of the `loadfile` command from the third parameter to the fourth」)
+
+桌面 libmpv 在 0.38 之后,2026-09-03 为它改成了 `replace -1 start=…`;
+安卓打包的 `media-kit/libmpv-android-video-build` v1.1.11 里是 **`mpv v0.36.0-549`**,
+`-1` 落进选项那一格 → -4 → `loadfile 失败`。只有带续播进度的条目会拼出第 4 段,所以只坏「有观看记录的」。
+
+**怎么查出版本**:`third_party/libmpv/android/arm64-v8a/libmpv.so` 里搜 `mpv v0.` 字符串。
+
+**修法**(`core/player/load.go`):先按记住的写法发;带续播位置被拒时换另一种写法重发,成功就记住。
+被拒发生在参数解析阶段,mpv 什么都没做,重发是安全的。门禁 `load_test.go` 用两种语法的假 mpv 各跑一遍,
+改回只有四段式当场红在 0.36 那一格。
+
+**同一次顺手修的**:手机播放页拿「位置比上一次大」判「在播了」,续播时第一次状态就从 0 跳到续播点,
+于是黑幕提前撤、起播失败被当成播完静默退出。改成「前进 0.05~2 秒才算」(`ui/player/Progress.kt`)。
+
+**失效条件**:安卓换到 0.38 以后的 libmpv,两种写法的回退就只会走新语法那条,这段逻辑可以删。
+**同类风险**:核心层发给 mpv 的其它命令(`sub-add` / `seek absolute+exact` / `screenshot-to-file` / `stop`)在 0.36 都有;
+以后加命令或属性,先查它是哪个版本进的 mpv —— 安卓那颗库比桌面老两个大版本。
