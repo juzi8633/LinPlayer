@@ -68,7 +68,7 @@ fun DraftLibraryGrid(panel: Boolean) {
                 verticalArrangement = Arrangement.spacedBy(TvSp.x20), contentPadding = PaddingValues(12.dp), modifier = Modifier.bleed(12.dp),
             ) {
                 itemsIndexed(gridTitles) { i, (n, y) ->
-                    CardPoster(80 + i, n, y, watched = i % 5 == 3, w = 119.dp, h = 178.dp)
+                    CardPoster(80 + i, n, y, watched = i % 5 == 3, w = 124.dp, h = 186.dp)
                 }
             }
         }

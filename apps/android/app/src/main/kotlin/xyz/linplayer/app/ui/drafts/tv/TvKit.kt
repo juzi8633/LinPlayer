@@ -25,6 +25,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.testTag
@@ -492,56 +498,80 @@ val railItems = listOf(
     "服务器" to LpIcons.server, "设置" to LpIcons.settings,
 )
 
+/**
+ * §3.1【用户定 2026-09-14】收起只剩图标;焦点一进轨就展开成 200dp,**盖在内容上面**,内容区不动。
+ * previewExpanded 只给草稿出图用:截图没法先把焦点放进轨里再截。
+ */
 @Composable
-fun Rail(current: Int, focused: Int = -1, fake: Int = -1) {
-    val t = tvType
-    Column(
-        Modifier.width(TvDim.railW).fillMaxHeight().background(TvC.rail).padding(vertical = TvDim.safeV),
-        horizontalAlignment = Alignment.CenterHorizontally,
+fun Rail(current: Int, focused: Int = -1, previewExpanded: Boolean = false) {
+    var hasFocus by remember { mutableStateOf(false) }
+    val expanded = previewExpanded || hasFocus
+    val w by animateDpAsState(if (expanded) TvDim.railExpandedW else TvDim.railW, tween(180), label = "rail")
+    Box(
+        Modifier.width(w).fillMaxHeight()
+            .then(if (expanded) Modifier.shadow(8.dp) else Modifier)
+            .background(TvC.rail)
+            .onFocusChanged { hasFocus = it.hasFocus },
     ) {
-        Box(Modifier.size(28.dp).clip(TvR.md).background(TvC.acc), contentAlignment = Alignment.Center) {
-            Icon(LpIcons.play, null, Modifier.size(14.dp), tint = TvC.onAcc)
-        }
-        Spacer(Modifier.height(TvSp.x12))
-        railItems.forEachIndexed { i, (label, icon) ->
-            if (i == 6) {
-                Spacer(Modifier.weight(1f))
-                Box(Modifier.width(48.dp).height(1.dp).background(TvC.line))
-                Spacer(Modifier.height(TvSp.x4))
+        Column(Modifier.fillMaxSize().padding(vertical = TvDim.safeV, horizontal = TvSp.x8)) {
+            Row(Modifier.padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(28.dp).clip(TvR.md).background(TvC.acc), contentAlignment = Alignment.Center) {
+                    Icon(LpIcons.play, null, Modifier.size(14.dp), tint = TvC.onAcc)
+                }
+                if (expanded) {
+                    Spacer(Modifier.width(TvSp.x12))
+                    TvText("LinPlayer", tvType.title, TvC.fg, weight = TvW.semi)
+                }
             }
-            RailItem(label, icon, on = i == current, focused = i == focused, fake = i == fake)
+            Spacer(Modifier.height(TvSp.x16))
+            railItems.forEachIndexed { i, (label, icon) ->
+                if (i == 6) {
+                    Spacer(Modifier.weight(1f))
+                    Box(Modifier.fillMaxWidth().padding(horizontal = TvSp.x8).height(1.dp).background(TvC.line))
+                    Spacer(Modifier.height(TvSp.x6))
+                }
+                RailItem(label, icon, on = i == current, expanded = expanded, focused = i == focused)
+            }
         }
+        Box(Modifier.align(Alignment.CenterEnd).width(1.dp).fillMaxHeight().background(TvC.line))
     }
 }
 
+/** 轨项。收起 48×44 只有图标;展开 184×44 图标 + 文字。**不放大**:轨里放大会撑破边界。 */
 @Composable
-fun RailItem(label: String, icon: ImageVector, on: Boolean, focused: Boolean = false, fake: Boolean = false) {
+fun RailItem(label: String, icon: ImageVector, on: Boolean, expanded: Boolean, focused: Boolean = false, fake: Boolean = false) {
     Surface(
         onClick = {},
-        modifier = Modifier.padding(vertical = TvSp.x2).size(72.dp, 50.dp).initialFocus(focused),
+        modifier = Modifier.padding(vertical = TvSp.x2).size(if (expanded) 184.dp else 48.dp, 44.dp).initialFocus(focused),
         shape = ClickableSurfaceDefaults.shape(TvR.md),
-        // 不放大:96dp 的轨里放大会撑破边界
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f, pressedScale = 0.97f),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = if (fake) TvC.focus else if (on) TvC.accDim else Color.Transparent,
-            contentColor = if (fake) TvC.onFocus else if (on) TvC.acc else TvC.fg3,
+            contentColor = when {
+                fake -> TvC.onFocus
+                on -> TvC.acc
+                expanded -> TvC.fg2
+                else -> TvC.fg3
+            },
             focusedContainerColor = TvC.focus, focusedContentColor = TvC.onFocus,
         ),
     ) {
-        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Row(Modifier.fillMaxSize().padding(start = 13.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null, Modifier.size(22.dp))
-            Spacer(Modifier.height(TvSp.x2))
-            Text(label, fontSize = tvType.meta, fontWeight = if (on) TvW.semi else FontWeight.Normal, maxLines = 1)
+            if (expanded) {
+                Spacer(Modifier.width(TvSp.x12))
+                Text(label, fontSize = tvType.body, fontWeight = if (on) TvW.semi else TvW.medium, maxLines = 1)
+            }
         }
     }
 }
 
-/** 带轨的页面外壳。内容区从 x=96 开始,左边 32dp 由各页自己让(横向行要留放大余量)。 */
+/** 带轨的页面外壳。轨**叠在内容上面**(展开时不推内容);内容区从 x=64 开始,左边 32dp 由各页自己让。 */
 @Composable
-fun RailShell(current: Int, railFocus: Int = -1, content: @Composable BoxScope.() -> Unit) {
-    Row(Modifier.fillMaxSize().background(TvC.bg)) {
-        Rail(current, railFocus)
-        Box(Modifier.weight(1f).fillMaxHeight(), content = content)
+fun RailShell(current: Int, railFocus: Int = -1, railExpanded: Boolean = false, content: @Composable BoxScope.() -> Unit) {
+    Box(Modifier.fillMaxSize().background(TvC.bg)) {
+        Box(Modifier.fillMaxSize().padding(start = TvDim.railW), content = content)
+        Rail(current, railFocus, railExpanded)
     }
 }
 

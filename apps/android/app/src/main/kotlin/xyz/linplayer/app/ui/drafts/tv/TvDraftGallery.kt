@@ -53,7 +53,7 @@ import androidx.activity.compose.BackHandler
 class TvDraft(val title: String, val batch: Int, val alsoA: Boolean = false, val content: @Composable () -> Unit)
 
 val tvDrafts: List<TvDraft> = listOf(
-    TvDraft("首页 · 焦点在 Hero「播放」", 1, alsoA = true) { DraftHome(scrolled = false) },
+    TvDraft("首页 · 焦点在 Hero「详情」", 1, alsoA = true) { DraftHome(scrolled = false) },
     TvDraft("首页 · 往下走到继续观看第 2 张", 1) { DraftHome(scrolled = true) },
     TvDraft("组件表 ① · 实体控件的焦点 / 选中", 1, alsoA = true) { DraftComponentsSolid() },
     TvDraft("组件表 ② · 卡片与版本卡", 1) { DraftComponentsCards() },
@@ -90,6 +90,7 @@ val tvDrafts: List<TvDraft> = listOf(
     TvDraft("本机文件夹 · 浏览", 7) { DraftLocal(picker = false) },
     TvDraft("系统态:加载 / 空 / 失败 / 确认", 7) { DraftStates() },
     TvDraft("卡片操作面板(长按确认)", 7) { DraftCardMenu() },
+    TvDraft("导航轨 · 焦点进轨后展开", 1) { DraftHome(scrolled = false, railFocus = 2) },
 )
 
 /** 草稿画布:强制深色 + 字阶档。 */

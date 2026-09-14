@@ -29,8 +29,8 @@ import xyz.linplayer.app.ui.theme.LpIcons
 // ---------------------------------------------------------------- 首页(UI_TV.md §7.2)
 
 @Composable
-fun DraftHome(scrolled: Boolean) {
-    RailShell(current = 1) {
+fun DraftHome(scrolled: Boolean, railFocus: Int = -1) {
+    RailShell(current = 1, railFocus = railFocus, railExpanded = railFocus >= 0) {
         val list = rememberLazyListState(initialFirstVisibleItemIndex = if (scrolled) 2 else 0)
         // 往上多露 64dp = 安全区 27 + 行标题 29 + 间距 8:只露出焦点卡的话,行标题被顶出屏幕上沿
         ProvideColumnSpec(above = 64.dp, below = TvDim.safeV) {
@@ -38,7 +38,7 @@ fun DraftHome(scrolled: Boolean) {
                 Modifier.fillMaxSize(), state = list,
                 contentPadding = PaddingValues(top = TvDim.safeV, bottom = 64.dp),
             ) {
-                item { Box(Modifier.padding(start = TvSp.x32, end = TvDim.safeH)) { Hero(focusPlay = !scrolled) } }
+                item { Box(Modifier.padding(start = TvSp.x32, end = TvDim.safeH)) { Hero(focusPlay = !scrolled && railFocus < 0) } }
                 item {
                     HomeSection("继续观看") {
                         items(continueWatching.withIndex().toList()) { (i, c) ->
@@ -63,7 +63,11 @@ fun DraftHome(scrolled: Boolean) {
                 }
             }
         }
-        DraftNote(if (scrolled) "§4.3 往下:焦点行对齐段顶,行标题一起露出" else "§7.2 Hero 文字上不加任何底 · 焦点在「播放」")
+        DraftNote(when {
+            railFocus >= 0 -> "§3.1 焦点进轨:展开成 200dp 盖在内容上,内容不动 · 进轨落在首页,这里再按了一次 ↓"
+            scrolled -> "§4.3 往下:焦点行对齐段顶,行标题一起露出"
+            else -> "§7.2 Hero 文字上不加任何底 · 焦点在「详情」"
+        })
     }
 }
 
@@ -84,8 +88,8 @@ private fun Hero(focusPlay: Boolean) {
             }
             Spacer(Modifier.height(TvSp.x12))
             Row(horizontalArrangement = Arrangement.spacedBy(TvSp.x12)) {
-                TvButton("播放", LpIcons.play, primary = true, focused = focusPlay)
-                TvButton("详情", LpIcons.info)
+                // 【用户定 2026-09-14】Hero 不直接起播,只留「详情」:旧版「播放」「详情」做的是同一件事
+                TvButton("详情", LpIcons.info, primary = true, focused = focusPlay)
                 TvButton("换一部", LpIcons.refresh)
             }
         }
@@ -255,13 +259,13 @@ fun DraftComponentsMore() {
     Box(Modifier.fillMaxSize().padding(horizontal = TvDim.safeH, vertical = TvDim.safeV)) {
         Column {
             TvText("组件表 ③", t.headline, TvC.fg, weight = TvW.semi)
-            TvText("导航轨项不放大(96dp 的轨里放大会撑破边界);不可用的版本卡保留但不可聚焦", t.meta, TvC.fg3)
+            TvText("导航轨收起只剩图标,焦点进轨才展开出文字;轨项不放大(会撑破轨宽);不可用的版本卡保留但不可聚焦", t.meta, TvC.fg3)
             Spacer(Modifier.height(TvSp.x16))
             Row(horizontalArrangement = Arrangement.spacedBy(TvSp.x24)) {
-                Captioned("轨项 · 常态") { RailItem("媒体库", LpIcons.grid, on = false) }
-                Captioned("当前页") { RailItem("首页", LpIcons.home, on = true) }
-                Captioned("聚焦") { RailItem("媒体库", LpIcons.grid, on = false, fake = true) }
-                Captioned("当前页 + 聚焦") { RailItem("首页", LpIcons.home, on = true, fake = true) }
+                Captioned("轨 · 收起") { RailItem("媒体库", LpIcons.grid, on = false, expanded = false) }
+                Captioned("收起 · 当前页") { RailItem("首页", LpIcons.home, on = true, expanded = false) }
+                Captioned("展开 · 聚焦") { RailItem("媒体库", LpIcons.grid, on = false, expanded = true, fake = true) }
+                Captioned("展开 · 当前页") { RailItem("首页", LpIcons.home, on = true, expanded = true) }
                 Captioned("行标题 · 常态") { RowTitle("电影", link = true) }
                 Captioned("行标题 · 聚焦") { RowTitle("电影", link = true, fake = true) }
             }

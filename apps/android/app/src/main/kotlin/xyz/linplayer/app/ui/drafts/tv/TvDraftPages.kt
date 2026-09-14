@@ -282,7 +282,7 @@ fun DraftServers(mode: ServersMode) {
                     )
                 }
                 if (mode != ServersMode.REORDER) item {
-                    Box(Modifier.size(245.dp, 150.dp).dashed(TvC.line), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(256.dp, 150.dp).dashed(TvC.line), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(LpIcons.plus, null, Modifier.size(28.dp), tint = TvC.acc)
                             Spacer(Modifier.height(TvSp.x6))
@@ -345,13 +345,13 @@ private fun ServerCard(c: ServerInfo, index: Int, focused: Boolean, moving: Bool
     }
     if (reorder) {
         Box(
-            Modifier.size(245.dp, 150.dp).clip(TvR.lg).background(TvC.surface1)
+            Modifier.size(256.dp, 150.dp).clip(TvR.lg).background(TvC.surface1)
                 .dashed(if (moving) TvC.acc else TvC.fg3)
                 .then(if (moving) Modifier else Modifier.graphicsLayer { alpha = .72f }),
             content = body,
         )
     } else {
-        CoverSurface(245.dp, 150.dp, focused = focused, content = body)
+        CoverSurface(256.dp, 150.dp, focused = focused, content = body)
     }
 }
 
@@ -516,7 +516,7 @@ private fun PosterGrid5(items: List<Pair<String, String>>, rank: Boolean) {
         verticalArrangement = Arrangement.spacedBy(TvSp.x16), contentPadding = PaddingValues(12.dp), modifier = Modifier.bleed(12.dp),
     ) {
         itemsIndexed(items) { i, (n, s) ->
-            CardPoster(400 + i, n, s, rank = if (rank) i + 1 else 0, w = 104.dp, h = 156.dp)
+            CardPoster(400 + i, n, s, rank = if (rank) i + 1 else 0, w = TvDim.posterW, h = TvDim.posterH)
         }
     }
 }
@@ -539,23 +539,26 @@ fun DraftFavorites() {
     RailShell(current = 3) {
         Column(Modifier.contentArea()) {
             PageHead("收藏", count = "23 项")
+            Spacer(Modifier.height(TvSp.x8))
+            // 【用户定 2026-09-14】要排序;排序在核心层 emby.listFavorites 做,UI 只传参数
+            EntryChip("排序", LpIcons.sort, "收藏时间 ↓")
             Spacer(Modifier.height(TvSp.x12))
             RowTitle("分集", trailing = "4 项")
             Spacer(Modifier.height(TvSp.x8))
             Row(horizontalArrangement = Arrangement.spacedBy(TvSp.x16)) {
-                CardWide(501, "寂静的星河 · S2E4", "谎言的代价", focused = true, w = 184.dp, h = 104.dp)
-                CardWide(502, "幕府将军 · S1E8", "大地之心", w = 184.dp, h = 104.dp)
-                CardWide(503, "三体 · S1E23", "黑暗森林", w = 184.dp, h = 104.dp)
-                CardWide(504, "繁花 · S1E1", "", w = 184.dp, h = 104.dp)
+                CardWide(501, "寂静的星河 · S2E4", "谎言的代价", focused = true, w = 192.dp, h = 108.dp)
+                CardWide(502, "幕府将军 · S1E8", "大地之心", w = 192.dp, h = 108.dp)
+                CardWide(503, "三体 · S1E23", "黑暗森林", w = 192.dp, h = 108.dp)
+                CardWide(504, "繁花 · S1E1", "", w = 192.dp, h = 108.dp)
             }
             Spacer(Modifier.height(TvSp.x16))
             RowTitle("剧集与电影", trailing = "19 项")
             Spacer(Modifier.height(TvSp.x8))
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                repeat(6) { i -> CardPoster(510 + i, shows[i].title, shows[i].sub, w = 119.dp, h = 178.dp) }
+                repeat(6) { i -> CardPoster(510 + i, shows[i].title, shows[i].sub, w = 124.dp, h = 186.dp) }
             }
         }
-        DraftNote("§7.8 横竖卡不混在一个网格里 · 空组整组不画 · 第一版不做排序")
+        DraftNote("§7.8 横竖卡不混在一个网格里 · 空组整组不画 · 排序在核心层做")
     }
 }
 

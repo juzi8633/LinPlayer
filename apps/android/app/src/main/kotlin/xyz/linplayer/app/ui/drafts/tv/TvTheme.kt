@@ -49,7 +49,7 @@ data class TvType(
     val controlH: Dp, val rowH: Dp, val iconS: Dp,
 )
 
-val TypeB = TvType("B 档 · 推荐", 26.sp, 22.sp, 16.sp, 14.sp, 12.sp, 20.sp, 40.dp, 48.dp, 20.dp)
+val TypeB = TvType("B 档 · 采用", 26.sp, 22.sp, 16.sp, 14.sp, 12.sp, 20.sp, 40.dp, 48.dp, 20.dp)
 val TypeA = TvType("A 档 · 旧稿换算", 18.sp, 20.sp, 13.sp, 9.sp, 7.5.sp, 15.sp, 26.dp, 32.dp, 11.dp)
 
 val LocalTvType = staticCompositionLocalOf { TypeB }
@@ -78,15 +78,17 @@ object TvR {
 object TvDim {
     val safeH = 48.dp
     val safeV = 27.dp
-    val railW = 96.dp
-    /** 内容区左边线 = 轨 96 + 32 */
-    val contentStart = 128.dp
-    val contentW = 784.dp
+    /** 导航轨收起 64 / 展开 200(盖在内容上,内容区不动) */
+    val railW = 64.dp
+    val railExpandedW = 200.dp
+    /** 内容区左边线 = 轨 64 + 32 */
+    val contentStart = 96.dp
+    val contentW = 816.dp
     val heroH = 243.dp
     val wideW = 160.dp; val wideH = 90.dp
     val posterW = 110.dp; val posterH = 165.dp
     val epW = 142.dp; val epH = 80.dp
-    val libW = 172.dp; val libH = 97.dp
+    val libW = 180.dp; val libH = 101.dp
     val versionW = 190.dp; val versionH = 106.dp
     val panelW = 230.dp; val panelMaxH = 486.dp
 }

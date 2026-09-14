@@ -1181,10 +1181,11 @@ Ani-RSS 管理台(同 C24b)。
 - [x] **U1.14** 排行榜 / 日历
   - 排行榜取数失败**向上报错不吞成空表**;赞助地址来自 `system.afdianSponsorUrl`
 - [x] **U1.15** 设置页 —— 一级列表 + 二级页;改完即生效零保存按钮;失败回滚
-- [ ] **U1.16** TV 形态 —— 规格 [`UI_TV.md`](UI_TV.md),草稿 `apps/android/.../ui/drafts/tv/`(37 张,Roborazzi 出图)
+- [ ] **U1.16** TV 形态 —— 规格 [`UI_TV.md`](UI_TV.md),草稿 `apps/android/.../ui/drafts/tv/`(38 张,Roborazzi 出图)
   - 2026-09-14:规格与草稿写完,**评审中,还没落页面代码**
   - 判据:`UI_TV.md` §11 验收清单逐条过;字阶 A / B 在真电视上拍板之前不落页面代码
-  - 前置:`core/companion`(C30)· TV 只出 `armeabi-v7a` 包 · `android:banner` · 应用内更新按形态挑安装包
+  - 前置:`core/companion`(C30)· TV 只出 `armeabi-v7a` 包 · `android:banner` · 应用内更新按形态挑安装包 · `emby.listFavorites` 加排序参数(收藏页排序,`UI_TV.md` §7.8)
+  - 2026-09-14 评审定下的 15 项已写回 `UI_TV.md`:字阶 B 档 / 琥珀 / 再按一次返回 / 长按=菜单 / Hero 只留详情 / 详细视图保留简介 / 放送表日期 chip / 收藏排序走核心层 / 导航轨收起只剩图标、展开盖在内容上 / 横向行焦点钉行首 / 剧详情默认目标集所在季 / 进度条先移游标再跳 / 播完 5 秒倒计时自动下一集 / 面板二级整体替换 / 设置里不支持的项不显示
 - [x] **U1.17** 开屏
   - 判据:图标边距在 drawable 内部(viewport 108,图形只占中间约 40%);
     `installSplashScreen()` 不挂 `setKeepOnScreenCondition` —— 挂了等于做一个假加载页
