@@ -54,6 +54,8 @@ public partial class MainWindow : Window
         this.FindControl<Button>("BtnMin")!.Click += (_, _) => WindowState = WindowState.Minimized;
         this.FindControl<Button>("BtnMax")!.Click += (_, _) => ToggleMaximize();
         this.FindControl<Button>("BtnClose")!.Click += (_, _) => Close();
+        // X11 不支持把客户区扩进标题栏,系统标题栏还在 —— 自绘的三颗按钮再画一份就重复了
+        Opened += (_, _) => this.FindControl<StackPanel>("CaptionButtons")!.IsVisible = IsExtendedIntoWindowDecorations;
 
         Nav.Host = Show;
         Nav.Immersive = SetImmersive;
@@ -822,10 +824,10 @@ public partial class MainWindow : Window
     private static void SelfCheckGlyphs()
     {
         if (Environment.GetEnvironmentVariable("LP_SELFCHECK_GLYPH") != "1") return;
-        var face = new Typeface("Segoe MDL2 Assets");
+        var face = new Typeface(Glyph.Font);
         if (!FontManager.Current.TryGetGlyphTypeface(face, out var gt))
         {
-            Console.WriteLine("[字形自检] ✗ 系统里没有 Segoe MDL2 Assets 这个字体");
+            Console.WriteLine($"[字形自检] ✗ 取不到图标字体 {Glyph.Font}");
             return;
         }
         var all = AllGlyphs();
@@ -2125,7 +2127,7 @@ public partial class MainWindow : Window
                 Header = header,
                 Icon = new TextBlock
                 {
-                    Text = glyph, FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 13,
+                    Text = glyph, FontFamily = Glyph.Font, FontSize = 13,
                 },
             };
             mi.Click += (_, _) => go();
@@ -2190,7 +2192,7 @@ public partial class MainWindow : Window
             {
                 new TextBlock
                 {
-                    Text = glyph, FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                    Text = glyph, FontFamily = Glyph.Font,
                     FontSize = 14, Width = 18, TextAlignment = TextAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
                 },

@@ -348,7 +348,7 @@ public sealed class DownloadPage : PageBase
             Child = new TextBlock
             {
                 // 占位:一个胶片图标,比一块纯色好认
-                Text = "", FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                Text = "", FontFamily = Glyph.Font,
                 FontSize = 15, Opacity = 0.35,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,

@@ -86,7 +86,7 @@ public static class CardActions
     /// <summary>菜单项左边那个小图标。<b>Segoe MDL2</b>,和侧栏、播放页 OSD 同一套字形。</summary>
     private static TextBlock Icon(string glyph) => new()
     {
-        Text = glyph, FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 13,
+        Text = glyph, FontFamily = Glyph.Font, FontSize = 13,
         Foreground = new SolidColorBrush(Color.FromRgb(0xa8, 0xb0, 0xc0)),
     };
 

@@ -42,6 +42,8 @@
     <!-- 图标。2026-09-04 之前这里指向 ..\..\desktop\icons\(Tauri 端的资源) ——
          Rust 栈一删,C# 端当场编不过。资源不跨栈借,自己这份放 Assets/。 -->
     <AvaloniaResource Include="Assets\icon.ico" />
+    <!-- Linux 端的图标字体(Windows 用系统自带的 Segoe MDL2),见 Views/Tok.cs 的 Glyph -->
+    <AvaloniaResource Include="Assets\LinIcons.ttf" />
   </ItemGroup>
 
   <ItemGroup>

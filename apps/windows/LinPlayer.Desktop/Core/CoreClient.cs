@@ -121,7 +121,7 @@ public sealed class CoreClient : ILinPlayerCommands, IDisposable
             throw new InvalidOperationException(
                 $"核心层 ABI 是 {abi},本程序按 {LinPlayerAbi.Version} 编译 —— 版本对不上,不能继续");
 
-        var cfg = JsonSerializer.Serialize(new { dataDir, platform = "windows", version });
+        var cfg = JsonSerializer.Serialize(new { dataDir, platform = OperatingSystem.IsWindows() ? "windows" : "linux", version });
         if (Native.lp_init(cfg) != 0)
             throw new InvalidOperationException("核心层初始化失败");
 

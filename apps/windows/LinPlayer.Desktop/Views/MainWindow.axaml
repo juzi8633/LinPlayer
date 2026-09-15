@@ -1,5 +1,6 @@
 ﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:v="using:LinPlayer.Desktop.Views"
         x:Class="LinPlayer.Desktop.Views.MainWindow"
         Title="LinPlayer"
         Width="1280" Height="800"
@@ -31,10 +32,10 @@
       <!-- 拖拽区:整条中段都能拖 -->
       <Border Grid.Column="1" Background="Transparent" Name="DragArea" />
 
-      <StackPanel Grid.Column="2" Orientation="Horizontal">
-        <Button Classes="caption" Name="BtnMin" Content="&#xE921;" FontFamily="Segoe MDL2 Assets" FontSize="10" />
-        <Button Classes="caption" Name="BtnMax" Content="&#xE922;" FontFamily="Segoe MDL2 Assets" FontSize="10" />
-        <Button Classes="caption close" Name="BtnClose" Content="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="10" />
+      <StackPanel Grid.Column="2" Orientation="Horizontal" Name="CaptionButtons">
+        <Button Classes="caption" Name="BtnMin" Content="&#xE921;" FontFamily="{x:Static v:Glyph.Font}" FontSize="10" />
+        <Button Classes="caption" Name="BtnMax" Content="&#xE922;" FontFamily="{x:Static v:Glyph.Font}" FontSize="10" />
+        <Button Classes="caption close" Name="BtnClose" Content="&#xE8BB;" FontFamily="{x:Static v:Glyph.Font}" FontSize="10" />
       </StackPanel>
     </Grid>
 
@@ -71,7 +72,7 @@
                     BorderThickness="0" CornerRadius="6" Cursor="Hand"
                     Foreground="{DynamicResource Ink2}">
               <StackPanel Name="CollapseBox" Orientation="Horizontal" Spacing="10">
-                <TextBlock Name="CollapseIcon" Text="&#xE76B;" FontFamily="Segoe MDL2 Assets"
+                <TextBlock Name="CollapseIcon" Text="&#xE76B;" FontFamily="{x:Static v:Glyph.Font}"
                            FontSize="15" Width="18" TextAlignment="Center"
                            Foreground="{DynamicResource Ink2}" VerticalAlignment="Center" />
                 <TextBlock Name="CollapseText" Text="收起侧栏" FontSize="13"

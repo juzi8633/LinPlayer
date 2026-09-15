@@ -13,6 +13,18 @@ namespace LinPlayer.Desktop.Views;
 ///
 /// 别拿它初始化 static readonly 字段:类型初始化可能早于 Application.Current。
 /// </summary>
+/// <summary>
+/// 图标字体。界面里写的全是 Segoe MDL2 的码位,但那是 Windows 自带字体、不能随包带 ——
+/// 别的平台换成按同一批码位编的 LinIcons(scripts/gen-icon-font.py),界面代码不用改。
+/// 新加图标记得在那个脚本里补一行,漏了在 Linux 上就是豆腐块。
+/// </summary>
+public static class Glyph
+{
+    public static FontFamily Font { get; } = OperatingSystem.IsWindows()
+        ? new FontFamily("Segoe MDL2 Assets")
+        : new FontFamily("avares://LinPlayer/Assets/LinIcons.ttf#LinIcons");
+}
+
 public static class Tok
 {
     public static IBrush Of(string key)

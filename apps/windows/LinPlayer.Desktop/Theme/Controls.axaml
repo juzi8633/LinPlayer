@@ -1,5 +1,6 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:v="using:LinPlayer.Desktop.Views">
   <!--
     组件样式(UI_PC §4)。**只写这一层用得到的**,别提前造轮子。
 
@@ -65,7 +66,7 @@
             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
               <!-- 图标。折叠态下它是唯一还看得见的东西,所以宽度钉死 ——
                    不钉的话不同字形宽窄不一,一列图标会左右错开。 -->
-              <TextBlock Name="icon" Text="{TemplateBinding Tag}" FontFamily="Segoe MDL2 Assets"
+              <TextBlock Name="icon" Text="{TemplateBinding Tag}" FontFamily="{x:Static v:Glyph.Font}"
                          FontSize="15" Width="18" TextAlignment="Center"
                          Foreground="{TemplateBinding Foreground}" VerticalAlignment="Center" />
               <ContentPresenter Name="label" VerticalAlignment="Center"
@@ -403,7 +404,7 @@
     <Setter Property="Foreground" Value="White" />
     <Setter Property="BorderThickness" Value="0" />
     <Setter Property="CornerRadius" Value="999" />
-    <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+    <Setter Property="FontFamily" Value="{x:Static v:Glyph.Font}" />
     <Setter Property="FontSize" Value="20" />
     <Setter Property="Padding" Value="0" />
     <Setter Property="Cursor" Value="Hand" />

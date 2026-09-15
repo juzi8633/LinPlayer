@@ -167,7 +167,12 @@ internal static class Program
            用户明确要求过「不喜欢到处拉屎」—— 不要往 AppData 里写。
            这里只把根传给核心层,**路径的唯一出口在 core/paths**,UI 侧不自己拼。 */
         var dataDir = Path.Combine(exeDir, "userdata");
-        var dll = Path.Combine(exeDir, "lpcore.dll");
+        var dll = Path.Combine(exeDir, OperatingSystem.IsWindows() ? "lpcore.dll" : "liblpcore.so");
+        if (Cli.Is(args))
+        {
+            Environment.ExitCode = Cli.Run(args, dll, dataDir, Version);
+            return;
+        }
         // 元数据缓存和核心层共用一个数据根。它必须在任何页面构造之前就绪 ——
         // 晚一步的话首屏那几条读命令全部落空,而「首屏」正是它唯一要救的那一屏。
         MetaCache.Init(dataDir);
