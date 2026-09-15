@@ -1595,6 +1595,9 @@ public sealed class PlayerPage : UserControl
     private async Task Start(string itemId, double resumeSecs)
     {
         if (_view.InitError is not null) { _msg.Text = _view.InitError; return; }
+        // resumeSecs < 0 是「从头播放」:核心层只认 from_start,resume_secs=0 的含义是「你来定」
+        var fromStart = resumeSecs < 0;
+        resumeSecs = Math.Max(resumeSecs, 0);
         try
         {
             if (_isLocal)
@@ -1622,7 +1625,7 @@ public sealed class PlayerPage : UserControl
                 await _core.PlayerPlay(new
                 {
                     s.server, s.token, s.user_id, s.device_id, server_id = _serverId,
-                    item_id = itemId, resume_secs = resumeSecs,
+                    item_id = itemId, resume_secs = resumeSecs, from_start = fromStart,
                     media_source_id = _mediaSourceId,
                 });
             }

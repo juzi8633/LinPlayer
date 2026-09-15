@@ -143,7 +143,8 @@ public static class CardActions
             if (item.ResumeSecs > 0)
             {
                 var fresh = new MenuItem { Header = "从头播放", Icon = Icon(G.Replay) };
-                fresh.Click += (_, _) => Play(core, item, 0);
+                // 负数 = 明说从头放。传 0 是「交给核心层定」,会被服务端进度顶回续播
+                fresh.Click += (_, _) => Play(core, item, -1);
                 items.Add(fresh);
             }
             items.Add(new Separator());
