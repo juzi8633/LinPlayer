@@ -26,6 +26,7 @@
 package preload
 
 import (
+	"linplayer/core/httpx"
 	"linplayer/core/net/tlspolicy"
 
 	"context"
@@ -158,7 +159,7 @@ func (p *Preloader) pull(ctx context.Context, url, rng string, limit int64, canc
 	req.Header.Set("Range", rng)
 	// ★ 预取拉上游用 LinPlayerPreload 这条 UA 道(SPEC §14.1):
 	//   服主要能把「替 mpv 提前拉的旁路请求」和「用户正在看的那一路」在日志里分开。
-	req.Header.Set("User-Agent", "LinPlayerPreload/dev")
+	req.Header.Set("User-Agent", httpx.PreloadUA())
 	resp, err := p.Client.Do(req)
 	if err != nil {
 		return 0

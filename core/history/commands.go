@@ -13,6 +13,7 @@ import (
 	"linplayer/core/bus"
 	"linplayer/core/config"
 	"linplayer/core/emby"
+	"linplayer/core/system"
 )
 
 var store *Store
@@ -46,7 +47,7 @@ func SetShared(s *Store) { store = s }
 //
 //	本地和服务器从此对不上,而没有任何东西说过这件事。
 func markPlayedLocally(ctx context.Context, s *emby.Session, itemID string, played bool) {
-	it, err := emby.NewClient("").ItemForHistory(ctx, s, itemID)
+	it, err := emby.NewClient(system.Version).ItemForHistory(ctx, s, itemID)
 	if err != nil || it == nil {
 		bus.Logf("warn", "标记已看/未看:本地记录没跟上(取条目失败 item=%s): %v", itemID, err)
 		return
@@ -70,7 +71,7 @@ func seriesTmdbOf(ctx context.Context, s *emby.Session, c Candidate) *string {
 	if c.SeriesID == nil || *c.SeriesID == "" {
 		return nil
 	}
-	return emby.NewClient("").SeriesTmdbID(ctx, s, *c.SeriesID)
+	return emby.NewClient(system.Version).SeriesTmdbID(ctx, s, *c.SeriesID)
 }
 
 // RegisterCommands 由 lp_init 调用。
