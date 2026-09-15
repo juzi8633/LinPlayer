@@ -31,8 +31,15 @@ rm -f "$STAGE/lpcore.h"
 
 echo "== 2/3 发布外壳(self-contained)=="
 dotnet publish "$APP" -c Release -r win-x64 --self-contained true \
-  -p:PublishSingleFile=false -p:DebugType=none \
+  -p:PublishSingleFile=false -p:DebugType=none -p:Version="$LP_VERSION" \
   -o "$STAGE" --nologo -v q >/dev/null
+# ☠ 不传 -p:Version 的话壳自报 csproj 里的 1.1.0-dev,核心层又拿它顶掉 ldflags 注的版本 ——
+#   更新检查把每个装着的包都当成 build0,「更新完再开还提示更新」。版本错了不报错,所以这里断言
+GOT="$("$STAGE/LinPlayer.exe" version | tr -d '\r')"
+case "$GOT" in
+  "$LP_VERSION"|"$LP_VERSION+"*) echo "  壳版本 $GOT ✓" ;;
+  *) echo "壳自报版本是 $GOT,该是 $LP_VERSION —— -p:Version 没注进去"; exit 1 ;;
+esac
 
 echo "== 3/3 打包 =="
 # ★ 发行包里**不许**有 userdata/:带上去等于把自检账号发给用户

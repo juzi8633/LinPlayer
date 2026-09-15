@@ -836,3 +836,24 @@ build731~742 每一个预发布都从 730 列起,清单越攒越长(742 那版�
 ★ 取舍(用户知情):publish.yml 提升正式版时照搬预发布的说明,所以正式版的说明只列
   「上一个预发布 → 这一版」。要列「上一个正式版以来的全部」得在提升时另算一遍,
   我做过一版(pre/stable 两种模式 + 重新 checkout),用户嫌复杂撤掉了。
+
+## 壳从来没注过版本:「更新完再开还提示更新」的真根因(2026-09-15)
+
+`docs/VERSIONING.md`、`apps/README.md`、csproj 注释都写着「CI 用 `dotnet publish -p:Version=` 注入」,
+**但 `scripts/pack-win.sh` 从 04129259 起就没传过这个参数。** 文档说有,代码没有,两边都不报错。
+
+链条:
+- 壳自报 csproj 里的回落值 `1.1.0-dev`(`Program.Version` 回读程序集)
+- `lp_init` 把它当 `version` 传给核心层,`core/ffi/main.go` 用它**顶掉** ldflags 注进来的 `system.Version`
+- 更新检查 `parseVersion("1.1.0-dev+<sha>")` 取不到 `-buildN`,build 位是 0 ——
+  比线上任何 `-buildN` 都旧,于是装着哪一版都提示有新版,更新完再开还提示
+
+2026-09-12 用户原话「处于最新版但是依然提示更新,更新完启动再次提示更新」,当时只修了弹窗上的版本显示
+(`DisplayVersion` 不再规约成 x.y.z),这一层没挖到。发现它是因为新加的 Linux 包在 CI 上跑
+`LinPlayer version`,日志里打出来的是 `1.1.0-dev+925a342…` 而不是 `1.1.0-build764`。
+
+修法:`pack-win.sh` / `pack-linux.sh` 都传 `-p:Version="$LP_VERSION"`,出包后断言
+`LinPlayer version` 等于 `$LP_VERSION` 或以 `$LP_VERSION+` 开头(SDK 会自己拼 `+<提交>`)。
+断言用 `1.1.0-dev+sha`、`1.1.0-build76+abc`(前缀撞车)注入过,都红。
+
+**失效条件**:哪天 `core/ffi/main.go` 不再让宿主版本覆盖 ldflags 版本,这条的影响面就只剩界面显示。

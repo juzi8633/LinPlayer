@@ -31,7 +31,7 @@ rm -f "$STAGE/liblpcore.h"
 
 echo "== 2/4 发布外壳(self-contained)=="
 dotnet publish "$APP" -c Release -r linux-x64 --self-contained true \
-  -p:PublishSingleFile=false -p:DebugType=none \
+  -p:PublishSingleFile=false -p:DebugType=none -p:Version="$LP_VERSION" \
   -o "$STAGE" --nologo -v q >/dev/null
 # 丢了可执行位的表现是「解压了双击没反应」
 chmod 0755 "$STAGE/LinPlayer"
@@ -53,7 +53,12 @@ readelf -d "$STAGE/liblpcore.so" | awk '/NEEDED/ {print "  " $NF}'
 python3 "$ROOT/scripts/gen-icon-font.py" --check
 echo "  图标码位全在 LinIcons 里 ✓"
 # 命令行冒烟:壳真的加载得起核心层(不需要 libmpv,也不需要图形环境)
-"$STAGE/LinPlayer" version
+# 版本必须是这次的:壳自报的版本会顶掉核心层 ldflags 注的那个,错了更新检查永远提示有新版
+GOT="$("$STAGE/LinPlayer" version)"
+case "$GOT" in
+  "$LP_VERSION"|"$LP_VERSION+"*) echo "  壳版本 $GOT ✓" ;;
+  *) echo "壳自报版本是 $GOT,该是 $LP_VERSION —— -p:Version 没注进去"; exit 1 ;;
+esac
 "$STAGE/LinPlayer" call system.capabilities >/dev/null
 echo "  命令行调核心层 ✓"
 # 冒烟会在包里建 userdata/ —— 带上去等于把本机数据发给用户
