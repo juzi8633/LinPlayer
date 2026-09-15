@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -80,4 +81,19 @@ func TestProbeOne_通了给毫秒(t *testing.T) {
 		t.Fatal("通的线路不该是 nil")
 	}
 	_ = emby.NewClient
+}
+
+// ★ 真服实测(2026-09-15):有的服按 UA 拉黑,Go-http-client / curl / 浏览器 / 空 UA 一律 403。
+// 测速不带 UA 的话,能播的线路在界面上全显示「不通」。
+func TestProbeOne_带LinPlayer的UA(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.UserAgent(), "LinPlayer/") {
+			w.WriteHeader(http.StatusForbidden)
+		}
+	}))
+	defer up.Close()
+
+	if got := probeOne(context.Background(), up.Client(), up.URL); got == nil {
+		t.Fatal("按 UA 拉黑的服上,测速请求被 403 了 —— 没带 LinPlayer/ 的 UA")
+	}
 }

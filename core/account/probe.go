@@ -11,6 +11,7 @@ import (
 
 	"linplayer/core/bus"
 	"linplayer/core/config"
+	"linplayer/core/httpx"
 )
 
 // probeTimeout 单条线路的上限。6 秒是现有实现的值,别顺手改 —— 改了差分对账会不一致。
@@ -54,6 +55,8 @@ func probeOne(ctx context.Context, hc *http.Client, url string) *int64 {
 	if err != nil {
 		return nil
 	}
+	// ★ 不设就是 Go-http-client/1.1:有的服按 UA 拉黑它回 403,测速就把能用的线路全标成不通
+	req.Header.Set("User-Agent", httpx.UA())
 	resp, err := hc.Do(req)
 	if err != nil {
 		return nil
