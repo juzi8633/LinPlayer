@@ -59,13 +59,11 @@
 | 端 | 状态 |
 |---|---|
 | **Windows** | 🟢 出得了绿色包;**SPEC 里在范围内的命令与页面全部落地**。CI 全链路已跑通(2026-09-04 首个 Go 栈预发布 `v1.1.0-build686`) |
-| **Linux** | 🔴 **一行没写,而且旧栈实现已删** —— 2026-09-04 之前还能靠 Tauri 版发包,现在没有任何可运行的 Linux 端 |
+| **Linux** | 🟡 **2026-09-15 出得了包**:和 Windows **同一份** Avalonia 代码(`apps/windows/LinPlayer.Desktop`),`pack-linux.sh` 出 x86_64 绿色 zip,CI 有 `build-linux` job(ubuntu-22.04);libmpv 运行时 dlopen;另有命令行 `LinPlayer call <命令> '<JSON>'`。**没在真 Linux 桌面上开过窗口、没播过片**,下面 L 组仍是待验 |
 | **Android(手机)** | 🟢 **2026-09-06 落地**:16 页 + 平台职责全套,`pack-android.sh` 出已签名 APK(arm64 34MB / x86_64 39MB),CI 有 `build-android` job。**「有画面」这一条只验到 EGL 那一步**(模拟器 EGL 有缺陷,见 `MOBILE_BLOCKERS.md` B5),要真机复验 |
 | **Android TV** | 🟡 **2026-09-15 页面代码落地**:`UI_TV.md` 全部页面接真核心层,`pack-android.sh tv` 出已签名 `armeabi-v7a` 包(35MB);32 张真页面出图与草稿逐张对照、10 条按键焦点断言。**没上过真电视**,§11 里标【待真机】的条目等真机 |
 
-> ⚠️ Linux 的状态从 ⚪(没开始但有旧版顶着)变成 🔴(**没有任何可用实现**)。
-> 安卓手机端已于 2026-09-06 补回(TV 形态仍缺)。
-> 这不是进度倒退,是删 Rust 栈的**已知代价**。要恢复只能把 Go 版 UI 写出来 ——
+> 删 Rust 栈时 Linux 一度没有任何可用实现;2026-09-15 用 Windows 那份 Avalonia 代码补回。
 > 旧实现在 `git show rust-final:` 里,可以参考但不再构建。
 
 **已注册命令的分布**(数法:``grep -o '^| \[x\] | `[^`]*`' docs/go-migration/COMMANDS.md``):
@@ -638,6 +636,11 @@ Ani-RSS 管理台(同 C24b)。
     叠加区帧间差 1.20 / 每帧都在;60.1 fps
   - 探针 `spikes/s1-2/AvaloniaProbe` **只用 13 个契约导出**,UI 侧没有任何 mpv 类型
 - [ ] **B2.3** Linux:与 B2.2 同一份 C# 代码跑通 🟡
+  - 2026-09-15 **编译与出包已过**:`dotnet publish -r linux-x64` + 本机 cgo 编 `liblpcore.so`,
+    CI 上跑命令行冒烟(`LinPlayer call system.capabilities`,证明壳加载得起核心层)
+  - 为 Linux 改的只有四处:核心库文件名 / 图标字体(Segoe MDL2 不能随包带,换成 `Assets/LinIcons.ttf`)/
+    X11 不支持扩进标题栏时藏掉自绘三颗按钮 / libmpv 走 dlopen
+  - 未验:真桌面开窗、GL 视频层有画面(S1.4 / S1.4b)
 - [x] **B2.4** ✅ 绑定层**代码生成器**(从 `COMMANDS.md` 生成)
   - `scripts/gen-bindings.py` → `bindings/csharp/Commands.g.cs` + `bindings/kotlin/Commands.g.kt`
   - `scripts/check-bindings.sh` 四关全绿:产物最新 / C# 编得过 / Kotlin 编得过 /
@@ -1949,11 +1952,14 @@ Ani-RSS 管理台(同 C24b)。
 > **Windows 上过了不代表这些过了。** 本组每一条都对应一个「只有真跑 Linux 才现形」的坑。
 
 - [ ] **L1** libmpv 运行时 `dlopen` + 三个候选名(`libmpv.so.2/.1/.so`)
+  - 2026-09-15:`core/player/mpv_dlopen_linux.c`;三条 CI 断言都在 `pack-linux.sh` 里
+    (DT_NEEDED 反向断言用链死 libmpv 的桩库注入过,能红)。剩「两个系统上都能起」待真机
   - 判据:在只有 `.so.1` 和只有 `.so.2` 的两个系统上都能起
   - 判据 🔴:**CI 反向断言 —— `libmpv` 不许出现在 `DT_NEEDED` 里**
   - 判据 🔴:**CI 正向断言 —— 二进制里 grep 得到 `libmpv.so.2`**
   - 判据 🔴:**构建机故意不装 libmpv 开发包**,并在 CI 里写明这是故意的
 - [ ] **L2** 系统没装 mpv 时的首启提示
+  - 2026-09-15:起播报错改成带安装命令(`core/player/mpvhint_linux.go`);首启就提示的那一步没做
   - 判据:给出各发行版的安装命令,**不是"加载失败"**
 - [ ] **L3** 双显卡钉独显(PRIME 环境变量) 🔴 **新做,不是移植**
   - 判据:**回读 mpv 日志里的 GPU 名字**确认没跑核显,不是"设置了环境变量"
@@ -1967,8 +1973,10 @@ Ani-RSS 管理台(同 C24b)。
   - 判据:解包后**补 `0755`** —— 不补的表现是"更新看着成功了,App 再也起不来"
   - 判据:`$ORIGIN` rpath **回读确认**真的写进 ELF 了
 - [ ] **L7** 打包:zip(不是 tar.gz)+ 资产名含 `linux` + strip 排在符号上传之后
+  - 2026-09-15:zip + `LinPlayer-Linux-v<版本>.zip` 已做;核心层 `-s -w` 直接编成已 strip,没有符号上传这一步
   - 判据:未 strip 与已 strip 的体积都打进日志(实测老版本未 strip 191 MB)
 - [ ] **L8** 系统下限:`DT_NEEDED` 清单打进构建日志
+  - 2026-09-15:`pack-linux.sh` 打印 `liblpcore.so` 的 NEEDED;CI 钉 ubuntu-22.04
   - 判据:新增任何硬依赖在日志里一眼可见
   - **附带决策**:插件逃生舱的 WebView 能否做成**可选依赖**(`SPEC.md` §15.6)——
     能的话基础包的系统下限会显著放宽

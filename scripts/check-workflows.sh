@@ -116,7 +116,7 @@ NEED = ['DANDANPLAY_APP_ID', 'DANDANPLAY_APP_SECRET', 'TMDB_API_KEY',
 #   build-core-android.sh / build-core.sh —— 它们**覆盖**前面那一步的产物。
 #   闸门只认被调的那个脚本名时,「Pack Android」这一步整个不受检查,
 #   于是带凭据的 .so 被零凭据版本静默顶掉,而 CI 全绿、APK 正常。真栽过。
-BUILD_STEPS = ('pack-win.sh', 'pack-android.sh', 'build-core.sh', 'build-core-android.sh')
+BUILD_STEPS = ('pack-win.sh', 'pack-linux.sh', 'pack-android.sh', 'build-core.sh', 'build-core-android.sh')
 bad = []
 checked = 0
 for f in sorted(glob.glob('.github/workflows/*.yml')):

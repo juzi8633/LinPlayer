@@ -3,8 +3,7 @@
 # 2026-09-04 重写:Rust/Tauri 栈整体删除后,原来的 build-windows / build-linux /
 # build-android 三个 job 连同它们依赖的 cargo / node / tauri 步骤一起没了。
 # 2026-09-06:Android 手机端落地,build-android 加回来。
-# Linux 的 Go 版 UI 仍然一行没写,所以**不留空 job** —— 留着的话它要么恒绿
-# (什么都没干)要么恒红,两种都是噪音。
+# 2026-09-15:Linux 端加回来 —— 和 Windows 同一份 Avalonia 代码,build-linux。
 name: Build
 
 on:
@@ -170,6 +169,50 @@ jobs:
           path: release/*.zip
           if-no-files-found: error
 
+  build-linux:
+    name: Build Linux portable
+    needs: version
+    # ★ 钉 22.04:glibc 向后兼容不向前,在哪个版本上编,比它老的发行版就起不来(TODO L8)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # fetch-toolchain.sh 只拉 Windows 的 Go 与 zig,这里用 setup-go 装同一个版本;C 编译器用系统 gcc
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.0'
+          cache: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # ★ **故意不装 libmpv 开发包。** 核心层运行时 dlopen libmpv(TODO L1);
+      #   构建机上装了它,「不小心又链死了某个 soname」就测不出来。
+      #   pack-linux.sh 里有 DT_NEEDED 反向断言 + 命令行冒烟。
+      - name: Pack Linux portable
+        shell: bash
+        env:
+          LP_VERSION: ${{ needs.version.outputs.version }}
+          DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
+          DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          LP_SYNC_PROXY_BASE: ${{ secrets.LP_SYNC_PROXY_BASE }}
+          LP_SYNC_PROXY_KEY: ${{ secrets.LP_SYNC_PROXY_KEY }}
+          LP_BANGUMI_REDIRECT_URI: ${{ secrets.LP_BANGUMI_REDIRECT_URI }}
+          LP_AFDIAN_SPONSOR_URL: ${{ secrets.LP_AFDIAN_SPONSOR_URL }}
+          LP_ICON_LIBRARY_SOURCES: ${{ secrets.LP_ICON_LIBRARY_SOURCES }}
+          LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
+        run: bash scripts/pack-linux.sh "$GITHUB_WORKSPACE/release"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LinPlayer-linux-x64
+          path: release/*.zip
+          if-no-files-found: error
+
   build-android:
     name: Build Android
     needs: version
@@ -309,7 +352,7 @@ jobs:
 
   create-prerelease:
     name: Create Pre-release
-    needs: [version, build-windows, build-android]
+    needs: [version, build-windows, build-linux, build-android]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:

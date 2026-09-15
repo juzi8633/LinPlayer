@@ -5,12 +5,10 @@
 
 | 目录 | 状态 | 说明 |
 |------|------|------|
-| `windows/` | 在用 | C# + [Avalonia](https://avaloniaui.net) 11。经 P/Invoke 调 `lpcore.dll`,命令绑定是 `bindings/csharp/Commands.g.cs`(从 `docs/go-migration/COMMANDS.md` 生成) |
+| `windows/` | 在用 | C# + [Avalonia](https://avaloniaui.net) 11。经 P/Invoke 调 `lpcore.dll`,命令绑定是 `bindings/csharp/Commands.g.cs`(从 `docs/go-migration/COMMANDS.md` 生成)。**Linux 端也是这一份**:`scripts/pack-linux.sh` 出包 |
+| `android/` | 在用 | Kotlin + Compose,手机与 TV 同一个工程,`scripts/pack-android.sh` 出包 |
 
-> ⚠️ **只有 Windows 一个端。** 2026-09-04 删除 Rust/Tauri 栈时,`desktop/`(Tauri 桌面壳)
-> 与 `android/`(手机 + TV)一并删除,而 Go 版的 Linux / Android UI **还没开始写**
-> (进度见 `docs/go-migration/TODO.md`)。
-> 要看旧实现:`git show rust-final:apps/desktop/...`。
+> 要看 Rust/Tauri 时代的旧实现:`git show rust-final:apps/desktop/...`。
 
 ## windows 的几个约定
 

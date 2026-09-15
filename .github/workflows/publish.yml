@@ -70,13 +70,11 @@ jobs:
           # 只列**真的会被构建出来**的产物。把不存在的平台留在这儿只会让每次发布
           # 刷一串假「缺少 xxx」,久了没人看这段输出。
           #
-          # ★ Linux 端的 UI 还没写(见 docs/go-migration/TODO.md),所以不列。
-          #   等它回来时**记得加回来** —— 漏加的表现是发布成功、用户却下不到包,
-          #   而这段检查一声不吭。
           # ★ APK 的名字由安卓出包脚本决定,应用内更新按 `.apk` + ABI 认包
           #   (core/system/update.go 的 assetKeywordSets),改名前先改那儿。
           EXPECTED=(
             "LinPlayer-Windows-v$VER.zip"
+            "LinPlayer-Linux-v$VER.zip"
             "app-arm64-v8a-release.apk"
             "app-tv-armeabi-v7a-release.apk"
           )
@@ -112,13 +110,15 @@ jobs:
 
           ### 下载
           - **Windows**:\`LinPlayer-Windows-v$VER.zip\`(免安装绿色包,解压即用)
+          - **Linux**:\`LinPlayer-Linux-v$VER.zip\`(x86_64 绿色包,解压后运行 \`./LinPlayer\`;需要系统装有 libmpv)
           - **安卓手机**:\`app-arm64-v8a-release.apk\`
           - **安卓 TV**:\`app-tv-armeabi-v7a-release.apk\`(32 位,电视盒子;装之前在电视上确认支持 armeabi-v7a)
 
           ### 说明
           - 应用内「设置 → 更新 → 检查更新」可以一路走完下载和安装,不用手动下包。
           - Windows 端内置完整版 libmpv(支持 PGS/SUP 图形字幕)。
-          - **Linux 暂无可用版本**:Go 版的 Linux UI 还没写。
+          - Linux 端不带 libmpv,用系统的:Debian/Ubuntu 装 \`libmpv2\`(22.04 是 \`libmpv1\`),Fedora 装 \`mpv-libs\`,Arch 装 \`mpv\`。
+            也能在终端里调:\`./LinPlayer call <命令> '<JSON>'\`,\`./LinPlayer commands\` 列出全部命令。
           - 绿色包的全部数据(账号/缓存/下载)都写在主程序同级的 \`userdata/\`,
             整个文件夹拷走即完成迁移;删掉文件夹即卸载干净。
           EOF

@@ -3024,3 +3024,50 @@ LP_EPS=1200 LP_RAIL=1 LP_RAILSTRESS=1 LP_WAIT=26 bash scripts/selfcheck-win.sh e
 原来 `rank <= 3` 共用一个金色 —— 那样「第一」和「第三」只能靠读数字分辨,
 而角标存在的理由正是**不用读就看得出来**。探针判的是**三色两两不同**,
 不是「有颜色」:判后者的话退化回单色照样绿(实测注入过,当场红)。
+
+## Linux 端:同一份 Avalonia 代码(2026-09-15)
+
+Linux 没另起工程,`apps/windows/LinPlayer.Desktop` 直接 `dotnet publish -r linux-x64`。
+全仓 `.cs` 里 P/Invoke 只有 `CoreClient` 那 13 个核心层导出,真正要改的只有下面几处。
+**失效条件**:哪天壳里加了 Win32 调用(`user32` / 注册表 / `explorer`),这条「只改四处」就不成立了。
+
+### 图标字体:Segoe MDL2 在 Linux 上一个都画不出来
+
+侧栏、OSD、右键菜单、标题栏按钮全是 `FontFamily="Segoe MDL2 Assets"` + PUA 码位(40 个)。
+那是 Windows 自带字体,不能随包分发;Linux 上找不到**不报错**,整排豆腐块。
+
+- 解法:`scripts/gen-icon-font.py` 从 Fluent UI System Icons(MIT,钉提交)挑外形对应的字形,
+  **按 MDL2 原码位**编成 8KB 的 `Assets/LinIcons.ttf`。界面代码一个码位都不用改,
+  字体统一走 `Views/Tok.cs` 的 `Glyph.Font`(Windows 仍是 Segoe)。
+- avares 字体 URI 写错也**不抛异常**:实测 `avares://LinPlayer/Assets/NoSuch.ttf#LinIcons` →
+  `TryGetGlyphTypeface` 静默返回 false。正确写法 `avares://LinPlayer/Assets/LinIcons.ttf#LinIcons`
+  在 Windows 上实测取得到、5 个抽查码位都在、U+F000 不在。
+- 新加图标漏补 MAP 同样不报错。`gen-icon-font.py --check`(不联网)比对界面代码里的码位与 MAP,
+  挂在 `pack-linux.sh` 自检里;删掉 U+E8FD 注入过,能红。
+
+### libmpv 走 dlopen,符号设 hidden
+
+- soname 分裂:Ubuntu 22.04 只有 `libmpv.so.1`,新发行版只有 `.so.2`。链死哪个都有一半机器进程起不来,
+  而且是**加载 liblpcore.so 那一刻**失败,UI 连「请装 libmpv」都说不出。
+- `core/player/mpv_dlopen_linux.c`(`//go:build linux && !android`,.c 文件也认构建约束)按
+  `.so.2 → .so.1 → .so` 找;缺库时 `mpv_create` 返回 NULL,起播报错带各发行版安装命令。
+  `mpv_get_time_ns` 是 client API 2.1 才有的,`.so.1` 上退回微秒 ×1000。
+- 转发函数设 `visibility("hidden")`:按 ELF 符号查找规则,同名 `mpv_*` 进了动态符号表就可能被 libmpv
+  内部调用插入绑回来。这条**没实测过递归**,是照规则防的;产物里 `mpv_*` 导出为 0 已核对。
+- 安卓也是 `GOOS=linux` 构建标签,cgo 指令要写成 `#cgo windows android LDFLAGS: -lmpv` /
+  `#cgo linux,!android LDFLAGS: -ldl`,只写 `linux` 会把安卓一起改掉。
+
+### 在 Windows 上就能验 Linux 核心层
+
+没有 WSL 也行:仓库自带的 zig 能交叉编 cgo ——
+`GOOS=linux GOARCH=amd64 CC="<zig.exe> cc -target x86_64-linux-gnu.2.28" go build -buildmode=c-shared ./ffi`。
+用 pyelftools 读产物:NEEDED 只有 `libc / libresolv / libpthread / libdl`,glibc 符号版本最高 2.3.2。
+DT_NEEDED 断言的反向注入也在本机做:zig 编一个 soname 为 `libmpv.so.2` 的桩库,按老写法链上,断言当场红。
+
+### 标题栏与命令行
+
+- X11 下 `ExtendClientAreaToDecorationsHint` 不保证生效,系统标题栏还在时自绘的最小化/最大化/关闭
+  会画成第二份。`Opened` 里按 `IsExtendedIntoWindowDecorations` 显隐,不按操作系统判。**真桌面上没看过**。
+- 命令行 `LinPlayer call <命令> '<JSON>'` 在 `Program.Main` 最前面分流,不起 Avalonia。
+  `emby.*` 自动并入 `emby.currentSession` 的四件套(和 `CardActions.Merge` 同一份字段)。
+  Windows 的 WinExe 经管道重定向也能拿到输出(bash 里实测 249 条命令、退出码 0/1/2 都对)。
