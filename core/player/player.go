@@ -26,8 +26,11 @@ package player
 // **它是 MSVC 格式的导入库,而我们的 C 编译器是 zig cc(lld)—— 实测能直接吃**
 // (2026-08-31)。运行时需要 `libmpv-2.dll` 在 DLL 搜索路径上。
 
+// Linux(非安卓)不链 libmpv:mpv_dlopen_linux.c 运行时按 .so.2/.so.1/.so 找。
+
 /*
-#cgo LDFLAGS: -L${SRCDIR}/../../third_party/libmpv -lmpv
+#cgo windows android LDFLAGS: -L${SRCDIR}/../../third_party/libmpv -lmpv
+#cgo linux,!android LDFLAGS: -ldl -lpthread
 #include <stdlib.h>
 #include <stdint.h>
 
@@ -737,7 +740,7 @@ func playFile(path string) error {
 	// 上一部片的报错不能算在这一部头上 —— 那会让排查指向一个早就过去的问题
 	ClearMpvError()
 	if r := ensureMpv(); r != 0 {
-		return errors.New("mpv 起不来")
+		return errors.New(mpvDownMsg)
 	}
 	if !waitRenderCtx(5 * time.Second) {
 		return errors.New("视频通道未就绪:UI 还没调 lp_gl_init。起播必须排在它之后(SPEC §7.2 约束 6)")

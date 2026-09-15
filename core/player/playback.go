@@ -7,6 +7,7 @@ package player
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -190,7 +191,7 @@ func play(ctx context.Context, s *emby.Session, itemID string, resumeSecs float6
 
 	if useMpv {
 		if r := ensureMpv(); r != 0 {
-			return nil, fmt.Errorf("mpv 起不来")
+			return nil, errors.New(mpvDownMsg)
 		}
 		if !waitRenderCtx(5 * time.Second) {
 			return nil, fmt.Errorf("视频通道未就绪:UI 还没调 lp_gl_init。起播必须排在它之后(SPEC §7.2 约束 6)")

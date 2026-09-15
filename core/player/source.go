@@ -30,7 +30,7 @@ func PlaySource(url, title string, resumeSecs float64,
 	headers map[string]string, ua string, subs []emby.ExternalSub) (map[string]any, error) {
 
 	if r := ensureMpv(); r != 0 {
-		return nil, bus.NewErr(bus.EInternal, "mpv 起不来")
+		return nil, bus.NewErr(bus.EInternal, mpvDownMsg)
 	}
 	if !waitRenderCtx(5 * time.Second) {
 		return nil, bus.NewErr(bus.EInternal,
