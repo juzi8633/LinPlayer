@@ -815,9 +815,15 @@ ENOENT 才发现的 —— 反向注入除了验门禁有效,还会顺路把新�
 | `LinPlayer/…` `LinPlayerPreload/…` `libmpv` `okhttp/…` `Dalvik/…` | 通 |
 | `Go-http-client/1.1`(Go 默认) `Lavf/…`(ffmpeg 默认) `curl/…` 浏览器 空 UA | 403 |
 
-用真实核心层跑全链路:登录 / `player.play` 解析 / 本地代理取头中尾 **全部正常**,
-唯独 `account.probeLines` 回 `ms: null` —— `probe.go` 的请求没设 UA,发出去是 `Go-http-client/1.1`。
-已补 `httpx.UA()`,护栏 `TestProbeOne_带LinPlayer的UA`(删掉那行必红)。
+用真实核心层跑全链路:登录 / `player.play` 解析 / 本地代理取头中尾正常,但有**两处**没设 UA、发的是 `Go-http-client/1.1`:
+
+1. `account/probe.go` 线路测速 → 能播的线路显示「不通」。护栏 `TestProbeOne_带LinPlayer的UA`。
+2. `net/localserve` 的 `/img` 取图 → **封面 / Logo(艺术字)/ 背景全空,播放却正常**。三端图片都走这一处。
+   护栏 `TestImgSendsUA`(另钉「插件源自己给的 UA 不许盖掉」)。
+
+★ 第二处**我第一轮漏了**,推完用户才报:当时只 curl 了一次 `Images/Primary`,
+  碰巧命中 CDN 缓存回 200,就判「图片不受 UA 影响」。换参数再打,Go UA 下每一种都是 403。
+  **单次 200 不能证明不拦** —— 至少换两组参数,并且按代码真实发的 UA 打,而不是随手挑几个。
 
 ★ **Go 的 `http.NewRequest` 不设 UA 不是「不发」,是发 `Go-http-client/1.1`** —— 和 reqwest 那条相反,但结果一样被拉黑。
   新写打 Emby 的请求要么走 `emby.Client`(每处都 `Set("User-Agent", c.UA)`),要么走 `httpx.EmbyClient()`(Transport 补 UA);

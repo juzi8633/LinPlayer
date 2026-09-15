@@ -101,6 +101,34 @@ func TestImgFetchesAndCaches(t *testing.T) {
 	}
 }
 
+// ★ 真服实测(2026-09-15):有的服按 UA 拉黑 Go-http-client,封面 / Logo / 背景全 403。
+// 调用方(插件源)自己给了 UA 的,不许被盖掉。
+func TestImgSendsUA(t *testing.T) {
+	s, up := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		ua := r.UserAgent()
+		if !strings.HasPrefix(ua, "LinPlayer/") && ua != "PluginUA/1" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		_, _ = w.Write(pngBytes)
+	})
+	s.Allow(up.URL, http.Header{"X-Emby-Token": {"tok"}})
+	if r := get(t, s, "/img?src="+up.URL+"/Items/ua/Images/Logo", true); r.StatusCode != 200 {
+		t.Fatalf("取图被上游拒了(%d)—— 没带 LinPlayer/ 的 UA", r.StatusCode)
+	}
+
+	var got string
+	s2, up2 := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		got = r.UserAgent()
+		_, _ = w.Write(pngBytes)
+	})
+	s2.Allow(up2.URL, http.Header{"User-Agent": {"PluginUA/1"}})
+	get(t, s2, "/img?src="+up2.URL+"/Items/ua2/Images/Primary", true)
+	if got != "PluginUA/1" {
+		t.Fatalf("调用方给的 UA 被盖掉了,上游收到 %q", got)
+	}
+}
+
 // B1.7 判据二:不带 token 401。
 func TestImgWithoutTokenIs401(t *testing.T) {
 	s, up := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {

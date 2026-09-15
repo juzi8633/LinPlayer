@@ -38,6 +38,7 @@ import (
 	"sync"
 	"time"
 
+	"linplayer/core/httpx"
 	"linplayer/core/imgcache"
 	"linplayer/core/net/tlspolicy"
 )
@@ -257,6 +258,10 @@ func (s *Server) fetch(ctx context.Context, u string, headers http.Header) ([]by
 		for _, v := range vs {
 			req.Header.Add(k, v)
 		}
+	}
+	// ★ 调用方没给就补 LinPlayer/{版本}:不设是 Go-http-client/1.1,按 UA 拉黑的服上封面 / Logo / 背景全 403
+	if req.Header.Get("User-Agent") == "" {
+		req.Header.Set("User-Agent", httpx.UA())
 	}
 	/* ★ 必须跟 301。实测某 fork 的 /Items/{id}/Images/Backdrop/0 会 **301 跳到静态文件**。
 	   不跟跳只会拿到几十字节的 HTML,然后被 Sniff 判成 octet-stream ——
