@@ -9,18 +9,20 @@
 |---|---|---|
 | 核心层 | [Go](https://go.dev) | 业务全在这:Emby 协议 / 播放控制 / 网络 / 插件 / 弹幕 / 同步 / 下载。编成 `lpcore` 动态库(`c-shared`),经 C ABI 供各端调用 |
 | 播放内核 | [libmpv](https://mpv.io) | 核心层 cgo 直接调。不是子进程,是进程内库 |
-| Windows 外壳 | C# / .NET 10 + [Avalonia 11](https://avaloniaui.net) | 窗口、UI、把核心层的命令接到界面上 |
+| 桌面外壳 | C# / .NET 10 + [Avalonia 11](https://avaloniaui.net) | 窗口、UI、把核心层的命令接到界面上。**Windows 与 Linux 同一份代码** |
+| 安卓外壳 | Kotlin + Jetpack Compose / Compose for TV | 手机、平板与 TV 同一个工程,按形态分流 |
 | 命令绑定 | 生成的 `Commands.g.cs` / `Commands.g.kt` | 从 `docs/go-migration/COMMANDS.md` 生成,见下文「命令契约」 |
 
-**只有 Windows 一个端能出包。** Linux 与 Android/TV 的 UI 还没写。
+四端都能出包:Windows 绿色 zip、Linux 绿色 zip(x86_64)、安卓手机 APK(arm64)、安卓 TV APK(armeabi-v7a)。
 
 ## 仓库结构
 
 ```
-core/              Go 核心层。出库为 lpcore.dll
+core/              Go 核心层。出库为 lpcore.dll / liblpcore.so
   ffi/             C ABI 边界(SPEC §5.1)
   cmd/             listcommands / diffcheck / sealsecrets 等工具
-apps/windows/      C# + Avalonia 外壳
+apps/windows/      C# + Avalonia 外壳(Windows 与 Linux 共用)
+apps/android/      Kotlin + Compose 外壳(手机 / 平板 / TV)
 bindings/          从 COMMANDS.md 生成的命令绑定(csharp / kotlin)
 third_party/
   libmpv/          libmpv 的头文件与导入库(cgo 链接用)。dll 不入库
@@ -67,7 +69,10 @@ cd core && PATH="$PWD/../third_party/libmpv:$PATH" go test ./...
 | `bash scripts/check-core.sh` | go vet / go test / 出库 / FFI 契约 / C# 契约测试 / **18 条差分对账** |
 | `bash scripts/check-bindings.sh` | 绑定产物最新 / C# 编译 / Kotlin 编译 / **四方比对** |
 | `bash scripts/check-workflows.sh` | workflow 的 shell 语法 + **编译期凭据闸门** |
-| `bash scripts/pack-win.sh` | 出绿色包。**「编译通过」不是交付** |
+| `bash scripts/pack-win.sh` | 出 Windows 绿色包。**「编译通过」不是交付** |
+| `bash scripts/pack-linux.sh` | 出 Linux 绿色包(只能在 Linux 上跑)。含 libmpv 不进 DT_NEEDED、图标码位、壳版本、命令行冒烟四项自检 |
+| `bash scripts/pack-android.sh [arm64-v8a\|tv]` | 出已签名 APK(手机 arm64 / TV armeabi-v7a) |
+| `python3 scripts/check-android-args.py` | 安卓界面传的参数名,核心层必须真的读 |
 | `bash scripts/selfcheck-win.sh` | 真机自检:起假 Emby → 灌账号 → 起 exe → 截图 |
 
 ### 差分对账是什么
