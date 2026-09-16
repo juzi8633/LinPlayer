@@ -126,3 +126,44 @@ func TestTestConnection没给账号就只探(t *testing.T) {
 		t.Fatalf("探测结果不对: %+v", got)
 	}
 }
+
+// ☠ 探测失败**不等于**这台服务器不能用。
+//
+// 匿名端点 `/System/Info/Public` 和带凭据的 `/Users/AuthenticateByName`
+// 在反代 / WAF 眼里是两条路:UA 白名单、只放行带凭据的路径、
+// 干脆把公开信息端点关掉的都有。原来这里探测一挂就 return,
+// 于是「测试连接报错,可是直接点登录就进去了」—— 两句话自相矛盾,
+// 而用户只会认为测试连接是坏的(2026-09-16 报障)。
+// 填了账号时**登录才是判据**:登得进去,这台服务器就是能用的。
+//
+// ★ 反向注入验过:把 testConnection 改回「probeErr != nil 就 return」,
+// 这条当场红在「探测挂了就直接 return 了 —— 根本没试登录」。
+func TestTestConnection探测被拦但登录得进去也算通(t *testing.T) {
+	setup(t)
+	hits := 0
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/System/Info/Public":
+			w.WriteHeader(http.StatusForbidden) // 反代把匿名端点拦了
+		case "/Users/AuthenticateByName":
+			hits++
+			_, _ = w.Write([]byte(`{"AccessToken":"tk","User":{"Id":"u1","Name":"阿林"}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer up.Close()
+
+	got := call(t, 741, "account.testConnection", map[string]any{
+		"server": up.URL, "username": "阿林", "password": "对的密码",
+	})
+	if hits == 0 {
+		t.Fatal("探测挂了就直接 return 了 —— 根本没试登录")
+	}
+	if got["logged_in"] != true {
+		t.Fatalf("登录明明成功了,却没报成功: %+v", got)
+	}
+	if got["user_name"] != "阿林" {
+		t.Fatalf("没把登录用户带回来: %+v", got)
+	}
+}

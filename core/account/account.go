@@ -267,23 +267,37 @@ func RegisterCommands(version string) {
 		if server == "" {
 			return nil, bus.NewErr(bus.EInvalid, "缺少 server")
 		}
-		info, err := client.ProbeServer(ctx, server)
-		if err != nil {
-			return nil, loginErr(err, "探测服务器")
-		}
+		info, probeErr := client.ProbeServer(ctx, server)
 		user := str(a, "username")
 		if user == "" {
+			// 没给账号时只有探测这一条路,它挂了就是挂了
+			if probeErr != nil {
+				return nil, loginErr(probeErr, "探测服务器")
+			}
 			return TestResult{Name: info.Name, Version: info.Version, ID: info.ID}, nil
 		}
+
+		/* ☠ 探测失败**不再直接判死**。
+		   `/System/Info/Public` 是匿名端点,反代 / WAF 拦它的姿势和拦
+		   `/Users/AuthenticateByName` 完全不同(UA 白名单、只放行带凭据的路径、
+		   干脆把公开信息端点关掉的都有)。原来这里探测一挂就 return,于是出现
+		   「测试连接报错,可是直接点登录就进去了」—— 两句话自相矛盾,
+		   而用户只会认为测试连接是坏的(2026-09-16 报障)。
+		   填了账号时**登录才是判据**:登得进去,这台服务器就是能用的。 */
 		s, lr, err := client.Login(ctx, server, user, str(a, "password"), deviceIDOf(a))
 		if err != nil {
+			// 两条都不通时,把探测那句也带上 —— 只说「登录失败」会让人一直去改密码
+			if probeErr != nil {
+				return nil, loginErr(err, "登录(公开信息端点也不通:"+probeErr.Error()+")")
+			}
 			return nil, loginErr(err, "登录")
 		}
 		_ = client.Logout(ctx, s) // 测试用的会话不留在服务器的设备列表里
-		return TestResult{
-			Name: info.Name, Version: info.Version, ID: info.ID,
-			UserName: lr.UserName, LoggedIn: true,
-		}, nil
+		out := TestResult{UserName: lr.UserName, LoggedIn: true}
+		if info != nil {
+			out.Name, out.Version, out.ID = info.Name, info.Version, info.ID
+		}
+		return out, nil
 	})
 }
 
