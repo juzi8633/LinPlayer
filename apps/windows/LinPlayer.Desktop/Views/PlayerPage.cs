@@ -791,7 +791,15 @@ public sealed class PlayerPage : UserControl
         _top.Transitions = Fade(OsdInMs);
         _bottom.Transitions = Fade(OsdInMs);
 
-        _lock = Osd("🔓", "锁定界面(锁上之后控制条不再自己出现)");
+        /* 原来这颗用的是 emoji(🔓 / 🔒)+ 普通 .osd 的「白字透明底」。
+           两处都错:emoji 走 FontFamily.Default,跟 OSD 上其它按钮那套 MDL2 线性图标
+             完全不是一个东西;而白字透明底只在**控制条上**成立 —— 那里有深色渐变托着。
+           这颗悬在画面正中偏左,底下直接是片子本身:亮场景白字糊在白画面上,
+             暗场景连那层悬停白蒙版都看不见(用户 2026-09-16:「锁屏按钮非常难看清,
+             深色模式完全看不清」)。
+           改法:换 MDL2 字形 + 挂 .scrim(常驻深色底 + 发丝白边,见 Controls.axaml)。 */
+        _lock = Glyph(Ico.Unlocked, "锁定界面(锁上之后控制条不再自己出现)");
+        _lock.Classes.Add("scrim");
         _lock.HorizontalAlignment = HorizontalAlignment.Left;
         _lock.VerticalAlignment = VerticalAlignment.Center;
         _lock.Margin = new Thickness(10, 0, 0, 0);
@@ -799,7 +807,7 @@ public sealed class PlayerPage : UserControl
         _lock.Click += (_, _) =>
         {
             _locked = !_locked;
-            _lock.Content = _locked ? "🔒" : "🔓";
+            _lock.Content = _locked ? Ico.Locked : Ico.Unlocked;
             ToolTip.SetTip(_lock, _locked ? "解锁界面" : "锁定界面(锁上之后控制条不再自己出现)");
             ApplyOsd();
         };
@@ -1367,6 +1375,8 @@ public sealed class PlayerPage : UserControl
         public const string Setting = "\uE713";
         public const string Full = "\uE740";
         public const string Windowed = "\uE73F";
+        public const string Locked = "\uE72E";     // \u9501\u4E0A\u4E86
+        public const string Unlocked = "\uE785";   // \u6CA1\u9501
 
         /// <summary>自检用:全表。加了新图标要往这里加一行,不然它查不到。</summary>
         public static readonly (string Name, string Glyph)[] All =
@@ -1375,6 +1385,7 @@ public sealed class PlayerPage : UserControl
             ("选集", Episodes),
             ("音量", Volume), ("静音", Mute), ("截图", Camera), ("设置", Setting),
             ("全屏", Full), ("退出全屏", Windowed),
+            ("锁定", Locked), ("解锁", Unlocked),
         ];
     }
 
@@ -1869,9 +1880,17 @@ public sealed class PlayerPage : UserControl
     ///
     /// <para><b>先清</b>:核心层存的是上一集的语料,这一集匹配不上时它会原样留着。</para>
     /// </summary>
+    /// <summary>
+    /// 剧名的本地缓存。<b>存在就是为了让搜索框第一眼就是对的</b> ——
+    /// 起播时 <see cref="StartDanmaku"/> 那条路已经问过一次了,搜索面板再问一次
+    /// 就是又一个几百毫秒的往返,而那几百毫秒里框里摆的正是错的那个名字。
+    /// </summary>
+    private string _seriesTitle = "";
+
     /// <summary>正在放的这一部的<b>剧名</b>。剧集取 series_name,电影取 name。取不到给空串。</summary>
     private async Task<string> SeriesTitle()
     {
+        if (_seriesTitle.Length > 0) return _seriesTitle;
         if (NoEmby || _itemId == "" || Nav.Session is not { } s) return "";
         try
         {
@@ -1880,9 +1899,23 @@ public sealed class PlayerPage : UserControl
                 s.server, s.token, s.user_id, s.device_id, server_id = _serverId,
                 item_id = _itemId, with_children = false,
             });
-            return Str(d, "series_name") is { Length: > 0 } sn ? sn : Str(d, "name");
+            _seriesTitle = Str(d, "series_name") is { Length: > 0 } sn ? sn : Str(d, "name");
+            return _seriesTitle;
         }
         catch { return ""; }  // 取不到片名就让用户自己敲 —— 这里弹红字帮不上忙
+    }
+
+    /// <summary>
+    /// 搜索框的**兜底**默认词:还没问到剧名时能填的最好的东西。
+    ///
+    /// <para><c>_title</c> 有两种形态:从详情页主按钮进来是<b>裸集名</b>(「第 35 集」),
+    /// 从卡片进来是 <c>DisplayTitle</c> = 「剧名 · 集名」。后者砍掉「 · 」后面那截
+    /// 就是剧名;前者砍不动,但那种情况下填什么都不对,至少别更差。</para>
+    /// </summary>
+    private string FallbackTitle()
+    {
+        var i = _title.IndexOf(" · ", StringComparison.Ordinal);
+        return i > 0 ? _title[..i] : _title;
     }
 
     private async Task StartDanmaku()
@@ -2123,8 +2156,13 @@ public sealed class PlayerPage : UserControl
         /* 片名先填好:九成情况下用户就是想搜正在放的这一部。
            ☠ **要的是剧名,不是这一集的名字。** 播放页标题对剧集往往是
              「第 12 集」或者单集标题 —— 拿它去弹幕源搜是**永远搜不到**,
-             而用户看到的只是「都没搜到」,会以为源坏了。 */
-        box.Text = _title;
+             而用户看到的只是「都没搜到」,会以为源坏了。
+           光有下面那条异步覆盖是不够的(用户 2026-09-16 还在报「默认还是集名字」):
+             `SeriesTitle()` 是一次完整的 itemDetail 往返,面板弹出后那几百毫秒里
+             框里摆的就是集名 —— 而用户看一眼就回车了。所以:
+               ① 剧名已经问过一次就直接用(_seriesTitle 缓存,起播时就填上了);
+               ② 还没问到时用 FallbackTitle() 砍掉「剧名 · 集名」的后半截,别直上 _title。 */
+        box.Text = _seriesTitle.Length > 0 ? _seriesTitle : FallbackTitle();
         _ = SeriesTitle().ContinueWith(t =>
         {
             if (t.Result.Length > 0) Dispatcher.UIThread.Post(() => box.Text = t.Result);
@@ -3522,6 +3560,12 @@ public sealed class PlayerPage : UserControl
 
     private bool _reportedPaused;
 
+    /// <summary>离片尾多近才认 eof。5 秒足够吸收「最后一帧的 time-pos 略小于 duration」。</summary>
+    private const double EofSlackSecs = 5;
+
+    /// <summary>连着几拍报 eof。一拍是抖动,两拍才是真的播完。</summary>
+    private int _eofHits;
+
     private async Task Poll()
     {
         JsonElement st;
@@ -3534,9 +3578,21 @@ public sealed class PlayerPage : UserControl
         _muted = st.TryGetProperty("mute", out var mu) && mu.ValueKind == JsonValueKind.True;
         var eof = st.TryGetProperty("eof", out var f) && f.ValueKind == JsonValueKind.True;
 
-        // keep-open=yes 之下 END_FILE **永远不发**(文件不卸载),
-        // 判「播完了」只能读 eof-reached。这是「播完不同步进度」的根因。
-        if (eof && !_leaving) { Leave(); return; }
+        /* keep-open=yes 之下 END_FILE **永远不发**(文件不卸载),
+           判「播完了」只能读 eof-reached。这是「播完不同步进度」的根因。
+
+           但**一拍 eof 不等于播完**。流断了的时候 mpv 也会把 eof-reached 翻成 yes:
+             预取代理掉线、上游 502、反代把长连接掐了 —— 而那会儿片子才放到一半。
+             原来这里是无条件 Leave(),表现就是用户报的
+             「播了几分钟自己退回上一页,程序还在」(2026-09-16)。
+           所以再加两道判据:得**真的放到片尾附近**,而且要**连着两拍**都说 eof。
+             时长未知(dur<=0,还没解出来)时一律不退 —— 那时候位置也不可信,
+             宁可让用户自己按返回,也不能把正在看的片子扔掉。 */
+        if (eof && dur > 0 && pos >= dur - EofSlackSecs && !_leaving)
+        {
+            if (++_eofHits >= 2) { Leave(); return; }
+        }
+        else _eofHits = 0;
 
         ReportProgress(pos, paused);
 

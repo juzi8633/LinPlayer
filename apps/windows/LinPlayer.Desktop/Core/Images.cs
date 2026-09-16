@@ -84,7 +84,32 @@ public static class Images
         return Rungs[^1];
     }
 
+    /// <summary>
+    /// 取图,失败**重试两次**。失败大多是瞬时的(上游 502 / 连接被掐 / 抢并发名额超时),
+    /// 而卡片只在构造那一刻取一次 —— 不重试就成了「随机有些封面加载不出来」。
+    ///
+    /// <para><b>不重试 404</b>:没刮削封面的库很常见,为它们空转是白烧并发名额。</para>
+    /// </summary>
     private static async Task<Bitmap?> Fetch(CoreClient core, string url, int maxHeight)
+    {
+        try
+        {
+            for (var attempt = 0; ; attempt++)
+            {
+                var (bmp, retry) = await TryFetch(core, url, maxHeight).ConfigureAwait(false);
+                if (bmp is not null || !retry || attempt >= 2) return bmp;
+                // 退避:第一次 300ms,第二次 600ms。瞬时故障多半在这个量级内就过去了
+                await Task.Delay(300 * (attempt + 1)).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            Inflight.TryRemove(url, out _);
+        }
+    }
+
+    /// <summary>取一次。回 <c>(位图, 这次失败值不值得重试)</c>。</summary>
+    private static async Task<(Bitmap? Bmp, bool Retry)> TryFetch(CoreClient core, string url, int maxHeight)
     {
         try
         {
@@ -102,7 +127,8 @@ public static class Images
                    那 103ms 全是在排队等 UI 线程,不是网络
                它不报错、不崩,只是整个应用变慢。 */
             using var resp = await Http.SendAsync(req).ConfigureAwait(false);
-            if (!resp.IsSuccessStatusCode) return null;
+            if (!resp.IsSuccessStatusCode)
+                return (null, resp.StatusCode != System.Net.HttpStatusCode.NotFound);
             await using var s = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false);
             var ms = new MemoryStream();
             await s.CopyToAsync(ms).ConfigureAwait(false);
@@ -121,16 +147,13 @@ public static class Images
                          $"线程={(Dispatcher.UIThread.CheckAccess() ? "★UI★" : "后台")}");
 
             Remember(url, bmp);
-            return bmp;
+            return (bmp, false);
         }
         catch
         {
-            // 取不到图**不是错误** —— 没刮削封面的库很常见,画占位就行
-            return null;
-        }
-        finally
-        {
-            Inflight.TryRemove(url, out _);
+            /* 取不到图**不是错误** —— 没刮削封面的库很常见,画占位就行。
+               但抛出来的多半是超时 / 连接被掐这类**瞬时**故障,值得再试一次。 */
+            return (null, true);
         }
     }
 

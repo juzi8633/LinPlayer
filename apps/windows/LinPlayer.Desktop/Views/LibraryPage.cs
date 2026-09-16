@@ -59,6 +59,22 @@ public sealed class LibraryPage : PageBase
                 // include_blocked=true:媒体库页是**唯一**能把被屏蔽的库找回来的地方,
                 // 这里也滤掉的话屏蔽就成了单向门(Rust 版栽过)。
                 var s = Nav.Session!;
+                /* 屏蔽名单要在**建卡之前**拿到:被屏蔽的库画成灰卡,而灰是建卡那一刻
+                   画上去的(见 Card 里那段)。排在缓存先行**前面**是必须的 ——
+                   排后面的话缓存命中那一版画的是不灰的卡,而内容没变时下面
+                   直接 return,灰永远补不上。 */
+                try
+                {
+                    var bl = await core.EmbyBlockedList(new { });
+                    CardActions.BlockedLibraries.Clear();
+                    if (bl.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var b in bl.EnumerateArray())
+                            if (b.TryGetProperty("id", out var bid) && bid.GetString() is { Length: > 0 } bs)
+                                CardActions.BlockedLibraries.Add(bs);
+                    }
+                }
+                catch { /* 拿不到名单顶多是灰卡不灰,不该把整页拖红 */ }
                 // 缓存先行:库表是这一页的全部内容,而它几乎从不变 ——
                 // 每次进来等一次往返只为了拿回同样的三五行。
                 var key = MetaCache.Key("emby.views", new { s.server, s.user_id, blocked = true });

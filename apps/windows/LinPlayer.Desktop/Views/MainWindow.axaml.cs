@@ -138,7 +138,15 @@ public partial class MainWindow : Window
         };
         // 日历同样不要求 Emby 会话:它打的是 Bangumi / Trakt
         this.FindControl<RadioButton>("NavCalendar")!.Checked += (_, _) => Nav.Root(new CalendarPage(_core!), () => new CalendarPage(_core!));
-        this.FindControl<RadioButton>("NavSettings")!.Checked += (_, _) => Nav.Root(new SettingsPage(_core!), () => new SettingsPage(_core!));
+        this.FindControl<RadioButton>("NavSettings")!.Checked += (_, _) =>
+        {
+            /* 闸口下**压栈**不是换根。换根会清掉返回栈,而闸口那一页正是用户
+               唯一的下一步 —— 清了之后侧栏藏着、返回键灰着,只能关掉重开。
+               设置在闸口下留着是有理由的:代理配错了就连不上任何服务器,
+               那恰恰是首登时真的要改的东西。 */
+            if (_gated) Nav.Push(new SettingsPage(_core!));
+            else Nav.Root(new SettingsPage(_core!), () => new SettingsPage(_core!));
+        };
 
         /* 基础流程之外的入口在这里统一藏掉。表在 Features.cs —— **只有那一处**。
            散在各页里写 if 的话,过两周没人知道哪些是关着的。
@@ -1389,6 +1397,9 @@ public partial class MainWindow : Window
     /// </summary>
     internal void OpenSearch()
     {
+        // 首登闸口下不开搜索:还没有服务器,搜出来的只能是「请先登录」,
+        // 而浮层一开用户就离开了那唯一一条能往下走的路(见 _gated)
+        if (_gated) return;
         var layer = this.FindControl<Panel>("SearchLayer")!;
         _searchPage = new SearchPage(_core!);
         this.FindControl<ContentControl>("SearchHost")!.Content = _searchPage;
@@ -1415,6 +1426,10 @@ public partial class MainWindow : Window
     /// <summary>给全局快捷键用:勾中侧栏某一项(等于用户点了它)。找不到 / 被藏起来就不动。</summary>
     internal bool ShortcutNav(string ctl)
     {
+        /* ☠ 首登闸口下一律不吃。
+           光判 rb.IsVisible 是拦不住的:闸口藏的是**父容器** NavList,
+           而 Avalonia 的 IsVisible 不继承 —— 每个 RadioButton 自己那一份还是 true。 */
+        if (_gated) return false;
         var rb = this.FindControl<RadioButton>(ctl);
         if (rb is null || !rb.IsVisible) return false;
         rb.IsChecked = true;
@@ -1699,8 +1714,9 @@ public partial class MainWindow : Window
     {
         var tools = this.FindControl<Border>("ContentTools")!;
         this.FindControl<Button>("BtnRefresh")!.IsVisible = Nav.CanReload;
-        // 播放页整个内容区都是画面,这两颗压在上面就是两块挡视线的方块
-        tools.IsVisible = Nav.Current is not PlayerPage;
+        // 播放页整个内容区都是画面,这两颗压在上面就是两块挡视线的方块。
+        // 首登闸口同样不画:那颗「搜索」是闸口上唯一还能点走的东西(见 _gated)
+        tools.IsVisible = Nav.Current is not PlayerPage && !_gated;
         tools.Opacity = 1;
         tools.IsHitTestVisible = true;
     }
@@ -1759,11 +1775,16 @@ public partial class MainWindow : Window
                    点进去清一色「请先登录服务器」。**摆一堆必定失败的入口**
                    和摆一个必定失败的按钮是同一个毛病(详情页的外部播放器那条已经这么处理了)。
                    设置留着:代理配错了连不上服务器,那是首登时真的要改的东西。 */
+                _gated = true;
                 this.FindControl<StackPanel>("NavList")!.IsVisible = false;
                 // 服务器区也要一起藏:一台都没有的时候它只剩一条分隔线和「服务器」两个字,
                 // 看着像没加载出来。而这一屏本来就整页都是「添加服务器」。
                 this.FindControl<StackPanel>("ServerSection")!.IsVisible = false;
-                Show(new AddServerPage(_core, OnLoggedIn));
+                /* 用 Nav.Root 而不是 Show:Show 绕过返回栈,栈是**空的** ——
+                   于是从设置页(闸口下唯一还留着的入口)再也回不到这一页。
+                   压成栈底之后,Esc / Alt+← / 返回键都能退回闸口。 */
+                Control Gate() => new AddServerPage(_core, OnLoggedIn);
+                Nav.Root(Gate(), Gate);
                 return;
             }
             UpdateServerChip(accounts);
@@ -1846,6 +1867,7 @@ public partial class MainWindow : Window
         }
         catch { /* 服务器名没刷新不影响用 */ }
         try { Nav.Session = Sess.From(await _core!.EmbyCurrentSession()); } catch { /* 同上 */ }
+        _gated = false;   // 有服务器了,闸口撤掉 —— 快捷键和搜索随之解封
         this.FindControl<StackPanel>("NavList")!.IsVisible = true;
         this.FindControl<StackPanel>("ServerSection")!.IsVisible = true;
         GoDefaultPage();
@@ -1858,6 +1880,15 @@ public partial class MainWindow : Window
 
     /// <summary>当前账号是浏览型源(本地文件夹)吗。见 <see cref="UpdateServerChip"/>。</summary>
     private bool _isBrowseAccount;
+
+    /// <summary>
+    /// 首登闸口开着吗 —— 一台服务器都还没加,这一屏只能有添加服务器这一页。
+    ///
+    /// <para>藏侧栏拦不住:Avalonia 的 <c>IsVisible</c> <b>不继承</b>,藏掉 NavList 之后
+    /// 每个 RadioButton 自己那一份还是 true,快捷键照样把人带走
+    /// (见 <c>docs/lessons/ui-desktop.md</c>「首登闸口」)。</para>
+    /// </summary>
+    private bool _gated;
 
     /// <summary>
     /// 回这个账号的默认页。**浏览型源的默认页是文件浏览**,不是首页 ——

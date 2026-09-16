@@ -18,14 +18,18 @@ public sealed record CardItem(
     bool HasPrimary, bool Played, long UnplayedCount,
     double RuntimeSecs, double ResumeSecs,
     int SeasonNo, int EpisodeNo,
-    long VideoHeight = 0, long Bitrate = 0, long SizeBytes = 0)
+    long VideoHeight = 0, long Bitrate = 0, long SizeBytes = 0,
+    // 分集所属的剧。右键「转到剧集」要它 —— 卡片上只有剧**名**是不够的,
+    // 跳详情页要的是 id。列表命令一直在发这个字段,只是从来没人接。
+    string SeriesId = "")
 {
     public static CardItem From(JsonElement e) => new(
         Str(e, "id"), Str(e, "name"), Str(e, "type_"), Str(e, "series_name"),
         Bool(e, "has_primary"), Bool(e, "played"), Num(e, "unplayed_item_count"),
         Dbl(e, "runtime_secs"), Dbl(e, "resume_secs"),
         (int)Num(e, "season_no"), (int)Num(e, "episode_no"),
-        Num(e, "video_height"), Num(e, "bitrate"), Num(e, "size_bytes"));
+        Num(e, "video_height"), Num(e, "bitrate"), Num(e, "size_bytes"),
+        Str(e, "series_id"));
 
     /// <summary>
     /// 列表里显示的标题。
@@ -241,6 +245,24 @@ public sealed class Card : Button
         }
 
         Content = new StackPanel { Width = w, Spacing = 6, Children = { art, caption } };
+        /* 被屏蔽的媒体库:**压暗 + 打一个角标**,但照样画出来。
+           用户 2026-09-16 定的口径:「屏蔽某个媒体库之后不参与检索,该媒体库卡片
+           样式变灰,再次右键选择恢复即可恢复」—— 所以这张卡必须还在媒体库页上,
+           它自己就是那个解除入口。整个藏掉的话屏蔽就成了单向门(Rust 版栽过)。
+           只压卡不压整颗按钮:悬停抬起和右键都得照常,不然点不动也就恢复不了。 */
+        if (CardActions.BlockedLibraries.Contains(item.Id))
+        {
+            art.Opacity = 0.38;
+            caption.Opacity = 0.5;
+            ((Panel)art.Child!).Children.Add(new Border
+            {
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Padding = new Thickness(10, 6), CornerRadius = new CornerRadius(6),
+                Background = BadgeScrim,
+                Child = new TextBlock { Text = "已屏蔽", FontSize = 12, Foreground = Brushes.White },
+            });
+        }
         Classes.Add("media");
         Background = Brushes.Transparent;
         BorderThickness = new Thickness(0);

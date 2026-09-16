@@ -22,8 +22,11 @@ public static class Features
         // 「下载」2026-09-04 放出来(用户:「侧边栏增加一个下载,方便用户看
         // 已下载的剧集/电影」)。页(DownloadPage)、命令、详情页的下载按钮
         // 本来就全在,唯独侧栏那一条被这张表挡着 —— 又一次「后端领先前端」。
-        "nav.ranking",     // 排行榜(弹弹Play / TMDB)
-        "nav.calendar",    // 追剧日历(Trakt / Bangumi)
+        /* nav.ranking / nav.calendar 2026-09-16 放出来(用户点名要这两页)。
+           两页(RankingPage / CalendarPage)、核心层命令、侧栏那两个 RadioButton
+           本来就全在,唯独被这张表挡着 —— 又一次「后端领先前端」。
+           它们都**不要求 Emby 会话**(打的是弹弹Play / TMDB / Bangumi / Trakt),
+           所以不跟着账号类型走,只由这张表管。 */
         "nav.plugins",     // 插件市场
         /* nav.browse 2026-09-06 放出来。它现在只管**本地文件夹源**一个 ——
            网盘和局域网源已经从代码里删净了。关着它的后果是本地源加得进来、
@@ -33,7 +36,11 @@ public static class Features
         // —— 设置分组 ——
         "set.preload",     // 预加载
         "set.writeback",   // 跨服务器进度
-        "set.blocked",     // 已屏蔽的内容(和 card.block 成对,要关一起关)
+        /* set.blocked 2026-09-16 放出来。屏蔽这件事已经改成**只对媒体库**
+           (条目级的 card.block 连菜单项都删了,见 CardActions),
+           而被屏蔽的库在媒体库页上是「压暗 + 已屏蔽角标」的灰卡、右键就能恢复 ——
+           解除入口本来就有了。这一组是**第二条**解除路径:库多的时候
+           挨个找灰卡不如在这里看一张表。 */
         "set.translate",   // 字幕翻译
         "set.whisper",     // 本地转写
         "set.cfspeed",     // CF 线路优选

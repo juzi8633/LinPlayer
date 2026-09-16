@@ -513,7 +513,11 @@ public static class SettingsSections
            只给下拉等于把人锁在坏掉的那几个上。档位表来自核心层,不在这儿抄一份。 */
         var proxy = new TextBox
         {
+            // .field:不挂这个类走的是 Fluent 出厂皮 —— 聚焦时刷白底描亮白边,
+            // 深色皮下是一块刺眼白斑(见 Controls.axaml 里 TextBox.field 那段注释)
+            Classes = { "field" },
             Watermark = "留空 = 直连 GitHub", Text = Str(s, "proxy"), MinHeight = 34,
+            Width = 320,
         };
 
         async void Save()
@@ -927,6 +931,7 @@ public static class SettingsSections
         var hint = Hint();
         var words = new TextBox
         {
+            Classes = { "field" },   // 同上:不挂就是 Fluent 出厂皮
             AcceptsReturn = true, MinHeight = 96, MaxHeight = 180,
             TextWrapping = TextWrapping.NoWrap, Watermark = "屏蔽词,一行一个",
         };
@@ -1016,8 +1021,12 @@ public static class SettingsSections
             /* 鉴权方式**不问用户** —— 他也不知道什么是 pathToken。核心层从地址里推
                (setDanmakuConfig 里的 DeriveAuth),推错了也比给一个四选一的下拉框强:
                那个框选错了同样不报错,只是搜不到。 */
-            var nameBox = new TextBox { Watermark = "弹幕源名字", MinHeight = 32 };
-            var urlBox = new TextBox { Watermark = "弹幕源链接", MinHeight = 32, MinWidth = 360 };
+            // .field + 34:和这一页别的输入框同一套皮、同一个行高
+            var nameBox = new TextBox { Classes = { "field" }, Watermark = "弹幕源名字", MinHeight = 34 };
+            var urlBox = new TextBox
+            {
+                Classes = { "field" }, Watermark = "弹幕源链接", MinHeight = 34, MinWidth = 360,
+            };
             var body = new StackPanel { Spacing = 10, Children = { nameBox, urlBox } };
             if (!await Dialogs.Show(add, "添加弹幕源", body, "添加", "取消")) return;
             var u = (urlBox.Text ?? "").Trim();

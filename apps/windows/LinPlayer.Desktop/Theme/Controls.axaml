@@ -302,6 +302,40 @@
     <Setter Property="RenderTransform" Value="scale(0.99)" />
   </Style>
 
+  <!-- ══════════════════ 表单控件 ══════════════════
+    这两个控件**全站一条样式都没有**,跑的是 Fluent 出厂皮。而设置页正是
+      CheckBox 最密集的一页(十几个),所以它看着最不像这套皮肤 ——
+      行高 30 / 32 / 34 / 40 四种混着,勾选框的圆角和 6/10/999 那把尺也对不上。
+    只设**控件自己的属性**,不去覆盖 Fluent 的内部资源键:
+      键名对不上时样式**静默不生效**(TextBox.field 那两条注释记着同一个坑),
+      而「设了没生效」比「没设」更难查。勾选框内部那个对勾的配色因此保持默认 ——
+      要改它得先把 Fluent 的资源键逐个实测一遍,那是另一件事。
+    不加 class、直接选类型:加了 class 就得回去给十几处各挂一次,
+      而漏掉的那一处就是「这一行和别的不一样」。 -->
+  <Style Selector="CheckBox">
+    <Setter Property="Foreground" Value="{DynamicResource Ink}" />
+    <Setter Property="FontSize" Value="13" />
+    <!-- 34:和下面的 ComboBox 同高。行高不齐是设置页「丑」最直接的那一条 -->
+    <Setter Property="MinHeight" Value="34" />
+  </Style>
+
+  <Style Selector="ComboBox">
+    <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+    <Setter Property="Foreground" Value="{DynamicResource Ink}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="MinHeight" Value="34" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="Padding" Value="12,0" />
+  </Style>
+  <Style Selector="ComboBox:pointerover">
+    <Setter Property="BorderBrush" Value="{DynamicResource LineStrong}" />
+  </Style>
+  <Style Selector="ComboBox:focus">
+    <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+  </Style>
+
   <!-- 卡面:悬停时描一圈强调色 + 压暗底色,告诉用户「这一张是当前的」。
        光靠放大是不够的:一行卡挨在一起时,放大 4% 在截图上几乎读不出来。 -->
   <Style Selector="Button.media /template/ ContentPresenter">
@@ -438,6 +472,25 @@
   </Style>
   <Style Selector="Button.osd:pointerover /template/ ContentPresenter">
     <Setter Property="Background" Value="#33ffffff" />
+  </Style>
+  <!-- 常驻底的 OSD 按钮(现在只有锁定键在用)。
+       普通 .osd 是**白字 + 透明底**,只有悬停才上一层白蒙版。那一套能成立
+         是因为它们都待在上下两条控制条上 —— 控制条自带深色渐变托着。
+         锁定键不在控制条上,它悬在画面正中偏左,底下直接是片子本身:
+         亮场景里白字糊在白画面上,暗场景里那层 #33ffffff 的悬停底也几乎看不见
+         (用户 2026-09-16:「锁屏按钮非常难看清,深色模式完全看不清」)。
+       所以这一颗**一直**有一层深色蒙版 + 一圈发丝白边托着,
+         白字在任何画面上都读得出来,悬停只是把底加深一档。
+       放在 .osd 那几条之后:Avalonia 的样式是**后匹配的赢**,不是 CSS 那套权重。 -->
+  <Style Selector="Button.osd.scrim /template/ ContentPresenter">
+    <Setter Property="Background" Value="#8c000000" />
+    <Setter Property="BorderBrush" Value="#59ffffff" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="999" />
+  </Style>
+  <Style Selector="Button.osd.scrim:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="#b3000000" />
+    <Setter Property="BorderBrush" Value="#a6ffffff" />
   </Style>
 
   <!-- 季/筛选之类的小胶囊 -->

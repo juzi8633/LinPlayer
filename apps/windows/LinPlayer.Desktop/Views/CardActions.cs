@@ -29,6 +29,7 @@ public static class CardActions
     /// </summary>
     public static void Attach(Control host, CoreClient core, CardItem item, Action<string>? after = null)
     {
+        after ??= DefaultAfter;
         host.ContextRequested += (_, e) =>
         {
             if (host.ContextMenu is not null) return; // 已经建过了,让它自己弹
@@ -39,6 +40,21 @@ public static class CardActions
             e.Handled = true;
             host.ContextMenu.Open(host);
         };
+    }
+
+    /// <summary>
+    /// 右键动作做完之后的默认收尾:<b>重建当前这一页</b>。
+    ///
+    /// <para>三个 <see cref="Attach"/> 调用点<b>一个都没传 after</b>,而 <see cref="Run"/> 里是
+    /// <c>after?.Invoke()</c> —— 于是「标记为已播放」点下去:命令真发了、Toast 也弹了,
+    /// 而<b>卡片纹丝不动</b>(绿勾和未看数是建卡那一刻画的)。看不出生效,
+    /// 在用户眼里和这个选项不存在是同一回事。</para>
+    /// <para>失败时不重建:Toast 已经说了原因,重建一页只会把它抹掉。</para>
+    /// </summary>
+    private static void DefaultAfter(string err)
+    {
+        if (err.Length > 0) return;
+        Dispatcher.UIThread.Post(() => { if (Nav.CanReload) Nav.Reload(); });
     }
 
     /// <summary>
@@ -94,6 +110,9 @@ public static class CardActions
     /// 「这一项忘了给图标」会静默漏掉 —— 缺图标和缺一个空格看起来一样。</summary>
     internal static class G
     {
+        public const string Unblock = "";  // 眼睛 —— 恢复显示
+        public const string Detail = "";   // i —— 查看详情
+        public const string Series = "";   // 胶片 —— 转到剧集
         public const string Play = "\uE768";
         public const string Replay = "\uE72C";   // 从头播放
         public const string Played = "\uE73E";   // 打勾
@@ -107,13 +126,29 @@ public static class CardActions
         public static readonly (string Name, string Glyph)[] All =
         [
             ("播放", Play), ("从头播放", Replay), ("已播放", Played), ("未播放", Unplayed),
-            ("收藏", Fav), ("已收藏", FavOn), ("屏蔽", Block), ("下载", Download),
+            ("收藏", Fav), ("已收藏", FavOn), ("屏蔽", Block), ("恢复显示", Unblock),
+            ("查看详情", Detail), ("转到剧集", Series), ("下载", Download),
         ];
     }
 
     /// <summary>右键菜单能直接播的类型。剧 / 季点「播放」不知道该播哪一集,交给详情页。</summary>
     private static bool Playable(string type) =>
         type is "Movie" or "Episode" or "Video" or "MusicVideo";
+
+    /// <summary>这张卡是不是一个**媒体库**(而不是一部片子)。判据和 <see cref="LibraryPage.OpenDetail"/> 一致。</summary>
+    internal static bool IsLibrary(string type) =>
+        type is "CollectionFolder" or "UserView" or "Folder";
+
+    /// <summary>
+    /// 当前被屏蔽的媒体库 id。
+    ///
+    /// <para>放静态是因为**画卡那一刻**就要知道(灰不灰是建卡时画上去的,不是绑定),
+    /// 而卡是 <see cref="MediaGrid"/> 在虚拟化回调里现造的 —— 把一个谓词从
+    /// 媒体库页穿过 Grid、MediaGrid、Card 三层传下去,只为传一个全局事实。
+    /// 写入只有两处:媒体库页拉名单时(Paint 之前)、以及下面那条菜单(UI 线程),
+    /// 读只在建卡时。<see cref="Features"/> 也是同样的静态查表。</para>
+    /// </summary>
+    internal static readonly HashSet<string> BlockedLibraries = [];
 
     /// <summary>
     /// 建一张卡的右键菜单,按 Emby 自己那份排(用户 2026-09-03:「对齐 Emby,
@@ -129,6 +164,43 @@ public static class CardActions
         var menu = new ContextMenu();
         Animate(menu);
         var items = new List<Control>();
+
+        /* ☠ **屏蔽只对媒体库**(用户 2026-09-16:「首页的右键屏蔽条目不知道你是
+           哪里看到的,Emby 官方网页端都没有这个东西。屏蔽只出现在媒体库页:
+           屏蔽某个媒体库之后不参与检索,该媒体库卡片样式变灰,再次右键选择恢复即可」)。
+           所以条目卡的菜单里**没有**屏蔽这一项了 —— 下面也不再有那段代码。
+           库卡另给一份菜单:库不能播、不能标已看、不能收藏,那几项摆上去
+           点了只会报错。 */
+        if (IsLibrary(item.Type))
+        {
+            var on = BlockedLibraries.Contains(item.Id);
+            var toggle = new MenuItem
+            {
+                Header = on ? "恢复显示" : "屏蔽这个媒体库",
+                Icon = Icon(on ? G.Unblock : G.Block),
+            };
+            toggle.Click += async (_, _) =>
+            {
+                var want = !BlockedLibraries.Contains(item.Id);
+                /* 这一条**不走 after**:默认的 after 会立刻重建页面,而那时
+                   BlockedLibraries 还没更新 —— 重建出来的仍是不灰的卡,
+                   然后下面再重建一次。顺序有要求,所以自己收尾。 */
+                var ok = await Run(core, "emby.setBlocked",
+                    new { id = item.Id, name = item.Name, blocked = want }, null);
+                Toast.Result(ok,
+                    want ? $"已屏蔽「{item.Name}」,这个库不再参与检索"
+                         : $"已恢复「{item.Name}」",
+                    "操作失败");
+                if (!ok) return;
+                if (want) BlockedLibraries.Add(item.Id); else BlockedLibraries.Remove(item.Id);
+                /* 卡片的灰是**建卡那一刻画上去的**,不是绑定 —— 要看见变化只能重造这一页。
+                   不重造的话用户点完「屏蔽」界面上一点反应都没有,
+                   而那和「点了没生效」长得一模一样。 */
+                Dispatcher.UIThread.Post(() => { if (Nav.CanReload) Nav.Reload(); });
+            };
+            menu.ItemsSource = new List<Control> { toggle };
+            return menu;
+        }
 
         if (Playable(item.Type))
         {
@@ -150,18 +222,30 @@ public static class CardActions
             items.Add(new Separator());
         }
 
+        /* 剧 / 季上这一条是**级联整部 / 整季**的:核心层打的是
+           `POST /Users/{uid}/PlayedItems/{itemId}`,而 Emby 对 Series / Season
+           会把底下所有分集一起标上。文案必须说出这件事 ——
+           写「标记为已播放」而实际标掉了 40 集,用户不会知道自己刚干了什么,
+           更不会知道还能一键标回来。 */
+        var scope = item.Type switch
+        {
+            "Series" => "整部", "Season" => "整季", "BoxSet" => "整个合集", _ => "",
+        };
+        string PlayedText(bool done) => done ? $"标记{scope}为未播放" : $"标记{scope}为已播放";
+
         var played = new MenuItem
         {
-            Header = item.Played ? "标记为未播放" : "标记为已播放",
+            Header = PlayedText(item.Played),
             Icon = Icon(item.Played ? G.Unplayed : G.Played),
         };
         played.Click += async (_, _) =>
         {
-            var want = played.Header as string == "标记为已播放";
+            var want = played.Header as string == PlayedText(false);
             var ok = await Run(core, "emby.setPlayed", new { item_id = item.Id, played = want }, after);
-            Toast.Result(ok, want ? "已标记为已播放" : "已标记为未播放", "标记失败");
+            Toast.Result(ok,
+                want ? $"已标记{scope}为已播放" : $"已标记{scope}为未播放", "标记失败");
             if (!ok) return;
-            played.Header = want ? "标记为未播放" : "标记为已播放";
+            played.Header = PlayedText(want);
             played.Icon = Icon(want ? G.Unplayed : G.Played);
         };
         items.Add(played);
@@ -218,16 +302,33 @@ public static class CardActions
             _ = ShowIfDownloadable(core, (Control)down);
         }
 
-        var block = new MenuItem { Header = "屏蔽这个", Icon = Icon(G.Block) };
-        block.Click += async (_, _) =>
+        /* 「查看详情」和「转到剧集」补上(用户 2026-09-16:「完善首页的右键的选项」)。
+           Emby 网页端两条都有,而我们原来只能左键点卡进去 —— 在**列表模式**
+           和详情页的分集行上尤其别扭:那两处的左键是直接起播,想看简介没有入口。 */
+        items.Add(new Separator());
+        var detail = new MenuItem { Header = "查看详情", Icon = Icon(G.Detail) };
+        detail.Click += (_, _) =>
         {
-            // id 和名字**都要送**:分集靠 series_id 认,跨服的同一部剧 id 不同、
-            // 只有名字对得上。少送名字的表现是「换台服务器就又冒出来了」。
-            var ok = await Run(core, "emby.setBlocked",
-                new { id = item.Id, name = item.Name, blocked = true }, after);
-            Toast.Result(ok, "已屏蔽「" + item.Name + "」,可在设置里解除", "屏蔽失败");
+            if (Nav.Session is { } s) LibraryPage.OpenDetail(core, s.server)(item);
         };
-        if (Features.On("card.block")) items.Add(block);
+        items.Add(detail);
+
+        // 只有分集才画。电影没有「所属剧」,而 series_id 为空时跳过去是一页空白
+        if (item.Type == "Episode" && item.SeriesId.Length > 0)
+        {
+            var goSeries = new MenuItem
+            {
+                Header = item.SeriesName is { Length: > 0 } sn ? $"转到《{sn}》" : "转到剧集",
+                Icon = Icon(G.Series),
+            };
+            goSeries.Click += (_, _) =>
+            {
+                if (Nav.Session is not { } s) return;
+                Nav.Push(new DetailPage(core, s.server, item.SeriesId),
+                    () => new DetailPage(core, s.server, item.SeriesId));
+            };
+            items.Add(goSeries);
+        }
 
         menu.ItemsSource = items;
         return menu;

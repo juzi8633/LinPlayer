@@ -434,3 +434,83 @@ position 一秒变 4~10 次,于是帧循环一秒重启 4~10 次:每次硬把钟
 
 > 通例:**轮询值不能进帧循环的 key。** 它的更新频率是 4~10Hz,
 > 而帧循环要 60Hz 连续 —— 拿低频信号去重启高频循环,一定会看到低频那个节拍。
+
+## 上面那条通例,PC 端只改了一半(2026-09-16)
+
+用户四天后又报:「弹幕的滚动还是卡,肉眼可见的卡」。
+
+上一条在桌面端做的是**把 `DispatcherTimer(16ms)` 换成 `RequestAnimationFrame`** ——
+那治的是「帧节拍」。但通例的另一半(**软对表**)只在安卓落了地,PC 的 `Sync()` 一直是:
+
+```csharp
+_clock = position;   // 每 250ms 硬拽一次
+```
+
+而 `position` 就是 mpv 的 `time-pos`,它**只在视频帧边界更新**(24fps 片源 = 41.7ms 一个台阶),
+再叠上 FFI 往返的抖动 —— 等于每秒把整屏弹幕拽四下,可前可后,往后拽的那一下就是肉眼看到的顿。
+
+照搬安卓的 `dmTick`:差超过 1 秒当 seek 硬对,否则每帧只追掉 15% 的误差。
+注意**先按旧的暂停态算出当前钟,再换新态** —— 反过来的话暂停那一拍会少推一截。
+
+> **为什么会漏掉一半**:上一条经验里「安卓」那一段写的是安卓的修法,
+> 而通例写在最后。两端同病时,通例段落要**逐端点名谁做了谁没做**,
+> 否则读的人只会去看自己那一端的段落,而那一段里没有另一半。
+
+## 弹幕搬到合成器线程,60Hz → 跟随刷新率(2026-09-16)
+
+`TopLevel.RequestAnimationFrame` 在 Win32 上**不等于 vsync**:`Win32Platform` 绑的是
+`new DefaultRenderTimer(60)` —— 写死 60,不问刷新率、不对齐 vblank。
+所以上一条改完之后,高刷屏上弹幕每秒**仍然只有 60 个位置**。
+
+### 三条走不通的路(别再试一遍)
+
+替换那个 timer 的三种写法**全部在编译期被引用程序集挡死**,不是运行时问题:
+
+| 写法 | 报错 |
+|---|---|
+| 自己 `implements IRenderTimer` | `CS0535` —— Avalonia 在接口上放了一个不可访问成员,错误文本直接写 `not implementable by user code` |
+| 继承 `DefaultRenderTimer` 重写 `StartCore` | `CS0115 没有找到适合的方法来重写` |
+| `new DefaultRenderTimer(hz)` + `AvaloniaLocator` 注入 | `CS0117 AvaloniaLocator 未包含 CurrentMutable`、`CS1729 不包含采用 1 个参数的构造函数` |
+
+☠ **运行时 dll 里这些成员样样都在,引用程序集里一个都没有。**
+反射 `build/pack/**/Avalonia.Base.dll` 得到的修饰符**不能替编译期签字** ——
+这一条上连栽三次。要验 API 可不可用,写个最小探针让**编译器**回答。
+
+### 通的那条:CompositionCustomVisual
+
+合成器有自己的节拍,不受那个 60Hz timer 管。实测 **180Hz 屏上 180.2 FPS**。
+
+- `CompositionCustomVisualHandler` 可继承,`OnAnimationFrameUpdate` 是**自循环**的 ——
+  它自己注册下一帧,但**第一次得有人在外面踢一脚**。漏了这一脚的表现是帧回调 0 次,
+  而那和「节拍被卡在 60」长得一模一样,差点据此判定整个方案不可行。
+- 时钟用 `CompositionNow`(protected TimeSpan),不是 `DateTime.UtcNow`。
+- UI 线程靠 `SendHandlerMessage` / `OnMessage` 往合成器线程送状态,别跨线程碰字段。
+- `ImmediateDrawingContext` **没有 `DrawText`**,只有 `DrawGlyphRun` ——
+  得自己 `TextShaper.Current.ShapeText` → `new GlyphRun(...)` → `TryCreateImmutableGlyphRunReference()`。
+- ☠ `GlyphRun` 的 `BaselineOrigin` 是**构造时烤进去的**。跟着每帧的 x 去建就是
+  「每帧重排版」,正是上一条刚修掉的病。正解:字形固定在原点,位置全靠
+  `ctx.PushPreTransform(Matrix.CreateTranslation(...))`,零分配。
+- ☠ `DrawText` 按左上角定位,`GlyphRun` 按**基线**定位,差一个 ascent
+  (`FontMetrics.Ascent / DesignEmHeight * 字号`)。不补的表现是整屏弹幕上移大半行,而且不报错。
+- `ElementComposition.GetElementVisual` 在刚挂上树那一刻可能还是 null(实测泵了 500ms 才拿到),
+  所以每次要用都试一遍,别只在 `OnAttachedToVisualTree` 里试一次。
+
+**失效条件**:哪天 Avalonia 的引用程序集把 `IRenderTimer` 那条路放开,
+或者默认 timer 改成跟随刷新率,这一整套就可以退回普通 `Control.Render`。
+
+## 弹幕搜索框的默认词:异步覆盖赶不上用户回车(2026-09-16)
+
+用户:「搜索栏里面的默认还是集名字,不是该条目的名字」。
+
+2026-09-10 已经改过一次(`SeriesTitle()`:剧集取 `series_name`,电影取 `name`),
+判据是对的,但它是**异步**的 —— 面板弹出时先 `box.Text = _title` 上屏,
+一次完整的 `emby.itemDetail` 往返回来才覆盖。那几百毫秒里框里摆的正是集名,
+**而用户看一眼就回车了**。
+
+两条一起补:① 剧名问过一次就缓存住(起播时 `StartDanmaku` 那条路已经问过);
+② 还没问到时用 `FallbackTitle()` 砍掉 `DisplayTitle` 里「剧名 · 集名」的后半截,
+别直接上 `_title`。
+
+> 通例:**「异步把它改对」不算改对。** 默认值、占位符、预填内容这类东西,
+> 用户是照着**第一帧**做决定的。判据应当是「第一帧就是对的」,
+> 而不是「最终会变成对的」。

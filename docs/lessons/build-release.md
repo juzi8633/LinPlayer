@@ -857,3 +857,26 @@ build731~742 每一个预发布都从 730 列起,清单越攒越长(742 那版�
 断言用 `1.1.0-dev+sha`、`1.1.0-build76+abc`(前缀撞车)注入过,都红。
 
 **失效条件**:哪天 `core/ffi/main.go` 不再让宿主版本覆盖 ldflags 版本,这条的影响面就只剩界面显示。
+
+## 更新的覆盖脚本会弹一个不会关的命令行(2026-09-16)
+
+用户:「PC 端的在线更新之后,安装会弹出命令行,**不会自动关闭**」。
+
+覆盖脚本是这么起的:
+
+```go
+exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+    "-WindowStyle", "Hidden", "-File", script)
+```
+
+`-WindowStyle Hidden` 藏不住它:那是**脚本自己跑起来之后**去藏窗口,
+而窗口在脚本第一行执行之前就已经由系统建出来了。
+平时这只是「闪一下」,但覆盖脚本第一件事是 `Wait-Process -Id <pid> -Timeout 120`
+等本进程退出 —— 于是那个黑框从点「安装」一直挂到装完,**正好是用户最慌的那几十秒**。
+
+修法在创建进程那一刻就不给它控制台:`SysProcAttr{HideWindow: true,
+CreationFlags: CREATE_NO_WINDOW}`(`core/system/spawn_windows.go`,非 Windows 空实现)。
+
+**相关但别混**:`docs/lessons/ui-desktop.md` 那条「PowerShell 子进程会闪一个黑框」
+说的是探 ffmpeg/whisper 那种**短命**子进程,实测只加 `HideWindow` 就够。
+两者场景不同(一个几十毫秒、一个最长 120 秒),**没有互相验证过**,别拿一个的结论替另一个签字。

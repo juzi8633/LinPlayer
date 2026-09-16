@@ -29,6 +29,30 @@ public sealed class DetailPage : PageBase
     /// <summary>分集。<b>和头部分开拉</b> —— 见构造函数里那段注释。</summary>
     private Task<List<CardItem>>? _episodesTask;
     private readonly ContentControl _episodesHost = new();
+
+    /// <summary>
+    /// 分集表挂在**谁**底下。剧 / 季就是它自己,<b>分集则是它所属的剧</b>。
+    ///
+    /// <para>缓存键(<see cref="PaintEpisodesFromCache"/>)和拉取都得用同一个值 ——
+    /// 用错的表现是「缓存永远不命中」,而它不报错,只是每次进来都干等一次往返。</para>
+    /// </summary>
+    private string _episodesParent = "";
+
+    /// <summary>
+    /// 这一页该按哪个 id 去拉分集。拉不出来(电影 / 合集)就是空串。
+    ///
+    /// <para>Episode 传的是 <c>series_id</c> 不是 <c>season_id</c> —— 拿回来的是全剧各季,
+    /// <see cref="Episodes"/> 自己 <c>GroupBy(SeasonNo)</c> 分季,季选择器直接可用;
+    /// 传季 id 只有本季,跨季就换不过去。</para>
+    /// <para><b>不要改回只认 Series / Season</b>:那样集详情页整块选集区连挂都不挂,
+    /// 而从「继续观看」点进来的正是分集(见 <c>docs/lessons/ui-desktop.md</c>「集详情页的选集栏」)。</para>
+    /// </summary>
+    private static string EpisodesParent(JsonElement d, string itemId) => Str(d, "type_") switch
+    {
+        "Series" or "Season" => itemId,
+        "Episode" => Str(d, "series_id"),
+        _ => "",
+    };
     /* 相似推荐。桌面端此前**整块没有**,而移动端一直有
        (用户 2026-09-12:「桌面端集/电影详情页需要优化,缺少很多东西,
        参考移动端集/电影详情页」)。异步补,拉不到就整块不画。 */
@@ -161,12 +185,16 @@ public sealed class DetailPage : PageBase
                 var cached = MetaCache.Peek(key);
                 if (cached is { ValueKind: JsonValueKind.Object } c0)
                 {
-                    if (Str(c0, "type_") is "Series" or "Season") _episodesTask = LoadEpisodes(itemId);
+                    if (EpisodesParent(c0, itemId) is { Length: > 0 } ep0)
+                    {
+                        _episodesParent = ep0;
+                        _episodesTask = LoadEpisodes(ep0);
+                    }
                     else if (Str(c0, "type_") == "BoxSet") _ = FillCollection(itemId);
                     Dispatcher.UIThread.Post(() => Paint(c0));
                     if (_episodesTask is not null)
                     {
-                        PaintEpisodesFromCache(itemId);   // 必须排在 Paint 之后,见方法注释
+                        PaintEpisodesFromCache(_episodesParent);   // 必须排在 Paint 之后,见方法注释
                         _ = FillEpisodes();
                     }
                 }
@@ -186,7 +214,11 @@ public sealed class DetailPage : PageBase
 
                 // 是剧 / 季才有分集。 在渲染之前就发出去,让它和布局并行跑。
                 var type = Str(d, "type_");
-                if (type is "Series" or "Season") _episodesTask = LoadEpisodes(itemId);
+                if (EpisodesParent(d, itemId) is { Length: > 0 } ep)
+                {
+                    _episodesParent = ep;
+                    _episodesTask = LoadEpisodes(ep);
+                }
                 /* ☠ **合集原来一个字都画不出来。** 这条判断和 core 的 withChildren
                    判断一样只认 Series/Season,而合集本身没有简介、没有年份、
                    没有演职员 —— 整页就只剩一个标题(用户 2026-09-08:
@@ -196,7 +228,7 @@ public sealed class DetailPage : PageBase
                 Dispatcher.UIThread.Post(() => Paint(d));
                 if (_episodesTask is not null)
                 {
-                    PaintEpisodesFromCache(itemId);   // 必须排在 Paint 之后,见方法注释
+                    PaintEpisodesFromCache(_episodesParent);   // 必须排在 Paint 之后,见方法注释
                     await FillEpisodes();
                 }
                 return;
@@ -449,7 +481,8 @@ public sealed class DetailPage : PageBase
         var type = Str(d, "type_");
         var name = Str(d, "name");
         var series = Str(d, "series_name");
-        var isShow = type is "Series" or "Season";
+        // Episode 也算:集详情页要有选集栏,分集表挂在它所属的剧底下(见 EpisodesParent)
+        var isShow = type is "Series" or "Season" or "Episode";
 
         // ---- ① 头图:通栏 24:8 剧照带 ----
         _heroHost.Content = Hero(d, id, type, name, series);

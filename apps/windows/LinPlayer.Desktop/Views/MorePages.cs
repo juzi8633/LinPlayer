@@ -494,15 +494,39 @@ public sealed class SettingsPage : PageBase
            而且每次窗口一变宽窄,分组的排布就整个换一遍位置。
            MaxWidth + Stretch 在 Avalonia 里等于「最宽 760,再宽就居中」——
              不用写死 Width,窄窗口照样铺满。 */
-        var groups = new StackPanel { Spacing = 14 };
+        /* <b>分大节 + 顶部锚点条</b>(用户 2026-09-16:「设置页样式很丑,
+           优化样式和优化布局」)。原来是 14 张一模一样的卡直上直下堆成一列 ——
+           同底色、同圆角、同内边距、同标题层级,卡与卡之间只有 14px 间隙,
+           于是找「日志」要一路滚到第 14 张,而滚的过程中没有任何东西告诉你到哪儿了。
+
+           ☠ **不改成左右分栏。** 2026-09-04 用户明确否过:「不要做成一列一列
+             导致视线需要从左往右拉很长去对齐」。所以仍然是居中单列,只加两样:
+               ① 大节标题(常规 / 播放 / 弹幕与字幕 / 网络 / 高级)+ 一条发丝分隔线
+               ② 顶部锚点条,点一下滚到那一节
+           锚点条放在**滚动容器外面**(DockPanel 的 Top),不做 sticky ——
+             sticky 在 ScrollViewer 里要自己算偏移量,而放外面天生就一直在,
+             也不会和内容打架。
+           组间距从 14 放到 26:那是**大节之间**的距离,卡与卡之间才是 14。
+             两处同一个数的话分节就白分了。 */
+        var groups = new StackPanel { Spacing = 26 };
         var busy = Dim("加载中…");
         var rows = new StackPanel
         {
             Spacing = 14, MaxWidth = 760,
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            Children = { H1("设置"), busy, groups },
+            Children = { busy, groups },
         };
-        Content = Scrolled(rows);
+        var chips = new WrapPanel { ItemSpacing = 6, LineSpacing = 6 };
+        var bar = new Border
+        {
+            // 底色不能透明:它悬在滚动内容上方,透了就是两层字叠在一起
+            Background = Tok.Of("Bg"),
+            Padding = new Thickness(18, 14, 18, 10),
+            Child = new StackPanel { Spacing = 10, Children = { H1("设置"), chips } },
+        };
+        var scroll = Scrolled(rows);
+        DockPanel.SetDock(bar, Dock.Top);
+        Content = new DockPanel { LastChildFill = true, Children = { bar, scroll } };
 
         _ = Task.Run(async () =>
         {
@@ -525,45 +549,82 @@ public sealed class SettingsPage : PageBase
                 Dispatcher.UIThread.Post(() =>
                 {
                     rows.Children.Remove(busy);
-                    // 组间距交给 groups 的 Spacing,这里不再各自加外边距 ——
-                    // 两处都设的话卡与卡之间是 16+18=34,而设计上只该有一个数
-                    void Add(Control c) => groups.Children.Add(c);
-                    Add(TrackPrefs(core, p));
-                    Add(SettingsSections.UiFontSection(core, p));
-                    Add(Playback(core, p));
-                    // mpv 配置排在播放那组后面:它是同一件事的「高级」那一档
-                    Add(SettingsSections.MpvConf(core));
-                    Add(SettingsSections.SkipSegments(core, p));
-                    if (home is { } hm) Add(SettingsSections.Home(core, hm));
-                    if (prefetch is { } pf) Add(SettingsSections.Prefetch(core, pf));
-                    // 下线的分组一并不画。开关表在 Features.cs,这里只查表。
-                    if (Features.On("set.preload") && preload is { } pl) Add(SettingsSections.Preload(core, pl));
-                    if (Features.On("set.writeback") && writeback is { } wb) Add(SettingsSections.Writeback(core, wb));
-                    if (update is { } up) Add(SettingsSections.Update(core, up));
-                    if (Features.On("set.blocked")) Add(SettingsSections.Blocked(core));
+
+                    /* 每个大节一根柱子,先各自装满,最后只把**非空**的那几节画出来。
+                       空节整节不画:功能开关关掉之后留一个只有标题的空节,
+                       比没有这一节更让人困惑(现在「网络」那一节就可能只剩一张卡)。
+                       卡内间距仍是 14,交给这里的 Spacing,各卡不再自带外边距 ——
+                       两处都设的话卡与卡之间是 14+18=32,而设计上只该有一个数。 */
+                    var secs = new List<(string Name, StackPanel Body)>();
+                    StackPanel Sec(string name)
+                    {
+                        var body = new StackPanel { Spacing = 14 };
+                        secs.Add((name, body));
+                        return body;
+                    }
+                    var gGeneral = Sec("常规");
+                    var gPlay = Sec("播放");
+                    var gDanmaku = Sec("弹幕与字幕");
+                    var gNet = Sec("网络");
+                    var gAdv = Sec("高级");
+                    static void Add(StackPanel sec, Control c) => sec.Children.Add(c);
+
+                    // ── 常规:界面长什么样、首页放什么、怎么更新、怎么操作 ──
+                    Add(gGeneral, SettingsSections.UiFontSection(core, p));
+                    if (home is { } hm) Add(gGeneral, SettingsSections.Home(core, hm));
+                    if (update is { } up) Add(gGeneral, SettingsSections.Update(core, up));
+                    Add(gGeneral, Shortcut(core));
+                    // 快捷键不挂 Features 开关:它是操作方式,不是一块可下线的功能
+                    Add(gGeneral, SettingsKeys.Section(core));
+
+                    // ── 播放:从选轨到 mpv,由浅入深 ──
+                    Add(gPlay, TrackPrefs(core, p));
+                    Add(gPlay, Playback(core, p));
+                    Add(gPlay, SettingsSections.SkipSegments(core, p));
+                    // mpv 配置排这一节最后:它是同一件事的「高级」那一档
+                    Add(gPlay, SettingsSections.MpvConf(core));
+
+                    // ── 弹幕与字幕:都是「盖在画面上的字」 ──
+                    Add(gDanmaku, SettingsSections.Danmaku(core));
                     /* 翻译设置**拉不到也要出这一组**,只是里面写清楚原因。
                        静默跳过的表现是「设置页里根本没有字幕翻译」——
                        用户会以为这个版本没做这个功能,而不是「这次没拉到」。
                        这条只管「拉不到」,和「整组下线」是两回事:下线时连组都不出。 */
                     if (Features.On("set.translate"))
                     {
-                        Add(trans is { } tr
+                        Add(gDanmaku, trans is { } tr
                             ? SettingsTranslate.Section(core, tr)
                             : SettingsTranslate.Unavailable(transErr));
                     }
-                    if (Features.On("set.whisper") && trans is not null) Add(SettingsTranslate.Whisper(core));
-                    if (Features.On("set.cfspeed")) Add(SettingsSections.CfSpeed(core));
-                    if (Features.On("set.transfer")) Add(SettingsSections.Transfer(core));
-                    // 备份与还原和上面那张「搬迁」是两件事:那张出二维码只搬账号,
+                    if (Features.On("set.whisper") && trans is not null)
+                        Add(gDanmaku, SettingsTranslate.Whisper(core));
+
+                    // ── 网络:怎么把字节弄过来。下线的分组一并不画,开关表在 Features.cs ──
+                    if (prefetch is { } pf) Add(gNet, SettingsSections.Prefetch(core, pf));
+                    if (Features.On("set.preload") && preload is { } pl) Add(gNet, SettingsSections.Preload(core, pl));
+                    if (Features.On("set.cfspeed")) Add(gNet, SettingsSections.CfSpeed(core));
+
+                    // ── 高级:不常动、或者动错了要收拾的 ──
+                    if (Features.On("set.blocked")) Add(gAdv, SettingsSections.Blocked(core));
+                    if (Features.On("set.writeback") && writeback is { } wb) Add(gAdv, SettingsSections.Writeback(core, wb));
+                    // 备份与还原和「扫码搬迁」是两件事:那张出二维码只搬账号,
                     // 这张出文件、带设置、和手机端互通(用户 2026-09-08)
-                    Add(SettingsSections.Danmaku(core));
-                    Add(SettingsSections.Backup(core));
-                    Add(Storage(core, paths));
-                    Add(Shortcut(core));
-                    // 快捷键不挂 Features 开关:它是操作方式,不是一块可下线的功能
-                    Add(SettingsKeys.Section(core));
+                    Add(gAdv, SettingsSections.Backup(core));
+                    if (Features.On("set.transfer")) Add(gAdv, SettingsSections.Transfer(core));
+                    Add(gAdv, Storage(core, paths));
                     // 不挂 Features 开关:它是排查工具,任何版本都得有
-                    Add(SettingsSections.Logging(core));
+                    Add(gAdv, SettingsSections.Logging(core));
+
+                    foreach (var (name, body) in secs)
+                    {
+                        if (body.Children.Count == 0) continue;
+                        var head = SectionHead(name);
+                        groups.Children.Add(new StackPanel { Spacing = 14, Children = { head, body } });
+                        var chip = new Button { Classes = { "chip" }, Content = name };
+                        // BringIntoView 走的是 Avalonia 自己的滚动请求,不用我们算偏移量
+                        chip.Click += (_, _) => head.BringIntoView();
+                        chips.Children.Add(chip);
+                    }
                 });
             }
             catch (Exception e)
@@ -839,6 +900,29 @@ public sealed class SettingsPage : PageBase
     /// 窄窗口上又死死贴着左边。宽度交给外层那根 MaxWidth 的柱子,卡自己 Stretch ——
     /// 这样只有一处定宽度,不会两处打架。</para>
     /// </summary>
+    /// <summary>
+    /// 大节标题:一行小字 + 一条铺到底的发丝线。
+    ///
+    /// <para>光有字不行 —— 卡片标题用的是 <c>h2</c>(16 / SemiBold / Ink),
+    /// 大节标题再用同一档就读不出「这是更大的一层」。所以反过来做:
+    /// <b>更小、更淡、加一条线</b>。分隔线才是「这里换了一节」的那个信号,
+    /// 字号大小只是噪音。</para>
+    /// </summary>
+    private static Control SectionHead(string name) => new StackPanel
+    {
+        Spacing = 6,
+        Children =
+        {
+            new TextBlock
+            {
+                Text = name, FontSize = 12.5,
+                FontWeight = Avalonia.Media.FontWeight.SemiBold,
+                Foreground = Tok.Of("Ink3"),
+            },
+            new Border { Height = 1, Background = Tok.Of("Line") },
+        },
+    };
+
     private static Control Card(string title, Control body) => new Border
     {
         Classes = { "card" }, Padding = new Thickness(18, 18),
