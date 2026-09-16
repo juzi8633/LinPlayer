@@ -5,8 +5,13 @@
 package blocklist
 
 import (
+	"encoding/json"
+	"os"
 	"strings"
 	"sync"
+	"time"
+
+	"linplayer/core/paths"
 )
 
 // Item 是被判定对象需要提供的最小信息。
@@ -42,22 +47,73 @@ func List() []Entry {
 	return out
 }
 
-// Set 加入或移除一条。
+// Set 加入或移除一条,并**立刻落盘**。
+//
+// ☠ 落盘这一步原来整个不存在:名单只是一个包级切片,重启就空。
+// 表现是「屏蔽过的东西第二天自己回来了」,而且一声不吭 ——
+// 对「屏蔽媒体库 → 卡片变灰 → 右键恢复」这条闭环更致命:灰卡下次开机自己变回来,
+// 用户会以为恢复键失灵。Rust 版一直是落 blocklist.json 的,迁移时漏了这一块。
 func Set(id, name string, blocked bool) {
 	mu.Lock()
-	defer mu.Unlock()
+	changed := false
+	found := false
 	for i := range list {
 		if list[i].ID == id {
+			found = true
 			if !blocked {
 				list = append(list[:i], list[i+1:]...)
 			} else {
 				list[i].Name = name
 			}
-			return
+			changed = true
+			break
 		}
 	}
-	if blocked {
-		list = append(list, Entry{ID: id, Name: name})
+	if !found && blocked {
+		list = append(list, Entry{ID: id, Name: name, At: time.Now().Unix()})
+		changed = true
+	}
+	snap := make([]Entry, len(list))
+	copy(snap, list)
+	mu.Unlock()
+	if changed {
+		save(snap)
+	}
+}
+
+// File 名单落盘的位置。**唯一出口是 paths**,别的包不许自己拼路径(SPEC §10.1)。
+func File() string { return paths.BlocklistFile() }
+
+// Load 开机读一次。文件不存在 / 读坏了都当空名单 ——
+// 屏蔽名单坏掉的后果只是「屏蔽失效」,不该让程序起不来。
+func Load() {
+	b, err := os.ReadFile(File())
+	if err != nil {
+		return
+	}
+	var v []Entry
+	if json.Unmarshal(b, &v) != nil {
+		return
+	}
+	Replace(v)
+}
+
+// save 原子写:临时文件 + rename(和配置同一个口径,SPEC §14.2)。
+//
+// 就地截断重写的话,断电在截断之后写入之前,留下的是 0 字节文件 ——
+// 下次 Load 解析失败,整张名单静默消失。
+func save(v []Entry) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
+	p := File()
+	tmp := p + ".tmp"
+	if os.WriteFile(tmp, b, 0o644) != nil {
+		return
+	}
+	if os.Rename(tmp, p) != nil {
+		_ = os.Remove(tmp)
 	}
 }
 

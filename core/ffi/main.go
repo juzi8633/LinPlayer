@@ -23,6 +23,7 @@ import (
 	"unsafe"
 
 	"linplayer/core/account"
+	"linplayer/core/blocklist"
 	"linplayer/core/bus"
 	"linplayer/core/commands"
 	"linplayer/core/config"
@@ -141,6 +142,11 @@ func lp_init(configJSON *C.char) (ret C.int32_t) {
 		if err := paths.EnsureDirs(); err != nil {
 			bus.Logf("error", "建数据目录失败: %v", err)
 		}
+		/* ★ 屏蔽名单开机读一次。不读的话它只是一个包级切片 ——
+		   重启就空,表现是「屏蔽过的东西第二天自己回来了」。
+		   必须排在 paths.SetRoot 之后(它要按数据根拼路径),
+		   而且要在命令注册之前:注册完就可能有列表请求进来,那时候名单得是全的。 */
+		blocklist.Load()
 		/* ★★ 接管上一份安装的数据,**必须排在 config.Load 之前**。
 		   排在后面的话:配置读不到 → 当场生成设备 id 并保存 → 新根里落下一份空配置
 		   → 接管看见目标已存在就跳过 → 用户升级后「服务器全没了」。

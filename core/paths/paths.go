@@ -53,6 +53,7 @@ func sub(parts ...string) string {
 
 func ConfigFile() string    { return sub("config.json") }
 func HistoryFile() string   { return sub("history.json") }
+func BlocklistFile() string { return sub("blocklist.json") }
 func LogsDir() string       { return sub("logs") }
 func CacheDir() string      { return sub("cache") }
 func ImageCache() string    { return sub("cache", "img") }
