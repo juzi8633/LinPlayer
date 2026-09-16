@@ -31,6 +31,7 @@ MAP = {
     0xE72A: "skip_forward_10_24_regular",    # 前进 10 秒
     0xE72B: "skip_back_10_24_regular",       # 后退 10 秒
     0xE72C: "arrow_clockwise_24_regular",    # 从头播放 / 重新登录
+    0xE72E: "lock_closed_24_regular",        # 播放页 锁定界面
     0xE734: "star_24_regular",               # 收藏(空心)
     0xE735: "star_24_filled",                # 已收藏(实心)
     0xE739: "checkbox_unchecked_24_regular", # 未播放
@@ -39,14 +40,18 @@ MAP = {
     0xE740: "full_screen_maximize_24_regular",
     0xE74F: "speaker_mute_24_regular",
     0xE767: "speaker_2_24_regular",
+    0xE785: "lock_open_24_regular",          # 播放页 解锁界面
     0xE768: "play_24_regular",
     0xE769: "pause_24_regular",
     0xE76B: "chevron_left_24_regular",
     0xE76C: "chevron_right_24_regular",
     0xE774: "globe_24_regular",              # 聚合视界 / 线路
     0xE787: "calendar_ltr_24_regular",       # 追剧日历
+    # MDL2 的 E7F4 本身就是 Video,外形要和 Windows 侧对上;filmstrip 已被 E8B2 占了
+    0xE7F4: "video_24_regular",              # 右键 转到剧集
     0xE80F: "home_24_regular",
     0xE81C: "history_24_regular",
+    0xE890: "eye_24_regular",                # 右键 恢复显示(解除屏蔽)
     0xE893: "next_24_regular",               # 下一集
     0xE896: "arrow_download_24_regular",
     0xE8A9: "grid_24_regular",               # 影视目录
@@ -59,6 +64,7 @@ MAP = {
     0xE91B: "image_24_regular",              # 编辑图标
     0xE921: "subtract_24_regular",           # 标题栏 最小化
     0xE922: "maximize_24_regular",           # 标题栏 最大化
+    0xE946: "info_24_regular",               # 右键 查看详情
     0xE968: "server_24_regular",             # 服务器
     0xE9D9: "pulse_24_regular",              # 测线路
 }

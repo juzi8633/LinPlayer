@@ -3055,6 +3055,17 @@ Linux 没另起工程,`apps/windows/LinPlayer.Desktop` 直接 `dotnet publish -r
 - 新加图标漏补 MAP 同样不报错。`gen-icon-font.py --check`(不联网)比对界面代码里的码位与 MAP,
   挂在 `pack-linux.sh` 自检里;删掉 U+E8FD 注入过,能红。
 
+> **2026-09-16 补:补完 MAP 一定要重跑生成,并把 ttf 一起提交。**
+> `--check` 比的是**界面代码 ↔ MAP**,它<b>根本不看 ttf 里有没有真编进去</b>。
+> 只改 MAP 不重跑 `python scripts/gen-icon-font.py`,闸门会**变绿而 Linux 上照样是豆腐块** ——
+> 比漏补 MAP 更难查,因为那时连红都没有。判据要落在产物上:
+> `TTFont(...).getBestCmap()` 读回来,新码位逐个在(这次 40 → 45 个,8004 → 8828 字节)。
+>
+> 这次是怎么漏的:给播放页锁定键和右键菜单加了 5 个 MDL2 码位
+> (E72E/E785/E7F4/E890/E946),**Windows 侧编译、出包、10 组真机探针全绿** ——
+> 因为 Windows 走系统的 Segoe MDL2,什么码位都有。图标字体是全仓**唯一一处两端不同源**的东西,
+> 所以它也是唯一一处「Windows 全绿 ≠ Linux 能用」。加 MDL2 码位时别只看本机。
+
 ### libmpv 走 dlopen,符号设 hidden
 
 - soname 分裂:Ubuntu 22.04 只有 `libmpv.so.1`,新发行版只有 `.so.2`。链死哪个都有一半机器进程起不来,
