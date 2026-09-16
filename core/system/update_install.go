@@ -365,6 +365,8 @@ func spawnDetached(script string) error {
 	} else {
 		c = exec.Command("sh", script)
 	}
+	// ★ `-WindowStyle Hidden` 藏不住那个黑框 —— 理由见 hideConsole。
+	hideConsole(c)
 	if err := c.Start(); err != nil {
 		return err
 	}
