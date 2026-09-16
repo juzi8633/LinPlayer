@@ -147,6 +147,16 @@ internal static class Program
            从头点到尾再点回来。只测驱动器测不出「按钮自己消失了」这一类死法。 */
         /* 网格回收自检:`LP_GRIDPROBE=1`。和轨道同一族的问题 ——
            模板复用容器时,滚下去之后行里画的是上一行的内容。同样要开真窗口。 */
+        /* 弹幕帧率探针:`LP_DMPROBE=1 LinPlayer.exe`,开一个真窗口数帧。
+           弹幕画在**合成器线程**上,而 UI 那条渲染 pass 被 Avalonia 写死在 60Hz ——
+           谁把它改回 Control.Render,60 帧就悄悄回来了,而编译和单测都照绿。 */
+        if (Environment.GetEnvironmentVariable("LP_DMPROBE") is { Length: > 0 })
+        {
+            AppBuilder.Configure<App>().UsePlatformDetect().SetupWithoutStarting();
+            Environment.ExitCode = Views.DanmakuProbe.Run() ? 0 : 1;
+            return;
+        }
+
         if (Environment.GetEnvironmentVariable("LP_GRIDPROBE") is { Length: > 0 })
         {
             AppBuilder.Configure<App>().UsePlatformDetect().SetupWithoutStarting();

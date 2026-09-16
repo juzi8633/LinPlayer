@@ -6,6 +6,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
+using Avalonia.Media.TextFormatting;
+using Avalonia.Rendering.Composition;
 
 namespace LinPlayer.Desktop.Views;
 
@@ -20,8 +22,11 @@ public sealed class DmItem
     public uint Color;
     public string Text = "";
 
-    /// <summary>排好版的字形(正文 + 描边垫底)。**跨帧复用**,见 DanmakuLayer.Render。</summary>
-    internal FormattedText? Fg, Sh;
+    /// <summary>
+    /// 排好的字形。<b>正文和描边共用这一份</b> —— 画刷是 <c>DrawGlyphRun</c> 的参数,
+    /// 位置靠平移矩阵,所以一条弹幕只要一份,不像 FormattedText 那样得排两遍。
+    /// </summary>
+    internal IImmutableGlyphRunReference? Run;
     /// <summary>缓存是按哪一档字号排的。字号变了(换窗口大小 / 改设置)就得重排。</summary>
     internal int Gen = -1;
 }
@@ -66,15 +71,19 @@ public sealed class DmLayout
     }
 }
 
+/// <summary>UI 线程发给合成器线程的两种消息。合成器侧的状态只由它们改。</summary>
+internal sealed record DmLayoutMsg(DmLayout? Layout);
+internal sealed record DmSyncMsg(double Position, bool Paused, double Speed);
+
 /// <summary>
-/// 弹幕绘制层。排版在核心层(<c>core/player/danmakustyle.go</c>),
-/// 这里只按帧把 x 插出来、把字画上去。
+/// 弹幕的真正画法,跑在<b>合成器线程</b>上。
 ///
-/// <para>☠ 以前是交给 mpv 的 <c>osd-overlay</c> 画的。位置得从 <c>time-pos</c> 插,
-/// 而它只在<b>视频帧边界</b>更新 —— 24fps 片源上弹幕跟着 24Hz 一顿一顿;
-/// 每秒 120 条 overlay 命令还全压在 mpv 的核心线程上,而那条线程同时在解图形字幕。</para>
+/// <para>搬到这里是因为 UI 那条渲染 pass 的节拍被 Avalonia 写死在 60Hz
+/// (<c>Win32Platform</c> 绑的是 <c>DefaultRenderTimer(60)</c>,而引用程序集
+/// 既不暴露 <c>AvaloniaLocator</c> 也不暴露 <c>DefaultRenderTimer</c>,换不掉)。
+/// 合成器有自己的节拍:180Hz 屏上实测 174.9 FPS。</para>
 /// </summary>
-public sealed class DanmakuLayer : Control
+internal sealed class DanmakuVisualHandler : CompositionCustomVisualHandler
 {
     private static readonly Typeface Face = new(FontFamily.Default);
     private static readonly Typeface FaceBold =
@@ -82,117 +91,85 @@ public sealed class DanmakuLayer : Control
 
     private DmLayout? _layout;
     private double _clock;
-    private bool _paused;
+    private bool _paused = true;
     private double _speed = 1;
-    private DateTime _synced = DateTime.UtcNow;
-    /// <summary>正在逐帧重绘。只在有弹幕可画时才转 —— 一直转着的话没弹幕的片子也在烧 CPU。</summary>
-    private bool _running;
+    private TimeSpan _synced;
+    private bool _looping;
 
-    public DanmakuLayer()
-    {
-        IsHitTestVisible = false;
-    }
-
-    public DmLayout? Layout
-    {
-        get => _layout;
-        set { _layout = value; _liveFrom = 0; Pace(); InvalidateVisual(); }
-    }
+    /// <summary>硬对表的门槛。超过这么多秒就是 seek / 换集,不是抖动。</summary>
+    private const double SnapThreshold = 1.0;
+    /// <summary>每拍追掉多少误差。0.15 → 约 1.5 秒内收敛,且单帧位移变化看不出来。</summary>
+    private const double CatchUpRatio = 0.15;
 
     /// <summary>
-    /// 对表。轮询每 250ms 来一拍,两拍之间自己按帧往前推 ——
-    /// 直接拿轮询值画的表现是弹幕每秒只动 4 下,一格一格地跳。
+    /// OnRender 被调到的次数。<b>探针拿它对账</b>(<c>LP_DMPROBE</c>):
+    /// 画没画到(&gt;0)、节拍跟不跟得上刷新率 —— 两件事编译器都管不着。
     /// </summary>
-    public void Sync(double position, bool paused, double speed)
-    {
-        _clock = position;
-        _paused = paused;
-        _speed = speed <= 0 ? 1 : speed;
-        _synced = DateTime.UtcNow;
-        Pace();
-    }
+    internal static long Rendered;
 
-    /// <summary>
-    /// 该不该逐帧重绘。
-    ///
-    /// <para>这里原来是一个 <c>DispatcherTimer(16ms)</c> —— 那是**自己定的闹钟**,
-    /// 和显示器刷新率对不齐,于是周期性地一帧画两次、一帧不画。帧率数字是满的,
-    /// 眼睛看到的却是弹幕在抽帧(用户 2026-09-12:「弹幕滚动看起来还是抽帧一样」)。
-    /// <see cref="TopLevel.RequestAnimationFrame"/> 挂在渲染循环上,天然对齐 ——
-    /// 同一个坑滚动那边(<c>Smooth</c>)早就填了,这一层漏了。</para>
-    /// </summary>
-    private void Pace()
-    {
-        var want = IsVisible && _layout is { Items.Count: > 0 } && !_paused;
-        if (!want || _running) return;
-        if (TopLevel.GetTopLevel(this) is not { } top) return;
-        _running = true;
-        void Frame(TimeSpan _)
-        {
-            // 条件掉了就停下来,下一次 Pace() 再起。这一句就是原来的 _timer.Stop()
-            if (!IsVisible || _layout is not { Items.Count: > 0 } || _paused) { _running = false; return; }
-            InvalidateVisual();
-            // 每帧都要重新取 TopLevel:页面被顶掉之后往一个卸载了的窗口排帧是条不会停的循环
-            if (TopLevel.GetTopLevel(this) is { } t) t.RequestAnimationFrame(Frame);
-            else _running = false;
-        }
-        top.RequestAnimationFrame(Frame);
-    }
-
-    /// <summary>
-    /// 一条滚动弹幕在 <paramref name="age"/> 秒时的左边缘。
-    ///
-    /// <para>走的距离是 <c>width + w</c> 不是 <c>width</c> —— 少算这一截的表现是
-    /// 长弹幕还没走完就在左边被瞬间抹掉。</para>
-    /// </summary>
-    public static double RollX(double width, double w, double age, double roll) =>
-        width - age / roll * (width + w);
-
-    /// <summary>二分找第一条 <c>T &gt;= from</c> 的下标。列表按 T 升序。</summary>
-    public static int FirstAtOrAfter(List<DmItem> items, double from)
-    {
-        int lo = 0, hi = items.Count;
-        while (lo < hi)
-        {
-            var mid = (lo + hi) / 2;
-            if (items[mid].T < from) lo = mid + 1; else hi = mid;
-        }
-        return lo;
-    }
-
-    /// <summary>
-    /// 字号 / 粗细 / 透明度这一档的编号。变一次就 +1,缓存里对不上号的字形全部重排。
-    /// </summary>
     private int _gen;
     private double _genFont = -1;
     private bool _genBold;
     private byte _genAlpha;
-    /// <summary>上一帧的起点。这一帧起点往前挪过的那一段,缓存就地丢掉。</summary>
     private int _liveFrom;
-    /// <summary>颜色 → 画刷。弹幕里不重复的颜色通常不超过十几种。</summary>
-    private readonly Dictionary<uint, IBrush> _brushes = [];
-    private IBrush _shadow = Brushes.Black;
+    private readonly Dictionary<uint, IImmutableBrush> _brushes = [];
+    private IImmutableBrush _shadow = new ImmutableSolidColorBrush(Colors.Black);
 
-    /// <summary>
-    /// 按帧画。
-    ///
-    /// <para>☠☠ <b>一帧里不许重新排版。</b> 上一版每条弹幕每帧都 <c>new FormattedText</c>
-    /// 两次(正文 + 描边)—— 那是一次完整的文本整形,不是画一下。屏幕上 40 条
-    /// × 2 × 60Hz = 每秒 4800 次整形,外加同样多的 <c>SolidColorBrush</c> 进 GC。
-    /// 用户报的「弹幕移动起来很掉帧」就是这个。现在字形按「字号档」缓存在
-    /// <see cref="DmItem"/> 上,每帧只是把同一组字形挪个位置。</para>
-    /// </summary>
-    public override void Render(DrawingContext ctx)
+    /// <summary>当前这一刻的弹幕钟。两拍轮询之间靠<b>合成器自己的钟</b>往前推。</summary>
+    private double NowClock() =>
+        _paused ? _clock : _clock + (CompositionNow - _synced).TotalSeconds * _speed;
+
+    public override void OnMessage(object message)
     {
+        switch (message)
+        {
+            case DmLayoutMsg m:
+                _layout = m.Layout;
+                _liveFrom = 0;
+                break;
+
+            /* 对表。轮询每 250ms 来一拍,两拍之间自己按帧往前推。
+               但**不能每拍硬拽回轮询值**:Position 是 mpv 的 time-pos,它只在
+               视频帧边界更新(24fps 片源 = 41.7ms 一个台阶),再叠 FFI 往返抖动 ——
+               硬拽等于每秒把整屏弹幕拉扯四下,往后拽那一下就是肉眼看到的顿。
+               差得离谱(seek / 换集)才硬对,平时只追掉一小半。 */
+            case DmSyncMsg m:
+                var now = NowClock();          // 先按**旧的**暂停态算,否则暂停那一拍少推一截
+                _paused = m.Paused;
+                _speed = m.Speed <= 0 ? 1 : m.Speed;
+                var drift = m.Position - now;
+                _clock = Math.Abs(drift) > SnapThreshold ? m.Position : now + drift * CatchUpRatio;
+                _synced = CompositionNow;
+                break;
+        }
+        Kick();
+    }
+
+    /// <summary>该转就转起来。<b>只在有弹幕且没暂停时转</b> —— 一直转着的话没弹幕的片子也在烧电。</summary>
+    private void Kick()
+    {
+        if (_looping || _paused || _layout is not { Items.Count: > 0 }) return;
+        _looping = true;
+        RegisterForNextAnimationFrameUpdate();
+    }
+
+    public override void OnAnimationFrameUpdate()
+    {
+        if (_paused || _layout is not { Items.Count: > 0 }) { _looping = false; return; }
+        Invalidate();
+        RegisterForNextAnimationFrameUpdate();
+    }
+
+    public override void OnRender(ImmediateDrawingContext ctx)
+    {
+        System.Threading.Interlocked.Increment(ref Rendered);   // 探针对账用,见 Rendered
         var l = _layout;
         if (l is null || l.Items.Count == 0) return;
-        var w = Bounds.Width;
-        var h = Bounds.Height;
+        var w = EffectiveSize.X;
+        var h = EffectiveSize.Y;
         if (w <= 0 || h <= 0) return;
 
-        var now = _clock;
-        if (!_paused) now += (DateTime.UtcNow - _synced).TotalSeconds * _speed;
-
+        var now = NowClock();
         // 按高度换算比例:行数和字号是相对画面高度定的,宽高各自缩会把字压扁
         var sy = h / l.ResY;
         var font = l.FontSize * sy;
@@ -208,12 +185,19 @@ public sealed class DanmakuLayer : Control
         }
         var off = Math.Max(1.0, font * 0.05);
 
+        /* DrawText 按左上角定位,GlyphRun 按**基线**定位 —— 差一个 ascent。
+           不补这一截的表现是整屏弹幕整体上移大半行,而且不报错。 */
+        var m = face.GlyphTypeface.Metrics;
+        var baseline = m.DesignEmHeight > 0
+            ? Math.Abs(m.Ascent) / (double)m.DesignEmHeight * font
+            : font * 0.8;
+
         var life = Math.Max(l.RollSeconds, l.FixSeconds);
         var from = FirstAtOrAfter(l.Items, now - life);
         // 已经滚出去的那些把字形丢掉 —— 不丢的话一部番看完攒着上万份排版结果
         for (var i = _liveFrom; i < from && i < l.Items.Count; i++)
         {
-            l.Items[i].Fg = l.Items[i].Sh = null;
+            l.Items[i].Run = null;
             l.Items[i].Gen = -1;
         }
         _liveFrom = from;
@@ -241,19 +225,147 @@ public sealed class DanmakuLayer : Control
                     : h - 4 * sy - (d.Lane + 1) * laneH;
             }
             if (x > w || x + wPx < 0) continue;
-            if (d.Gen != _gen || d.Fg is null || d.Sh is null)
+
+            if (d.Gen != _gen || d.Run is null)
             {
-                if (!_brushes.TryGetValue(d.Color, out var brush))
-                    _brushes[d.Color] = brush = new ImmutableSolidColorBrush(Color.FromArgb(
-                        a, (byte)(d.Color >> 16), (byte)(d.Color >> 8), (byte)d.Color));
-                d.Sh = new FormattedText(d.Text, CultureInfo.CurrentCulture,
-                    FlowDirection.LeftToRight, face, font, _shadow);
-                d.Fg = new FormattedText(d.Text, CultureInfo.CurrentCulture,
-                    FlowDirection.LeftToRight, face, font, brush);
+                d.Run = Shape(d.Text, face, font, baseline);
                 d.Gen = _gen;
+                if (d.Run is null) continue;   // 这条整形不出来就跳过,别让一条坏数据停掉整屏
             }
-            ctx.DrawText(d.Sh, new Point(x + off, top + off));
-            ctx.DrawText(d.Fg, new Point(x, top));
+            if (!_brushes.TryGetValue(d.Color, out var brush))
+                _brushes[d.Color] = brush = new ImmutableSolidColorBrush(Color.FromArgb(
+                    a, (byte)(d.Color >> 16), (byte)(d.Color >> 8), (byte)d.Color));
+
+            /* 位置全靠平移矩阵,<b>字形固定在原点</b>。
+               GlyphRun 的 BaselineOrigin 是构造时烤进去的,跟着每帧的 x 变就得每帧重建 ——
+               那正是 2026-09-11 修掉的「每帧重排版」。推一个矩阵是零分配。 */
+            using (ctx.PushPreTransform(Matrix.CreateTranslation(x + off, top + off)))
+                ctx.DrawGlyphRun(_shadow, d.Run);
+            using (ctx.PushPreTransform(Matrix.CreateTranslation(x, top)))
+                ctx.DrawGlyphRun(brush, d.Run);
         }
+    }
+
+    /// <summary>把一串字整形成可画的字形。整形不了(缺字体 / 空串)回 null。</summary>
+    private static IImmutableGlyphRunReference? Shape(string text, Typeface face, double font, double baseline)
+    {
+        try
+        {
+            var gt = face.GlyphTypeface;
+            var shaped = TextShaper.Current.ShapeText(
+                text, new TextShaperOptions(gt, font, 0, CultureInfo.CurrentCulture, 0, 0));
+            var infos = new List<GlyphInfo>(shaped.Length);
+            foreach (var g in shaped) infos.Add(g);
+            var run = new GlyphRun(gt, font, text.AsMemory(), infos, new Point(0, baseline), 0);
+            return run.TryCreateImmutableGlyphRunReference();
+        }
+        catch
+        {
+            /* 整形失败只该少画这一条,不该把整屏弹幕停掉 ——
+               这一层是盖在画面上的装饰,它挂了不能影响看片。 */
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 一条滚动弹幕在 <paramref name="age"/> 秒时的左边缘。
+    ///
+    /// <para>走的距离是 <c>width + w</c> 不是 <c>width</c> —— 少算这一截的表现是
+    /// 长弹幕还没走完就在左边被瞬间抹掉。</para>
+    /// </summary>
+    public static double RollX(double width, double w, double age, double roll) =>
+        width - age / roll * (width + w);
+
+    /// <summary>二分找第一条 <c>T &gt;= from</c> 的下标。列表按 T 升序。</summary>
+    public static int FirstAtOrAfter(List<DmItem> items, double from)
+    {
+        int lo = 0, hi = items.Count;
+        while (lo < hi)
+        {
+            var mid = (lo + hi) / 2;
+            if (items[mid].T < from) lo = mid + 1; else hi = mid;
+        }
+        return lo;
+    }
+}
+
+/// <summary>
+/// 弹幕层。排版在核心层(<c>core/player/danmakustyle.go</c>),
+/// 这一层只负责把合成器视觉挂上去、把状态转发过去。
+///
+/// <para>以前是交给 mpv 的 <c>osd-overlay</c> 画的:位置得从 <c>time-pos</c> 插,
+/// 而它只在**视频帧边界**更新 —— 24fps 片源上弹幕跟着 24Hz 一顿一顿;
+/// 每秒 120 条 overlay 命令还全压在 mpv 的核心线程上,而那条线程同时在解图形字幕。</para>
+/// </summary>
+public sealed class DanmakuLayer : Control
+{
+    private CompositionCustomVisual? _visual;
+    private DmLayout? _layout;
+    private DmSyncMsg _lastSync = new(0, true, 1);
+
+    public DanmakuLayer()
+    {
+        IsHitTestVisible = false;
+    }
+
+    public DmLayout? Layout
+    {
+        get => _layout;
+        set { _layout = value; Send(new DmLayoutMsg(value)); }
+    }
+
+    /// <summary>对表。由播放页的状态轮询每 250ms 调一次。</summary>
+    public void Sync(double position, bool paused, double speed)
+    {
+        _lastSync = new DmSyncMsg(position, paused, speed);
+        Send(_lastSync);
+    }
+
+    private void Send(object msg)
+    {
+        Ensure();
+        _visual?.SendHandlerMessage(msg);
+    }
+
+    /// <summary>
+    /// 把合成器视觉挂上来。
+    ///
+    /// <para><c>GetElementVisual</c> 在刚挂上树的那一刻可能还是 null(探针里泵了
+    /// 500ms 才拿到),所以**每次要用的时候都试一遍**,不是只在
+    /// <c>OnAttachedToVisualTree</c> 里试一次 —— 只试一次的表现是「偶尔整层不出来」。</para>
+    /// </summary>
+    private void Ensure()
+    {
+        if (_visual is not null) return;
+        if (ElementComposition.GetElementVisual(this) is not { } host) return;
+        _visual = host.Compositor.CreateCustomVisual(new DanmakuVisualHandler());
+        _visual.Size = new Vector(Bounds.Width, Bounds.Height);
+        ElementComposition.SetElementChildVisual(this, _visual);
+        // 挂晚了的话前面那几条消息都丢了 —— 补发一次当前状态
+        _visual.SendHandlerMessage(new DmLayoutMsg(_layout));
+        _visual.SendHandlerMessage(_lastSync);
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        Ensure();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        // 摘干净:留着的话它还挂在一棵已经卸载的树上,而下次进来会再造一个
+        ElementComposition.SetElementChildVisual(this, null);
+        _visual = null;
+    }
+
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        var s = base.ArrangeOverride(finalSize);
+        Ensure();
+        // 尺寸是合成器侧算位置的基准(EffectiveSize),不同步的话全屏切换后弹幕位置全错
+        if (_visual is not null) _visual.Size = new Vector(s.Width, s.Height);
+        return s;
     }
 }
