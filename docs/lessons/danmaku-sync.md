@@ -478,25 +478,58 @@ _clock = position;   // 每 250ms 硬拽一次
 
 ### 通的那条:CompositionCustomVisual
 
-合成器有自己的节拍,不受那个 60Hz timer 管。实测 **180Hz 屏上 180.2 FPS**。
+合成器有自己的节拍,不受那个 60Hz timer 管。但**光搬过来还是一顿一顿**,见下一节(合成模式)。
 
 - `CompositionCustomVisualHandler` 可继承,`OnAnimationFrameUpdate` 是**自循环**的 ——
   它自己注册下一帧,但**第一次得有人在外面踢一脚**。漏了这一脚的表现是帧回调 0 次,
   而那和「节拍被卡在 60」长得一模一样,差点据此判定整个方案不可行。
 - 时钟用 `CompositionNow`(protected TimeSpan),不是 `DateTime.UtcNow`。
 - UI 线程靠 `SendHandlerMessage` / `OnMessage` 往合成器线程送状态,别跨线程碰字段。
-- `ImmediateDrawingContext` **没有 `DrawText`**,只有 `DrawGlyphRun` ——
-  得自己 `TextShaper.Current.ShapeText` → `new GlyphRun(...)` → `TryCreateImmutableGlyphRunReference()`。
+- `ImmediateDrawingContext` **没有 `DrawText`**,只有 `DrawGlyphRun`。字形要用 `TextLayout` 排:
+  逐个 `TextLine.TextRuns` 里的 `ShapedTextRun` 取 `ShapedBuffer`,按 `line.Baseline` 和累加的 `Size.Width`
+  自己建 `GlyphRun` → `TryCreateImmutableGlyphRunReference()`,一条弹幕可能是好几段。
+  ☠ **不能直接 `TextShaper.ShapeText`**:它只认给它的那一个字体(默认 Segoe UI),中文 / 日文 / emoji
+  全变 glyph 0,屏幕上「一堆口口口」(2026-09-17 用户报)。`TextLayout` 才做逐段字体回退。
+  ☠ **`ShapedBuffer` 是池里借的**,`TextLayout` 一 Dispose 就还回去被别人写花:GlyphInfo 要**拷出来**,
+  不拷的表现是一半的段落 0 个字形(探针实测 21 个字只剩 6 个),而且不报错。
 - ☠ `GlyphRun` 的 `BaselineOrigin` 是**构造时烤进去的**。跟着每帧的 x 去建就是
   「每帧重排版」,正是上一条刚修掉的病。正解:字形固定在原点,位置全靠
   `ctx.PushPreTransform(Matrix.CreateTranslation(...))`,零分配。
-- ☠ `DrawText` 按左上角定位,`GlyphRun` 按**基线**定位,差一个 ascent
-  (`FontMetrics.Ascent / DesignEmHeight * 字号`)。不补的表现是整屏弹幕上移大半行,而且不报错。
 - `ElementComposition.GetElementVisual` 在刚挂上树那一刻可能还是 null(实测泵了 500ms 才拿到),
   所以每次要用都试一遍,别只在 `OnAttachedToVisualTree` 里试一次。
 
 **失效条件**:哪天 Avalonia 的引用程序集把 `IRenderTimer` 那条路放开,
 或者默认 timer 改成跟随刷新率,这一整套就可以退回普通 `Control.Render`。
+
+## 合成器 180 FPS 照样卡:合成模式不按 vblank 出帧(2026-09-17)
+
+用户:「弹幕滚动还是卡,你根本就没修好」。上一节的探针只数了**总帧数**(180Hz 屏 180 FPS 判绿),
+没量**帧间隔**。补上之后(`LP_DMPROBE`,记每次 `OnRender` 的 Stopwatch 时刻):
+
+| 合成模式(`Win32PlatformOptions.CompositionMode`) | 3 秒帧数 | 晚于 1.5 拍的间隔 | 最长间隔 |
+|---|---|---|---|
+| WinUIComposition(**默认**) | 99 FPS | 255 / 314(81%) | 16ms |
+| DirectComposition | 94 FPS | 270 / 295 | 16ms |
+| RedirectionSurface | 63 FPS | 196 / 196 | 31ms |
+| **LowLatencyDxgiSwapChain** | **180 FPS** | **0 / 567** | 7.5ms |
+
+垫一层真 mpv 画面(`LP_DMPROBE=<24fps 片子>`)再量:默认模式 80 FPS、84% 晚拍;低延迟交换链 179 FPS、0~3 个晚拍。
+**视频本身两边一样**:vo_delayed 0、drops 0、出帧间隔 41.6ms 抖 ~3ms。
+
+**为什么肉眼是顿**:位置按「开画那一刻」的时钟算,却要等下一个 vblank 才上屏;
+帧间隔在 6~16ms 之间乱跳,「算的时刻」和「上屏时刻」的差也跟着乱跳,匀速滚动就被抖成一顿一顿。
+**平均帧率再高也没用** —— 之前那句「179.3 FPS 跟上了 180Hz」就是这么假绿的。
+
+修法:`Program.CompositionModes()` 把 `LowLatencyDxgiSwapChain` 排第一(其余三种按原顺序兜底)。
+代价按官方注释是「不能透明」,本程序主窗不透明;全窗 selfcheck 截图、标题栏、播放页 OSD 都正常。
+`LP_WINCOMP=WinUIComposition` 回旧模式做 A/B。
+
+**「交给 mpv 画」为什么不选**(用户同时提了):mpv 的 `gpu/video.c` 里字幕的时刻是
+`p->osd_pts = p->surfaces[surface_now].pts` —— 开了插帧也是**视频帧的 pts**,ASS 的 `\move`
+在 24fps 片子上只有 24 个位置;这正是 2026-09-10 从 osd-overlay 搬出来的原因。
+
+**失效条件**:Avalonia 的默认合成模式改成按 vblank 出帧,或低延迟交换链在某版本不可用
+(Avalonia 会静默落到下一种模式 —— 探针的晚拍数会立刻变红)。
 
 ## 弹幕搜索框的默认词:异步覆盖赶不上用户回车(2026-09-16)
 

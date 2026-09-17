@@ -147,13 +147,21 @@ internal static class Program
            从头点到尾再点回来。只测驱动器测不出「按钮自己消失了」这一类死法。 */
         /* 网格回收自检:`LP_GRIDPROBE=1`。和轨道同一族的问题 ——
            模板复用容器时,滚下去之后行里画的是上一行的内容。同样要开真窗口。 */
-        /* 弹幕帧率探针:`LP_DMPROBE=1 LinPlayer.exe`,开一个真窗口数帧。
-           弹幕画在**合成器线程**上,而 UI 那条渲染 pass 被 Avalonia 写死在 60Hz ——
-           谁把它改回 Control.Render,60 帧就悄悄回来了,而编译和单测都照绿。 */
+        /* 弹幕探针:`LP_DMPROBE=1`(或 =视频文件,垫真 mpv 画面)开真窗口量帧间隔 + 查字形方块。
+           帧不匀、字变方块,编译和单测都照绿。 */
         if (Environment.GetEnvironmentVariable("LP_DMPROBE") is { Length: > 0 })
         {
-            AppBuilder.Configure<App>().UsePlatformDetect().SetupWithoutStarting();
-            Environment.ExitCode = Views.DanmakuProbe.Run() ? 0 : 1;
+            BuildAvaloniaApp().SetupWithoutStarting();
+            // LP_DMPROBE=<视频文件>:垫一层真 mpv 画面再量(弹幕和视频共用合成器)
+            var dmVideo = Environment.GetEnvironmentVariable("LP_DMPROBE") is { } v && File.Exists(v) ? v : null;
+            LinPlayer.Desktop.Core.CoreClient? dmCore = null;
+            if (dmVideo is not null)
+            {
+                var root = Path.GetDirectoryName(Environment.ProcessPath) ?? ".";
+                dmCore = new LinPlayer.Desktop.Core.CoreClient(Path.Combine(root, "lpcore.dll"),
+                    Path.Combine(Path.GetTempPath(), "lp-dmprobe"), Version);
+            }
+            Environment.ExitCode = Views.DanmakuProbe.Run(dmVideo, dmCore) ? 0 : 1;
             return;
         }
 
@@ -786,6 +794,22 @@ internal static class Program
     public static AppBuilder BuildAvaloniaApp() =>
         AppBuilder.Configure<App>()
             .UsePlatformDetect()
+            .With(new Win32PlatformOptions { CompositionMode = CompositionModes() })
             .WithInterFont()
             .LogToTrace();
+
+    /// <summary>
+    /// 合成模式。<b>低延迟交换链排第一</b>:只有它按显示器 vblank 出帧。
+    ///
+    /// <para>默认的 WinUIComposition 在 180Hz 屏上帧间隔 6~16ms 乱跳(81% 的帧晚一拍),
+    /// 弹幕按开画时刻算位置、却要等下一个 vblank 才上屏,就是「一顿一顿」。换成它之后
+    /// 0 掉拍,视频的 vo_delayed / 出帧抖动不变。实测见 docs/lessons/danmaku-sync.md。
+    /// <c>LP_WINCOMP=WinUIComposition</c> 回到旧模式做 A/B。</para>
+    /// </summary>
+    private static Win32CompositionMode[] CompositionModes() =>
+        Environment.GetEnvironmentVariable("LP_WINCOMP") is { Length: > 0 } m
+            && Enum.TryParse<Win32CompositionMode>(m, out var one)
+            ? [one]
+            : [Win32CompositionMode.LowLatencyDxgiSwapChain, Win32CompositionMode.WinUIComposition,
+               Win32CompositionMode.DirectComposition, Win32CompositionMode.RedirectionSurface];
 }

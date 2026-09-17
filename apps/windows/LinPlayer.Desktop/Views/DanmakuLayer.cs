@@ -23,10 +23,10 @@ public sealed class DmItem
     public string Text = "";
 
     /// <summary>
-    /// 排好的字形。<b>正文和描边共用这一份</b> —— 画刷是 <c>DrawGlyphRun</c> 的参数,
-    /// 位置靠平移矩阵,所以一条弹幕只要一份,不像 FormattedText 那样得排两遍。
+    /// 排好的字形,一段字体一份(中文和 emoji 常常落在不同的回退字体上)。
+    /// <b>正文和描边共用</b> —— 画刷是 <c>DrawGlyphRun</c> 的参数,位置靠平移矩阵。
     /// </summary>
-    internal IImmutableGlyphRunReference? Run;
+    internal IImmutableGlyphRunReference[]? Runs;
     /// <summary>缓存是按哪一档字号排的。字号变了(换窗口大小 / 改设置)就得重排。</summary>
     internal int Gen = -1;
 }
@@ -78,14 +78,12 @@ internal sealed record DmSyncMsg(double Position, bool Paused, double Speed);
 /// <summary>
 /// 弹幕的真正画法,跑在<b>合成器线程</b>上。
 ///
-/// <para>搬到这里是因为 UI 那条渲染 pass 的节拍被 Avalonia 写死在 60Hz
-/// (<c>Win32Platform</c> 绑的是 <c>DefaultRenderTimer(60)</c>,而引用程序集
-/// 既不暴露 <c>AvaloniaLocator</c> 也不暴露 <c>DefaultRenderTimer</c>,换不掉)。
-/// 合成器有自己的节拍:180Hz 屏上实测 174.9 FPS。</para>
+/// <para>搬到这里是因为默认合成模式下 UI 那条渲染 pass 实测只有 60Hz。
+/// 光搬过来还不够匀:合成模式得是按 vblank 出帧的那种,见 <c>Program.CompositionModes</c>。</para>
 /// </summary>
 internal sealed class DanmakuVisualHandler : CompositionCustomVisualHandler
 {
-    private static readonly Typeface Face = new(FontFamily.Default);
+    internal static readonly Typeface Face = new(FontFamily.Default);
     private static readonly Typeface FaceBold =
         new(FontFamily.Default, FontStyle.Normal, FontWeight.Bold);
 
@@ -106,6 +104,8 @@ internal sealed class DanmakuVisualHandler : CompositionCustomVisualHandler
     /// 画没画到(&gt;0)、节拍跟不跟得上刷新率 —— 两件事编译器都管不着。
     /// </summary>
     internal static long Rendered;
+    /// <summary>探针开着时记每帧真正开画的时刻(毫秒),量帧间隔抖不抖。平时是 null。</summary>
+    internal static List<double>? FrameTimes;
 
     private int _gen;
     private double _genFont = -1;
@@ -163,6 +163,7 @@ internal sealed class DanmakuVisualHandler : CompositionCustomVisualHandler
     public override void OnRender(ImmediateDrawingContext ctx)
     {
         System.Threading.Interlocked.Increment(ref Rendered);   // 探针对账用,见 Rendered
+        if (FrameTimes is { } ft) lock (ft) ft.Add(System.Diagnostics.Stopwatch.GetTimestamp() * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
         var l = _layout;
         if (l is null || l.Items.Count == 0) return;
         var w = EffectiveSize.X;
@@ -185,19 +186,12 @@ internal sealed class DanmakuVisualHandler : CompositionCustomVisualHandler
         }
         var off = Math.Max(1.0, font * 0.05);
 
-        /* DrawText 按左上角定位,GlyphRun 按**基线**定位 —— 差一个 ascent。
-           不补这一截的表现是整屏弹幕整体上移大半行,而且不报错。 */
-        var m = face.GlyphTypeface.Metrics;
-        var baseline = m.DesignEmHeight > 0
-            ? Math.Abs(m.Ascent) / (double)m.DesignEmHeight * font
-            : font * 0.8;
-
         var life = Math.Max(l.RollSeconds, l.FixSeconds);
         var from = FirstAtOrAfter(l.Items, now - life);
         // 已经滚出去的那些把字形丢掉 —— 不丢的话一部番看完攒着上万份排版结果
         for (var i = _liveFrom; i < from && i < l.Items.Count; i++)
         {
-            l.Items[i].Run = null;
+            l.Items[i].Runs = null;
             l.Items[i].Gen = -1;
         }
         _liveFrom = from;
@@ -226,12 +220,12 @@ internal sealed class DanmakuVisualHandler : CompositionCustomVisualHandler
             }
             if (x > w || x + wPx < 0) continue;
 
-            if (d.Gen != _gen || d.Run is null)
+            if (d.Gen != _gen || d.Runs is null)
             {
-                d.Run = Shape(d.Text, face, font, baseline);
+                d.Runs = Shape(d.Text, face, font);
                 d.Gen = _gen;
-                if (d.Run is null) continue;   // 这条整形不出来就跳过,别让一条坏数据停掉整屏
             }
+            if (d.Runs.Length == 0) continue;   // 这条整形不出来就跳过,别让一条坏数据停掉整屏
             if (!_brushes.TryGetValue(d.Color, out var brush))
                 _brushes[d.Color] = brush = new ImmutableSolidColorBrush(Color.FromArgb(
                     a, (byte)(d.Color >> 16), (byte)(d.Color >> 8), (byte)d.Color));
@@ -240,31 +234,57 @@ internal sealed class DanmakuVisualHandler : CompositionCustomVisualHandler
                GlyphRun 的 BaselineOrigin 是构造时烤进去的,跟着每帧的 x 变就得每帧重建 ——
                那正是 2026-09-11 修掉的「每帧重排版」。推一个矩阵是零分配。 */
             using (ctx.PushPreTransform(Matrix.CreateTranslation(x + off, top + off)))
-                ctx.DrawGlyphRun(_shadow, d.Run);
+                foreach (var r in d.Runs) ctx.DrawGlyphRun(_shadow, r);
             using (ctx.PushPreTransform(Matrix.CreateTranslation(x, top)))
-                ctx.DrawGlyphRun(brush, d.Run);
+                foreach (var r in d.Runs) ctx.DrawGlyphRun(brush, r);
         }
     }
 
-    /// <summary>把一串字整形成可画的字形。整形不了(缺字体 / 空串)回 null。</summary>
-    private static IImmutableGlyphRunReference? Shape(string text, Typeface face, double font, double baseline)
+    /// <summary>
+    /// 把一串字整形成可画的字形,原点在左上角。整形不了回空数组。
+    ///
+    /// <para>走 <c>TextLayout</c> 而不是直接 <c>TextShaper</c>:后者只认给它的那一个字体,
+    /// 默认字体里没有的字(中文、emoji)全画成方块 —— 2026-09-17 用户报「一堆口口口」。
+    /// 回退字体是 <c>TextLayout</c> 逐段挑的,这里只把它挑好的每一段照原样搬出来。</para>
+    /// </summary>
+    private static IImmutableGlyphRunReference[] Shape(string text, Typeface face, double font)
     {
+        var refs = new List<IImmutableGlyphRunReference>();
+        foreach (var run in ShapeRuns(text, face, font))
+            if (run.TryCreateImmutableGlyphRunReference() is { } r) refs.Add(r);
+        return [.. refs];
+    }
+
+    /// <summary>整形出来的字形段。单拎出来是给探针查「有没有落成 .notdef(方块)」。</summary>
+    internal static List<GlyphRun> ShapeRuns(string text, Typeface face, double font)
+    {
+        var runs = new List<GlyphRun>();
         try
         {
-            var gt = face.GlyphTypeface;
-            var shaped = TextShaper.Current.ShapeText(
-                text, new TextShaperOptions(gt, font, 0, CultureInfo.CurrentCulture, 0, 0));
-            var infos = new List<GlyphInfo>(shaped.Length);
-            foreach (var g in shaped) infos.Add(g);
-            var run = new GlyphRun(gt, font, text.AsMemory(), infos, new Point(0, baseline), 0);
-            return run.TryCreateImmutableGlyphRunReference();
+            using var layout = new TextLayout(text, face, font, null);
+            foreach (var line in layout.TextLines)
+            {
+                var x = 0.0;
+                foreach (var tr in line.TextRuns)
+                {
+                    if (tr is not ShapedTextRun sr) continue;
+                    var buf = sr.ShapedBuffer;
+                    // 必须拷出来:ShapedBuffer 是池里借的,layout 一释放就还回去被别人写花
+                    var infos = new GlyphInfo[buf.Length];
+                    for (var i = 0; i < infos.Length; i++) infos[i] = buf[i];
+                    runs.Add(new GlyphRun(buf.GlyphTypeface, buf.FontRenderingEmSize, buf.Text, infos,
+                        new Point(x, line.Baseline), buf.BidiLevel));
+                    x += sr.Size.Width;
+                }
+            }
         }
         catch
         {
             /* 整形失败只该少画这一条,不该把整屏弹幕停掉 ——
                这一层是盖在画面上的装饰,它挂了不能影响看片。 */
-            return null;
+            runs.Clear();
         }
+        return runs;
     }
 
     /// <summary>

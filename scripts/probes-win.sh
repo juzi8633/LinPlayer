@@ -37,7 +37,7 @@ run LP_MEDIAPROBE  "媒体信息卡每条流写哪几行"
 run LP_MEDALPROBE  "排行榜前三的金银铜"
 run LP_RAILPROBE   "选集轨道:翻页到头再回来 + 长按拖动"
 run LP_GRIDPROBE   "竖向网格滚下去之后每行画的还是不是自己那行"
-run LP_DMPROBE     "弹幕层:合成器节拍跟不跟得上显示器刷新率"
+run LP_DMPROBE     "弹幕层:帧间隔匀不匀(按 vblank)+ 中日文/emoji 不落成方块"
 
 if [ "$BAD" -eq 0 ]; then echo "探针全部通过。"; else echo "$BAD 组探针不过。"; fi
 exit "$BAD"
