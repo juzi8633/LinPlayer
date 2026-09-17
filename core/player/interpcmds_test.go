@@ -27,3 +27,25 @@ func TestInterp按剧记住(t *testing.T) {
 		t.Fatal("没变化不该回 true(会白写一次盘)")
 	}
 }
+
+// 补帧脚本 / 滤镜的报错按**模块名**认。mpv 日志正文里多半不带「vapoursynth」
+// (比如 `Script evaluation failed`),只看正文的话这类错一条都认不出来。
+func TestNoteInterpLog按模块名认(t *testing.T) {
+	cases := []struct {
+		prefix, text string
+		want         bool
+	}{
+		{"vapoursynth", "Script evaluation failed:", true},
+		{"lpinterp", "lpinterp: 这台设备没有可用的 OpenCL", true},
+		{"vf", "Disabling filter lpinterp.00 because it has failed.", true},
+		{"vo/gpu", "fragment shader source:", false},
+		{"ffmpeg", "Invalid data found", false},
+	}
+	for _, c := range cases {
+		takeInterpErr()
+		noteInterpLog(c.prefix, c.text)
+		if got := takeInterpErr() != ""; got != c.want {
+			t.Errorf("[%s] %q:认成补帧错误=%v,期望 %v", c.prefix, c.text, got, c.want)
+		}
+	}
+}

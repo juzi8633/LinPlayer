@@ -54,12 +54,8 @@ jobs:
           pin https://github.com/libass/libass libass "$LIBASS_REF"
           pin https://github.com/haasn/libplacebo libplacebo "$LIBPLACEBO_REF"
           pin https://github.com/videolan/dav1d dav1d "$DAV1D_REF"
-          # 我们自己的 mpv 补丁(补帧滤镜等)。没有补丁时这一步什么都不做
-          shopt -s nullglob
-          for p in "$GITHUB_WORKSPACE"/third_party/mpv-patches/*.patch; do
-            echo "apply $p"
-            git -C deps/mpv apply --whitespace=nowarn "$p"
-          done
+          # OpenCL 补帧滤镜(third_party/mpv-interp)
+          bash "$GITHUB_WORKSPACE/third_party/mpv-interp/apply-to-mpv.sh" deps/mpv
           IN_CI=1 WGET="wget --progress=dot:giga" ./include/download-sdk.sh
           # 已经克隆好的目录 download-deps 会跳过
           IN_CI=1 WGET="wget --progress=dot:giga" ./include/download-deps.sh
@@ -86,15 +82,22 @@ jobs:
             d="out/$abi"; mkdir -p "$d"
             cp -L "$B"/prefix/$arch/lib/libmpv.so "$B"/prefix/$arch/lib/libav*.so "$B"/prefix/$arch/lib/libsw*.so "$d"/
             echo "== $abi NEEDED"; "$RE" -d "$d/libmpv.so" | grep NEEDED
-            if "$RE" -d "$d"/*.so | grep -q "libc++_shared.so"; then
+            "$RE" -d "$d"/*.so > needed.txt
+            if grep -q "libc++_shared.so" needed.txt; then
               cp "$TC/sysroot/usr/lib/$triple/libc++_shared.so" "$d"/
             fi
             # Go 核心直接调这些符号(core/ffi/libass_android.go、jni_android.go、core/player)。
             # 少一个就是装机后 UnsatisfiedLinkError,所以在这里就让 job 红
+            # 先落文件再 grep:`nm | grep -q` 在 pipefail 下,grep 找到就退出、nm 吃 SIGPIPE,
+            # 整条管道判失败 —— 第一轮就是这样把明明导出了的 mpv_create 报成「没导出」
+            "$NM" -D --defined-only "$d/libmpv.so" > syms-mpv.txt
+            "$NM" -D --defined-only "$d/libavcodec.so" > syms-avcodec.txt
             for sym in mpv_create mpv_render_context_create ass_library_init ass_render_frame ass_process_codec_private ass_set_fonts_dir; do
-              "$NM" -D --defined-only "$d/libmpv.so" | grep -qw "$sym" || { echo "!! $abi libmpv.so 没导出 $sym"; exit 1; }
+              grep -qw "$sym" syms-mpv.txt || { echo "!! $abi libmpv.so 没导出 $sym"; exit 1; }
             done
-            "$NM" -D --defined-only "$d"/libavcodec.so | grep -qw av_jni_set_java_vm || { echo "!! $abi 没有 av_jni_set_java_vm"; exit 1; }
+            grep -qw av_jni_set_java_vm syms-avcodec.txt || { echo "!! $abi 没有 av_jni_set_java_vm"; exit 1; }
+            # 补帧滤镜真的编进去了(名字在滤镜表里)
+            grep -aq "lpinterp" "$d/libmpv.so" || { echo "!! $abi libmpv.so 里没有 lpinterp 滤镜"; exit 1; }
             cp -r "$B"/prefix/$arch/include/mpv "$d/include-mpv"
             tar -czf "libmpv-android-$abi.tar.gz" -C "$d" .
           done

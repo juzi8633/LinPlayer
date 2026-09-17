@@ -171,3 +171,6 @@ screenshot/
 
 # python 跑 scripts/ 里的门禁时留下的字节码
 __pycache__/
+
+# 补帧 kernel 头:gen-kernels.py 现生成
+third_party/mpv-interp/lpinterp_kernels.h

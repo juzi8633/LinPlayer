@@ -139,10 +139,11 @@ var (
 	interpErr   string
 )
 
-// noteInterpLog 由事件线程调用(只有 error 级日志会到这)。只认补帧滤镜自己的错。
-func noteInterpLog(text string) {
-	t := strings.ToLower(text)
-	if !strings.Contains(t, "vapoursynth") && !strings.Contains(t, "lpinterp") {
+// noteInterpLog 由事件线程调用(只有 error 级日志会到这)。只认补帧滤镜自己的错:
+// 模块名是 vapoursynth(PC)/ lpinterp(安卓),或者 mpv 撤滤镜时那句带着我们的标签 `@lpinterp`。
+func noteInterpLog(prefix, text string) {
+	p, t := strings.ToLower(prefix), strings.ToLower(text)
+	if p != "vapoursynth" && !strings.HasPrefix(p, "lpinterp") && !strings.Contains(t, "lpinterp") {
 		return
 	}
 	interpErrMu.Lock()

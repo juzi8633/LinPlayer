@@ -134,6 +134,13 @@ static const char* lp_event_log_text(void *ev) {
     return d ? ((lp_log_msg*)d)->text : 0;
 }
 
+// lp_event_log_prefix 取日志的模块名(`vapoursynth`、`lpinterp`…)。正文里**不带**它。
+static const char* lp_event_log_prefix(void *ev) {
+    if (!ev) return 0;
+    void *d = ((lp_mpv_event*)ev)->data;
+    return d ? ((lp_log_msg*)d)->prefix : 0;
+}
+
 // get_info 的形参是**按值**传的 mpv_render_param,和 create/render 的数组不一样。
 static int lp_rc_next_frame(void *rc, lp_frame_info *out) {
     lp_render_param p; p.type = P_NEXT_FRAME_INFO; p.data = out;
@@ -383,7 +390,13 @@ func drainEvents(h unsafe.Pointer) {
 			if t := C.lp_event_log_text(ev); t != nil {
 				txt := C.GoString(t)
 				noteMpvLog(txt)
-				noteInterpLog(txt)
+				/* 补帧按模块名认:正文里多半不带「vapoursynth」这个词
+				   (比如 `Script evaluation failed`),只看正文会漏掉脚本报错 */
+				pfx := ""
+				if p := C.lp_event_log_prefix(ev); p != nil {
+					pfx = C.GoString(p)
+				}
+				noteInterpLog(pfx, txt)
 				noteLastError(txt)
 				/* ★ 订阅的是 error 级,所以每一条都值得往外走。
 				   原来只有 shader 编译错误被留下,别的**一个字都不出来** ——

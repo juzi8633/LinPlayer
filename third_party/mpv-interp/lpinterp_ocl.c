@@ -1,0 +1,261 @@
+// 补帧 OpenCL 计算核的主机侧。算法与参数来自 HopperRender(GPL-3.0),见 lpinterp.cl 开头。
+#include "lpinterp_ocl.h"
+
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "lpinterp_cl.h"
+#include "lpinterp_kernels.h"  // 由 gen-kernels.py 从 lpinterp.cl 生成:LPI_KERNEL_SRC
+
+#if defined(_WIN32)
+#include <windows.h>
+static void *lpi_dlopen(const char *n) { return LoadLibraryA(n); }
+static void *lpi_dlsym(void *h, const char *s) { return (void *)GetProcAddress((HMODULE)h, s); }
+static const char *const lpi_cl_names[] = {"OpenCL.dll"};
+#else
+#include <dlfcn.h>
+static void *lpi_dlopen(const char *n) { return dlopen(n, RTLD_NOW | RTLD_LOCAL); }
+static void *lpi_dlsym(void *h, const char *s) { return dlsym(h, s); }
+// 安卓各家放法不一:高通 / 联发科 / 三星公开 libOpenCL.so;Pixel 是 libOpenCL-pixel.so;
+// 部分 Mali 机器只在 libGLES_mali.so 里带 CL 符号。按名字试,命名空间不放行的会 dlopen 失败。
+static const char *const lpi_cl_names[] = {
+    "libOpenCL.so", "libOpenCL.so.1", "libOpenCL-pixel.so", "libGLES_mali.so", "libmali.so",
+};
+#endif
+
+// 光流在低分辨率上算:高度不超过这个数(1080p → 270p)。
+#define LPI_MAX_CALC_HEIGHT 270
+
+struct lpi_ctx {
+    struct lpi_cl cl;
+    cl_context ctx;
+    cl_command_queue q;
+    cl_program prog;
+    cl_kernel k_search, k_adjust, k_blur, k_warp;
+    cl_mem frame[2];  // frame[cur] 是 next,另一个是 prev
+    int cur;
+    int pushed;
+    cl_mem out, offs, blurred, lowest;
+    int stride, width, height;
+    int low_w, low_h, res_shift, radius;
+    char device[128];
+};
+
+static int load_cl(struct lpi_cl *cl) {
+    void *h = NULL;
+    for (size_t i = 0; i < sizeof(lpi_cl_names) / sizeof(lpi_cl_names[0]) && !h; i++)
+        h = lpi_dlopen(lpi_cl_names[i]);
+    if (!h)
+        return -1;
+#define SYM(name) if (!(cl->name = lpi_dlsym(h, "cl" #name))) return -2
+    SYM(GetPlatformIDs); SYM(GetDeviceIDs); SYM(GetDeviceInfo); SYM(CreateContext);
+    SYM(CreateCommandQueue); SYM(CreateBuffer); SYM(CreateProgramWithSource); SYM(BuildProgram);
+    SYM(GetProgramBuildInfo); SYM(CreateKernel); SYM(SetKernelArg); SYM(EnqueueNDRangeKernel);
+    SYM(EnqueueWriteBuffer); SYM(EnqueueReadBuffer); SYM(EnqueueFillBuffer); SYM(Finish);
+    SYM(ReleaseMemObject); SYM(ReleaseKernel); SYM(ReleaseProgram); SYM(ReleaseCommandQueue);
+    SYM(ReleaseContext);
+#undef SYM
+    return 0;
+}
+
+// 选显存最大的 GPU。PC 上核显和独显并存时要的是独显;手机上只有一块。
+static cl_device_id pick_gpu(struct lpi_cl *cl, char *name, size_t namelen) {
+    cl_platform_id plats[8];
+    cl_uint np = 0;
+    if (cl->GetPlatformIDs(8, plats, &np) != CL_SUCCESS)
+        return NULL;
+    cl_device_id best = NULL;
+    cl_ulong best_mem = 0;
+    for (cl_uint i = 0; i < np && i < 8; i++) {
+        cl_device_id devs[8];
+        cl_uint nd = 0;
+        if (cl->GetDeviceIDs(plats[i], CL_DEVICE_TYPE_GPU, 8, devs, &nd) != CL_SUCCESS)
+            continue;
+        for (cl_uint j = 0; j < nd && j < 8; j++) {
+            cl_ulong mem = 0;
+            cl->GetDeviceInfo(devs[j], CL_DEVICE_GLOBAL_MEM_SIZE, sizeof(mem), &mem, NULL);
+            char nm[128] = {0};
+            cl->GetDeviceInfo(devs[j], CL_DEVICE_NAME, sizeof(nm) - 1, nm, NULL);
+            // LPI_DEVICE=名字片段:基准里强制挑某块卡(比如拿核显估手机)。播放器里不设
+            const char *want = getenv("LPI_DEVICE");
+            if (want && *want && !strstr(nm, want))
+                continue;
+            if (!best || mem > best_mem) {
+                best = devs[j];
+                best_mem = mem;
+                cl->GetDeviceInfo(devs[j], CL_DEVICE_NAME, namelen, name, NULL);
+                name[namelen - 1] = 0;
+            }
+        }
+    }
+    return best;
+}
+
+void lpi_destroy(struct lpi_ctx *c) {
+    if (!c)
+        return;
+    struct lpi_cl *cl = &c->cl;
+    if (c->q)
+        cl->Finish(c->q);
+    cl_mem mems[] = {c->frame[0], c->frame[1], c->out, c->offs, c->blurred, c->lowest};
+    for (size_t i = 0; i < sizeof(mems) / sizeof(mems[0]); i++)
+        if (mems[i])
+            cl->ReleaseMemObject(mems[i]);
+    cl_kernel ks[] = {c->k_search, c->k_adjust, c->k_blur, c->k_warp};
+    for (size_t i = 0; i < sizeof(ks) / sizeof(ks[0]); i++)
+        if (ks[i])
+            cl->ReleaseKernel(ks[i]);
+    if (c->prog)
+        cl->ReleaseProgram(c->prog);
+    if (c->q)
+        cl->ReleaseCommandQueue(c->q);
+    if (c->ctx)
+        cl->ReleaseContext(c->ctx);
+    free(c);
+}
+
+const char *lpi_device_name(struct lpi_ctx *c) { return c->device; }
+void lpi_set_radius(struct lpi_ctx *c, int r) {
+    c->radius = r < LPI_RADIUS_MIN ? LPI_RADIUS_MIN : r > LPI_RADIUS_MAX ? LPI_RADIUS_MAX : r;
+}
+int lpi_radius(struct lpi_ctx *c) { return c->radius; }
+int lpi_finish(struct lpi_ctx *c) { return c->cl.Finish(c->q); }
+
+#define FAIL(...) do { snprintf(err, errlen, __VA_ARGS__); lpi_destroy(c); return NULL; } while (0)
+
+struct lpi_ctx *lpi_create(int stride, int width, int height, char *err, size_t errlen) {
+    struct lpi_ctx *c = calloc(1, sizeof(*c));
+    if (!c) {
+        snprintf(err, errlen, "内存不足");
+        return NULL;
+    }
+    struct lpi_cl *cl = &c->cl;
+    int r = load_cl(cl);
+    if (r == -1)
+        FAIL("这台设备没有可用的 OpenCL(找不到 libOpenCL)");
+    if (r == -2)
+        FAIL("这台设备的 OpenCL 库缺少必要的函数");
+    cl_device_id dev = pick_gpu(cl, c->device, sizeof(c->device));
+    if (!dev)
+        FAIL("这台设备的 OpenCL 里没有 GPU");
+
+    c->stride = stride;
+    c->width = width;
+    c->height = height;
+    c->radius = LPI_RADIUS_MIN;
+    while ((height >> c->res_shift) > LPI_MAX_CALC_HEIGHT)
+        c->res_shift++;
+    c->low_w = (stride + (1 << c->res_shift) - 1) >> c->res_shift;
+    c->low_h = (height + (1 << c->res_shift) - 1) >> c->res_shift;
+
+    cl_int e = 0;
+    c->ctx = cl->CreateContext(NULL, 1, &dev, NULL, NULL, &e);
+    if (e != CL_SUCCESS)
+        FAIL("OpenCL 建上下文失败(%d)", e);
+    // clCreateCommandQueue 在 2.0 起标为过时,但 1.2 的实现只认它;各家 3.0 实现都还留着
+    c->q = cl->CreateCommandQueue(c->ctx, dev, 0, &e);
+    if (e != CL_SUCCESS)
+        FAIL("OpenCL 建命令队列失败(%d)", e);
+
+    const char *src = LPI_KERNEL_SRC;
+    c->prog = cl->CreateProgramWithSource(c->ctx, 1, &src, NULL, &e);
+    if (e != CL_SUCCESS)
+        FAIL("OpenCL 建程序失败(%d)", e);
+    if ((e = cl->BuildProgram(c->prog, 1, &dev, "", NULL, NULL)) != CL_SUCCESS) {
+        char log[512] = {0};
+        cl->GetProgramBuildInfo(c->prog, dev, CL_PROGRAM_BUILD_LOG, sizeof(log) - 1, log, NULL);
+        FAIL("OpenCL kernel 编译失败(%d):%s", e, log);
+    }
+#define KERNEL(field, name) \
+    c->field = cl->CreateKernel(c->prog, name, &e); \
+    if (e != CL_SUCCESS) FAIL("OpenCL kernel %s 创建失败(%d)", name, e)
+    KERNEL(k_search, "lpi_search");
+    KERNEL(k_adjust, "lpi_adjust");
+    KERNEL(k_blur, "lpi_blur");
+    KERNEL(k_warp, "lpi_warp");
+#undef KERNEL
+
+    size_t frame_bytes = (size_t)stride * height * 3 / 2;
+    size_t low_px = (size_t)c->low_w * c->low_h;
+#define BUF(field, flags, size) \
+    c->field = cl->CreateBuffer(c->ctx, flags, size, NULL, &e); \
+    if (e != CL_SUCCESS) FAIL("OpenCL 分配显存失败(%d)", e)
+    BUF(frame[0], CL_MEM_READ_ONLY, frame_bytes);
+    BUF(frame[1], CL_MEM_READ_ONLY, frame_bytes);
+    BUF(out, CL_MEM_WRITE_ONLY, frame_bytes);
+    BUF(offs, CL_MEM_READ_WRITE, 2 * low_px * sizeof(short));
+    BUF(blurred, CL_MEM_READ_WRITE, 2 * low_px * sizeof(short));
+    BUF(lowest, CL_MEM_READ_WRITE, low_px);
+#undef BUF
+    return c;
+}
+
+int lpi_push(struct lpi_ctx *c, const uint8_t *y, const uint8_t *uv) {
+    struct lpi_cl *cl = &c->cl;
+    c->cur ^= 1;
+    size_t ysz = (size_t)c->stride * c->height;
+    cl_int e = cl->EnqueueWriteBuffer(c->q, c->frame[c->cur], CL_TRUE, 0, ysz, y, 0, NULL, NULL);
+    e |= cl->EnqueueWriteBuffer(c->q, c->frame[c->cur], CL_TRUE, ysz, ysz / 2, uv, 0, NULL, NULL);
+    c->pushed++;
+    return e;
+}
+
+#define ARG(k, i, v) e |= cl->SetKernelArg(k, i, sizeof(v), &(v))
+
+int lpi_flow(struct lpi_ctx *c) {
+    struct lpi_cl *cl = &c->cl;
+    cl_int e = 0;
+    const int zero = 0;
+    cl_mem prev = c->frame[c->cur ^ 1], next = c->frame[c->cur];
+    size_t low_px = (size_t)c->low_w * c->low_h;
+    e |= cl->EnqueueFillBuffer(c->q, c->offs, &zero, sizeof(short), 0, 2 * low_px * sizeof(short), 0, NULL, NULL);
+
+    // 窗口从「不超过画面的最大 2 的幂」的一半开始,逐级减半;最细到 2×2,单像素那级交给模糊
+    int max_dim = c->low_w > c->low_h ? c->low_w : c->low_h;
+    int window = 1;
+    while (window * 2 <= max_dim)
+        window *= 2;
+    size_t g2[2] = {c->low_w, c->low_h};
+    for (int iter = 0; window >= 2; iter++, window /= 2) {
+        size_t gw[2] = {(c->low_w + window - 1) / window, (c->low_h + window - 1) / window};
+        for (int step = 0; step < 2; step++) {
+            cl_kernel k = c->k_search;
+            ARG(k, 0, c->lowest); ARG(k, 1, prev); ARG(k, 2, next); ARG(k, 3, c->offs);
+            ARG(k, 4, c->height); ARG(k, 5, c->stride); ARG(k, 6, c->low_h); ARG(k, 7, c->low_w);
+            ARG(k, 8, window); ARG(k, 9, c->radius); ARG(k, 10, c->res_shift); ARG(k, 11, iter);
+            ARG(k, 12, step);
+            e |= cl->EnqueueNDRangeKernel(c->q, k, 2, NULL, gw, NULL, 0, NULL, NULL);
+
+            k = c->k_adjust;
+            ARG(k, 0, c->offs); ARG(k, 1, c->lowest); ARG(k, 2, window); ARG(k, 3, c->radius);
+            ARG(k, 4, c->low_h); ARG(k, 5, c->low_w); ARG(k, 6, step);
+            e |= cl->EnqueueNDRangeKernel(c->q, k, 2, NULL, g2, NULL, 0, NULL, NULL);
+        }
+    }
+    cl_kernel k = c->k_blur;
+    size_t gb[3] = {c->low_w, c->low_h, 2};
+    ARG(k, 0, c->offs); ARG(k, 1, c->blurred); ARG(k, 2, c->low_h); ARG(k, 3, c->low_w);
+    e |= cl->EnqueueNDRangeKernel(c->q, k, 3, NULL, gb, NULL, 0, NULL, NULL);
+    return e;
+}
+
+int lpi_warp(struct lpi_ctx *c, float t, uint8_t *y, uint8_t *uv) {
+    struct lpi_cl *cl = &c->cl;
+    cl_int e = 0;
+    cl_mem prev = c->frame[c->cur ^ 1], next = c->frame[c->cur];
+    cl_kernel k = c->k_warp;
+    ARG(k, 0, prev); ARG(k, 1, next); ARG(k, 2, c->blurred); ARG(k, 3, c->out); ARG(k, 4, t);
+    ARG(k, 5, c->low_h); ARG(k, 6, c->low_w); ARG(k, 7, c->height); ARG(k, 8, c->stride);
+    ARG(k, 9, c->width); ARG(k, 10, c->res_shift);
+    for (int cz = 0; cz < 2; cz++) {
+        e |= cl->SetKernelArg(k, 11, sizeof(int), &cz);
+        size_t g[2] = {c->width, c->height >> cz};
+        e |= cl->EnqueueNDRangeKernel(c->q, k, 2, NULL, g, NULL, 0, NULL, NULL);
+    }
+    size_t ysz = (size_t)c->stride * c->height;
+    e |= cl->EnqueueReadBuffer(c->q, c->out, CL_TRUE, 0, ysz, y, 0, NULL, NULL);
+    e |= cl->EnqueueReadBuffer(c->q, c->out, CL_TRUE, ysz, ysz / 2, uv, 0, NULL, NULL);
+    return e;
+}
