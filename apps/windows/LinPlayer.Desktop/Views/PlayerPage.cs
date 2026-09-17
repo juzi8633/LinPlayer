@@ -577,8 +577,8 @@ public sealed class PlayerPage : UserControl
            这几个用**文字**不用图标:「增强」「比例」没有公认的图标,
              随手挑一个 MDL2 字形的结果是用户得靠试才知道它是什么
              (而且字体里没有那个码位时画出来是个空心方框,还编译绿)。 */
-        _qualityBtn = Osd("增强", "画面增强档位(U)");
-        _qualityBtn.Click += (_, _) => Pick(_qualityBtn, _quality, "画面增强", null, true);
+        _qualityBtn = Osd("增强", "画质增强 / 补帧(U)");
+        _qualityBtn.Click += (_, _) => ShowEnhance();
         _aspectBtn = Osd("比例", "画面比例");
         _aspectBtn.Click += (_, _) => Pick(_aspectBtn, _aspect, "画面比例", null, true);
         var segBtn = Osd("片头片尾", "标记片头片尾 —— 这部剧以后一直用这一份");
@@ -935,6 +935,10 @@ public sealed class PlayerPage : UserControl
            绕开 UI 直接调命令的自检只能证明核心层活着,证明不了这个面板接对了。 */
         var lvl = Environment.GetEnvironmentVariable("LP_SELFCHECK_SHADER");
         if (!string.IsNullOrEmpty(lvl)) _ = SelfCheckPickQuality(lvl);
+        var interpLvl = Environment.GetEnvironmentVariable("LP_SELFCHECK_INTERP");
+        if (!string.IsNullOrEmpty(interpLvl)) _ = SelfCheckInterp(interpLvl);
+        _core.OnEvent += OnInterpEvent;
+        DetachedFromVisualTree += (_, _) => _core.OnEvent -= OnInterpEvent;
         SelfCheckOsdFade();
         SelfCheckThumb();
         SelfCheckAvSync();
@@ -1708,7 +1712,7 @@ public sealed class PlayerPage : UserControl
             case "player.next": GoNext(); break;
             case "player.episodes" when _pickEp.IsVisible: ShowEpisodes(); break;
             // 抽屉关着时直接展开下拉框,列表会飘在一块看不见的面板上 —— 得先把面板拿出来
-            case "player.quality": Pick(_qualityBtn, _quality, "画面增强", null, true); break;
+            case "player.quality": ShowEnhance(); break;
             case "player.screenshot": _ = Screenshot(); break;
             case "player.skip" when _skip.IsVisible: DoSkip(); break;
             // 全屏时先退全屏,不退出播放 —— 看片时误按一下就把片关了很恼人
@@ -3519,6 +3523,201 @@ public sealed class PlayerPage : UserControl
     private sealed record ShaderLevel(string Id, string Name)
     {
         public override string ToString() => Name;
+    }
+
+    /// <summary>
+    /// 「增强」弹层:上半段画质增强(下拉框摊开),下半段补帧。
+    ///
+    /// <para>两类分开摆是用户定的(2026-09-17):画质增强 / 补帧 / SDR2HDR 三类各管各的,
+    /// 补帧先放进这个弹层,不单开按钮。</para>
+    /// </summary>
+    private void ShowEnhance()
+    {
+        _interpHost = new StackPanel { Spacing = 2, Margin = new Thickness(0, 10, 0, 0) };
+        _ = FillInterp();
+        Pick(_qualityBtn, _quality, "画质增强", _interpHost, true);
+    }
+
+    private StackPanel? _interpHost;
+    private TextBlock? _interpProgress;
+
+    /// <summary>
+    /// 补帧那半段。档位、装没装、为什么不能开,全按核心层给的画 ——
+    /// <c>will_run == false</c> 的档不列(用户:「不生效的选项直接删掉」),
+    /// 一组全被滤掉时把核心层的原因摆出来,免得用户对着一段空白猜。
+    /// </summary>
+    private async Task FillInterp()
+    {
+        var host = _interpHost;
+        if (host is null) return;
+        host.Children.Clear();
+        host.Children.Add(PopupTitle("补帧"));
+        JsonElement st;
+        try { st = await _core.PlayerInterpLevels(); }
+        catch (Exception e) { host.Children.Add(Dimmed(LibraryPage.Advice(e))); return; }
+        if (!Bool(st, "supported")) { host.Children.Add(Dimmed(Str(st, "reason"))); return; }
+        if (!Bool(st, "installed"))
+        {
+            var mb = st.TryGetProperty("download_bytes", out var b) && b.TryGetInt64(out var n) ? n / (1 << 20) : 0;
+            host.Children.Add(Dimmed($"第一次用要下载补帧组件(约 {mb} MB),下完以后一直能用。显卡:{Str(st, "gpu")}"));
+            _interpProgress = Dimmed(Bool(st, "installing") ? "正在下载…" : "");
+            var dl = MenuRow("下载补帧组件");
+            dl.Click += async (_, _) =>
+            {
+                dl.IsEnabled = false;
+                _interpProgress.Text = "正在下载…";
+                try
+                {
+                    await _core.PlayerInterpInstall();
+                    Toast.Show("补帧组件已装好");
+                    await FillInterp();
+                }
+                catch (Exception e) { _interpProgress.Text = LibraryPage.Advice(e); dl.IsEnabled = true; }
+            };
+            host.Children.Add(dl);
+            host.Children.Add(_interpProgress);
+            return;
+        }
+        /* 一种算法一行,倍数横着排(2× 3× 4×)。竖着一档一行的话七档加两个组名,
+           弹层要滚才看得到第二种算法(2026-09-17 截图)。 */
+        var shown = 0;
+        var why = "";
+        var groups = new List<(string Name, StackPanel Bar)>();
+        foreach (var l in st.GetProperty("levels").EnumerateArray())
+        {
+            var id = Str(l, "id");
+            if (l.TryGetProperty("will_run", out var wr) && wr.ValueKind == JsonValueKind.False)
+            {
+                if (why == "") why = Str(l, "note");
+                continue;
+            }
+            var g = Str(l, "group");
+            if (g == "")
+            {
+                var off = MenuRow((Bool(l, "selected") ? "● " : "○ ") + Str(l, "name"));
+                off.Tag = id;
+                off.Click += (_, _) => _ = PickInterp(id, "关闭");
+                host.Children.Add(off);
+                continue;
+            }
+            if (groups.Count == 0 || groups[^1].Name != g)
+                groups.Add((g, new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 }));
+            var b = new Button
+            {
+                Content = $"{l.GetProperty("multi").GetInt32()}×", Tag = id, // 自检按 id 找按钮点
+                MinWidth = 42, MinHeight = 30, Padding = new Thickness(0),
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                VerticalContentAlignment = VerticalAlignment.Center,
+            };
+            /* 没选中的用 .osdstep(压在画面上的半透明底,.ghost 的边框在深色弹层上看不见 = 扁平字),
+               选中的用 .ghost.on 的强调色描边 —— 一眼看得出现在开着哪一档。 */
+            if (Bool(l, "selected")) { b.Classes.Add("ghost"); b.Classes.Add("on"); }
+            else b.Classes.Add("osdstep");
+            var label = $"{g} {Str(l, "name")}";
+            b.Click += (_, _) => _ = PickInterp(id, label);
+            groups[^1].Bar.Children.Add(b);
+            shown++;
+        }
+        foreach (var (name, bar) in groups)
+        {
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(10, 2, 6, 2) };
+            row.Children.Add(new TextBlock { Text = name, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 14, 0) });
+            Grid.SetColumn(bar, 1);
+            row.Children.Add(bar);
+            host.Children.Add(row);
+        }
+        if (shown == 0 && why != "") host.Children.Add(Dimmed(why));
+    }
+
+    /// <summary>选一档补帧。挂上只说明滤镜收下了,跑不动由核心层事件回来说(见 <see cref="OnInterpEvent"/>)。</summary>
+    private async Task PickInterp(string id, string label)
+    {
+        try
+        {
+            var r = await _core.PlayerSetInterpLevel(new { level = id });
+            Toast.Show(Bool(r, "reverted") ? Str(r, "note")
+                : id == "off" ? "补帧已关闭" : $"补帧:{label}(脚本起来要两三秒)");
+        }
+        catch (Exception e) { Toast.Show(LibraryPage.Advice(e)); }
+        await FillInterp();
+    }
+
+    /// <summary>核心层的补帧事件。在事件线程上来,必须切回 UI 线程。</summary>
+    private void OnInterpEvent(string name, JsonElement data)
+    {
+        switch (name)
+        {
+            case "player.interpInstall":
+                var done = data.TryGetProperty("done", out var d) ? d.GetInt64() : 0;
+                var total = data.TryGetProperty("total", out var t) ? t.GetInt64() : 0;
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (_interpProgress is not null && total > 0)
+                        _interpProgress.Text = $"正在下载 {done * 100 / total}%({done >> 20} / {total >> 20} MB)";
+                });
+                break;
+            case "player.interpReverted":
+                var note = Str(data, "note");
+                Dispatcher.UIThread.Post(() => { Toast.Show(note); _ = FillInterp(); });
+                break;
+        }
+    }
+
+    private static bool Bool(JsonElement e, string key) =>
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.True;
+
+    /// <summary>
+    /// 自检:LP_SELFCHECK_INTERP=档位 id。没装组件先走真下载;挂档走**真点击**
+    /// (点「增强」→ 点补帧那一行),之后每 2 秒打一次状态,第 10 秒 seek 一次看能不能接着补。
+    /// 真正的判决在核心层日志里(LP_CORELOG=1 看「补帧:… 起来了 / 量了 / 撤掉」)。
+    /// 最后把弹层再打开并钉住 OSD,截图看布局。
+    /// </summary>
+    private async Task SelfCheckInterp(string id)
+    {
+        await Task.Delay(7000);
+        try
+        {
+            var st = await _core.PlayerInterpLevels();
+            Console.WriteLine($"[interp] 状态 {st}");
+            if (!Bool(st, "installed"))
+            {
+                var t0 = DateTime.UtcNow;
+                await _core.PlayerInterpInstall();
+                Console.WriteLine($"[interp] 组件装好,用时 {(DateTime.UtcNow - t0).TotalSeconds:F1}s");
+            }
+            await OpenEnhanceAndClick(id);
+            for (var i = 0; i < 12; i++)
+            {
+                await Task.Delay(2000);
+                if (i == 4) { await _core.PlayerSeek(new { pos = 55.0 }); Console.WriteLine("[interp] seek → 55s"); }
+                var s2 = await _core.PlayerInterpLevels();
+                var cur = s2.GetProperty("levels").EnumerateArray().FirstOrDefault(x => Bool(x, "selected"));
+                var ps = await _core.PlayerStatus();
+                Console.WriteLine($"[interp] t={2 * (i + 1)}s 当前档 {Str(cur, "id")} status={ps}");
+            }
+            await OpenEnhanceAndClick(null);
+        }
+        catch (Exception e) { Console.WriteLine($"[interp] ERR {e.Message}"); }
+    }
+
+    private async Task OpenEnhanceAndClick(string? id)
+    {
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            _lastMove = DateTime.UtcNow.AddYears(1);
+            ShowOsd(true);
+            _qualityBtn.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        });
+        await Task.Delay(1500); // FillInterp 是异步的
+        if (id is null) return;
+        Button? row = null;
+        await Dispatcher.UIThread.InvokeAsync(() =>
+            row = _interpHost?.GetLogicalDescendants().OfType<Button>().FirstOrDefault(b => (b.Tag as string) == id));
+        if (row is null) { Console.WriteLine($"[interp] ✗ 弹层里找不到 {id} 那一行"); return; }
+        await Dispatcher.UIThread.InvokeAsync(() => row!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+        Console.WriteLine($"[interp] ✓ 点了弹层里的 {id}");
+        await Task.Delay(800);
+        await Dispatcher.UIThread.InvokeAsync(() => _openFlyout?.Hide());
     }
 
     private async Task PickTrack(string kind, ComboBox box)

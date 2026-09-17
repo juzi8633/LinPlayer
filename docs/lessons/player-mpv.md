@@ -1790,3 +1790,61 @@ if (eof && !_leaving) { Leave(); }   // Leave() → Nav.Back()
 **真机复验时看**:mpv 日志临时订到 warn,确认没有 `fontselect: failed to find any fallback`;
 `player.opts` 回读 `sub-font` 是族名;设置里关字幕后起播 `sid=no`。
 
+
+## 补帧(2026-09-17)
+
+用户定的口径:「画面增强」以后拆三类 —— **画质增强(有档位)/ 补帧(有档位)/ SDR2HDR(一个开关)**。
+补帧先放进「增强」弹层下半段,不单开按钮。默认补 2 倍,3 / 4 倍是给强显卡的。
+
+### 方案:DRBA / RIFE 走 vf=vapoursynth + DirectML
+
+- 代码:`core/interp`(档位、运行时下载、DXGI 选卡、脚本)+ `core/player/interpcmds.go`(命令、起播回挂、丢帧闸)。
+- 推理走 **DirectML**,任何 DX12 独显都能跑,不分 N 卡 A 卡 —— 所以没做 AMD 专用的 `vf=amf_frc`,也没做 TensorRT 版(2.8GB)。
+- 运行时 66MB(zip)由 `scripts/pack-interp-runtime.py` 从 hooke007/mpv_PlayKit `20260510` 懒人包挑文件打成,
+  **可复现**(固定时间戳,连打两次 sha256 一致),发在本仓库 Release `interp-runtime-1`,**`--latest=false`**。
+  更新检查:稳定渠道看 `/releases/latest`,不 `--latest=false` 就会顶掉正式版;预览渠道按版本号比,`interp-runtime-1` 解不出 x.y.z,不会被当成新版。
+- 挑文件的表是实测的:少了根目录那批 `.pyd`,VSScript 初始化直接失败,报 `Failed to initialize VapourSynth VSScript library: last error unknown`。
+- 脚本 `core/interp/files/interp.vpy` 是自己写的(上游 .vpy 按其 LICENSE.MD 视作未授权),直接调 k7sfunc 的 `DRBA_HUB` / `RIFE_ORT_HUB`:
+  k7sfunc 的 `DRBA_DML` / `RIFE_DML` 把 `gpu` 钉死在 0/1/2,机器上有远程桌面软件装的虚拟显示卡时独显序号会排到后面。
+
+### 实测(RTX 5060 Laptop,1080p 23.976,DirectML)
+
+| 档 | 补帧前高度 | 结果 |
+|---|---|---|
+| DRBA 2× | 1080 | 不丢帧(mpv.exe 不计时 88fps;LinPlayer 里每秒出 48.3 帧) |
+| DRBA 3× | 1080 | 10 秒丢 122 帧 ✗ |
+| DRBA 3× | 720 | 丢 0~7 帧 ✓ |
+| DRBA 4× | 1080 | 10 秒丢 666 帧 ✗(LinPlayer 里 8 秒丢 278 帧,闸撤掉) |
+| DRBA 4× | 720 | LinPlayer 里每秒出 96 帧 ✓ |
+| RIFE 2× | 1080 | 丢 131 帧 ✗ |
+| RIFE 2× | 900 | 丢 0 帧 ✓ |
+| RIFE 3× | 900 | 丢 485 帧 ✗ |
+| DRBA 2× 核显 Intel UHD | 720 | 丢 178 帧 ✗ → 专用显存 < 2GB 的卡不给开 |
+
+- 硬解:偏好 `auto-safe` 时 mpv **自己切到 `d3d11va-copy`**;强制 `d3d11va` 反而退回软解(丢 53 帧)。不用改解码偏好。
+- seek:vapoursynth 会重载脚本,**画面停约 4 秒**再以 2 倍接上(自检实测 pos 55 停在原地 4 秒)。上游行为,没法绕。
+- mpv 的 `frame-drop-count` **在 seek 时清零**(实测 19 → 0),量丢帧必须跨清零累加(`dropCounter`)。
+
+### 坑
+
+- **DXGI 适配器序号必须在本进程里枚举。** 在别的进程(python)里 N 卡是 1 号,在 LinPlayer 里是 **0 号** ——
+  `gpupref_windows.go` 把本程序钉到了高性能显卡,per-exe 偏好会改 `EnumAdapters1` 的顺序。写死序号就跑到核显上。
+- **VSScript.dll 靠预加载,不靠环境变量。** libmpv 是 `LoadLibraryW("VSScript.dll")` 按名字找(只搜 exe 目录 / PATH),
+  读 `VSSCRIPT_PATH` 用的是 C 运行库的 `getenv`,Go 的 `os.Setenv` 改不到那份。先 `LoadLibraryExW(全路径, LOAD_WITH_ALTERED_SEARCH_PATH)` 装进进程,同名模块 mpv 直接拿到。
+- **`DEVMODEW.dmDisplayFrequency` 在偏移 184,不是 188。** 按文档推算错过一次,本机 dump 实测:168 位深、172/176 宽高、184 刷新率。
+- **补完的帧率超过屏幕刷新率就不给开**(24×3=72 在 60Hz 屏上多出来的帧显示不出来,还会被丢帧闸当成跑不动)。60 帧片源不补(上游同样卡 32)。
+- **丢帧闸必须实测变红过**:把 DRBA 4× 临时改回 1080p 高度,LinPlayer 里闸 2 秒就撤(丢 68 / 应出 192)。跑不动时每秒只出 8 帧,所以量窗没满、丢帧过 25% 就提前撤。
+- 自检:`LP_INTERP=drba_2 LP_CORELOG=1 LP_WAIT=48 bash scripts/selfcheck-win.sh interp play:mv-1 <片子>`。
+  页面参数必须是 `play:mv-1`,`player` 只进播放页不起播(status 里 duration 恒 0,闸永远在等)。
+
+### 安卓(调研结论,未实现)
+
+- **蹭不到系统补帧**:手机厂商视频补帧全是包名白名单,没有 API、没有 manifest 标记;芯片厂的(高通 AFME、联发科 MFRC)只给游戏或整机厂。
+- **现有 libmpv.so 里做不了**:它是 media-kit v1.1.11 的现成包(不是自编),`--disable-filters`,没有 vapoursynth / minterpolate;GLSL 用户着色器拿不到上一帧。
+  mpv 内建 `interpolation` 只是帧混合(去抖动,不是运动补偿),这份 0.36 的 so 只认旧名 `override-display-fps`。
+- **minterpolate 重编进去也不实时**:单线程无 SIMD,本机 i5-13500HX 单核 720p 2× 只有 17fps。
+- RIFE 上手机:骁龙 8 Gen 3 上 720p 约 10fps,瓶颈在 Resize / GridSample 算子,换推理框架救不了。
+- **真能跑的只有两条,都要先自编 libmpv**:
+  1. ANVIL(arXiv 2603.26835,开源 `NihilDigit/mpv-android-anvil`,MIT):编进 libmpv 的 `vf=anvil`,骁龙 8 Gen 2/3 NPU,1080p 30→60。
+     限制:只吃 H.264、必须软解、有 B 帧的片实际只有 30→45。番剧多是 HEVC,覆盖面窄。
+  2. OpenCL 光流:SVPlayer(闭源,基于 mpv,推荐骁龙 855+)证明可行;开源参考 HopperRender(`HopperLogger/mpv-frame-interpolator`,mpv 版文件无许可头、作者的 Windows 版是 GPL-3.0 —— 只能进 GPL 构建的 libmpv;17 star,主打 Linux,安卓无人验证)。

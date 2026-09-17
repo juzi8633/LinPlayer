@@ -383,6 +383,7 @@ func drainEvents(h unsafe.Pointer) {
 			if t := C.lp_event_log_text(ev); t != nil {
 				txt := C.GoString(t)
 				noteMpvLog(txt)
+				noteInterpLog(txt)
 				noteLastError(txt)
 				/* ★ 订阅的是 error 级,所以每一条都值得往外走。
 				   原来只有 shader 编译错误被留下,别的**一个字都不出来** ——

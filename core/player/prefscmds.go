@@ -80,10 +80,7 @@ func currentScope() string { v, _ := shaderScope.Load().(string); return v }
 
 // shaderLevelFor 这部剧记过就用剧的,没记过用全局那档。
 func shaderLevelFor(p config.Prefs, scope string) string {
-	if v, ok := p.ShaderBySeries[scope]; ok && scope != "" {
-		return v
-	}
-	return p.ShaderLevel
+	return scopedLevel(p.ShaderLevel, p.ShaderBySeries, scope)
 }
 
 // currentShaderLevel 进程里没有就回落到**记住的那一档**(还没起播时就是这条路)。
@@ -119,26 +116,39 @@ func rememberShader(level string) {
 	}
 }
 
-// rememberInto 把档位记到这部剧上(scope 非空)或全局。没变化回 false,省一次落盘。
+// rememberInto 把画面增强档位记到这部剧上(scope 非空)或全局。没变化回 false,省一次落盘。
 func rememberInto(p *config.Prefs, scope, level string) bool {
+	return rememberScoped(&p.ShaderLevel, &p.ShaderBySeries, scope, level)
+}
+
+// rememberScoped 「全局一份 + 按剧一份」的通用记法。画面增强和补帧共用。
+func rememberScoped(global *string, bySeries *map[string]string, scope, level string) bool {
 	if scope == "" {
-		if p.ShaderLevel == level {
+		if *global == level {
 			return false
 		}
-		p.ShaderLevel = level
+		*global = level
 		return true
 	}
-	if old, ok := p.ShaderBySeries[scope]; ok && old == level {
+	if old, ok := (*bySeries)[scope]; ok && old == level {
 		return false
 	}
 	// 拷一份再改:PrefsOf 给的 map 和配置里那份是同一个,原地改等于绕过 SetPrefs
-	m := make(map[string]string, len(p.ShaderBySeries)+1)
-	for k, v := range p.ShaderBySeries {
+	m := make(map[string]string, len(*bySeries)+1)
+	for k, v := range *bySeries {
 		m[k] = v
 	}
 	m[scope] = level
-	p.ShaderBySeries = m
+	*bySeries = m
 	return true
+}
+
+// scopedLevel 这部剧记过就用剧的,没记过用全局那档。
+func scopedLevel(global string, bySeries map[string]string, scope string) string {
+	if v, ok := bySeries[scope]; ok && scope != "" {
+		return v
+	}
+	return global
 }
 
 // applySavedShader 起播时把记住的那一档挂回去。
@@ -179,6 +189,7 @@ func applySavedShader(level string) {
 func registerPrefsCommands(version string) {
 	prefsClient = emby.NewClient(version)
 	registerSkip()
+	registerInterp()
 
 	/* shaderLevels 档位表。
 

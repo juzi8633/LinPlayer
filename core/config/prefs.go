@@ -190,6 +190,9 @@ type Prefs struct {
 	// ★ 用户 2026-09-17:「在一个番剧里面选了,后续都是使用该模型」。选的时候在放剧集就记到这部剧上,
 	//   这部剧以后每一集都用它;没记过的剧和电影仍用 ShaderLevel(上一次在剧外选的那档)。
 	ShaderBySeries map[string]string `json:"shader_by_series"`
+	// InterpLevel / InterpBySeries 补帧档位,和画面增强同一套记法(全局 + 按剧)。
+	InterpLevel    string            `json:"interp_level"`
+	InterpBySeries map[string]string `json:"interp_by_series"`
 	// 自动跳过片头 / 片尾。依赖**服务端章节**,没刮削章节的库自动静默不工作。
 	//
 	// ★ 片头片尾是**两个**开关:播放页「更多」面板里就是两行,

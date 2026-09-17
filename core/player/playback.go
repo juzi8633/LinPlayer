@@ -80,6 +80,7 @@ func applyPlaybackDefaults(p config.Prefs, isDolbyVision bool) {
 	// 画面增强档位跟着回来【用户定 2026-09-12:「画面增强需要支持记忆」】。
 	// 和上面两项同理:mpv 的 glsl-shaders 跨文件粘连,每次起播都要重设一遍。
 	applySavedShader(shaderLevelFor(p, currentScope()))
+	applySavedInterp(interpLevelFor(p, currentScope()))
 }
 
 // PlayResult 起播回执。

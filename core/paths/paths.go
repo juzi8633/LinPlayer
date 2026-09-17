@@ -86,7 +86,8 @@ func statDir(p string) (bool, error) {
 }
 func PluginsDir() string    { return sub("plugins", "installed") }
 func PluginStorage() string { return sub("plugins", "storage") }
-func ModelsDir() string     { return sub("models") } // Whisper 等按需下载的模型(Q6 已定:拆出来)
+func ModelsDir() string     { return sub("models") }               // Whisper 等按需下载的模型(Q6 已定:拆出来)
+func InterpDir() string     { return sub("components", "interp") } // 补帧运行时,按需下载,重下代价高所以不在 cache/
 
 // PluginStateFile 插件启用态 / 已同意权限。
 func PluginStateFile() string { return sub("plugins", "state.json") }

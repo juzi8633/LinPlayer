@@ -140,6 +140,9 @@ public static class LinPlayerCommandNames
         "player.setSubDelay",
         "player.setSubStyle",
         "player.getSubStyle",
+        "player.interpLevels",
+        "player.setInterpLevel",
+        "player.interpInstall",
         "player.setTrack",
         "player.setTrackRegexes",
         "player.setVolume",
@@ -425,7 +428,7 @@ public static class LinPlayerCommandsExtensions
     public static Task<JsonElement> AccountUpdateAccount(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("account.updateAccount", args, ct);
 
-    // ---- 播放器 · player.* (49 条) ----
+    // ---- 播放器 · player.* (52 条) ----
     public static Task<JsonElement> PlayerAddSubtitle(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("player.addSubtitle", args, ct);
     public static Task<JsonElement> PlayerChapterInfo(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -500,6 +503,12 @@ public static class LinPlayerCommandsExtensions
         => c.CallAsync("player.setSubStyle", args, ct);
     public static Task<JsonElement> PlayerGetSubStyle(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("player.getSubStyle", args, ct);
+    public static Task<JsonElement> PlayerInterpLevels(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("player.interpLevels", args, ct);
+    public static Task<JsonElement> PlayerSetInterpLevel(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("player.setInterpLevel", args, ct);
+    public static Task<JsonElement> PlayerInterpInstall(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("player.interpInstall", args, ct);
     public static Task<JsonElement> PlayerSetTrack(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("player.setTrack", args, ct);
     public static Task<JsonElement> PlayerSetTrackRegexes(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)

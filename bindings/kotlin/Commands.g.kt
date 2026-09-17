@@ -130,6 +130,9 @@ object LinPlayerCommandNames {
         "player.setSubDelay",
         "player.setSubStyle",
         "player.getSubStyle",
+        "player.interpLevels",
+        "player.setInterpLevel",
+        "player.interpInstall",
         "player.setTrack",
         "player.setTrackRegexes",
         "player.setVolume",
@@ -413,7 +416,7 @@ suspend fun LinPlayerCommands.accountTestConnection(args: Map<String, Any?>? = n
 suspend fun LinPlayerCommands.accountUpdateAccount(args: Map<String, Any?>? = null): JsonElement =
     call("account.updateAccount", args)
 
-// ---- 播放器 · player.* (49 条) ----
+// ---- 播放器 · player.* (52 条) ----
 suspend fun LinPlayerCommands.playerAddSubtitle(args: Map<String, Any?>? = null): JsonElement =
     call("player.addSubtitle", args)
 suspend fun LinPlayerCommands.playerChapterInfo(args: Map<String, Any?>? = null): JsonElement =
@@ -488,6 +491,12 @@ suspend fun LinPlayerCommands.playerSetSubStyle(args: Map<String, Any?>? = null)
     call("player.setSubStyle", args)
 suspend fun LinPlayerCommands.playerGetSubStyle(args: Map<String, Any?>? = null): JsonElement =
     call("player.getSubStyle", args)
+suspend fun LinPlayerCommands.playerInterpLevels(args: Map<String, Any?>? = null): JsonElement =
+    call("player.interpLevels", args)
+suspend fun LinPlayerCommands.playerSetInterpLevel(args: Map<String, Any?>? = null): JsonElement =
+    call("player.setInterpLevel", args)
+suspend fun LinPlayerCommands.playerInterpInstall(args: Map<String, Any?>? = null): JsonElement =
+    call("player.interpInstall", args)
 suspend fun LinPlayerCommands.playerSetTrack(args: Map<String, Any?>? = null): JsonElement =
     call("player.setTrack", args)
 suspend fun LinPlayerCommands.playerSetTrackRegexes(args: Map<String, Any?>? = null): JsonElement =
