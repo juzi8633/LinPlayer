@@ -167,7 +167,9 @@ fun PlayerPanel(
                         val id = o.str("id") ?: return@mapNotNull null
                         if (id != "off" && o.boolOrNull("will_run") == false) return@mapNotNull null
                         val g = o.str("group")
-                        Triple("interp:$id", if (g.isNullOrEmpty()) "补帧" else "补帧 · $g", o.str("name") ?: "档位")
+                        val fps = o.str("fps")  // 在播时的实际帧数,比如 24→48 帧
+                        Triple("interp:$id", if (g.isNullOrEmpty()) "补帧" else "补帧 · $g",
+                            (o.str("name") ?: "档位") + if (fps.isNullOrEmpty()) "" else " · $fps")
                     }
                     currentInterp = il.firstOrNull { it.obj().bool("selected") }.obj().str("id")?.let { "interp:$it" }
                 }

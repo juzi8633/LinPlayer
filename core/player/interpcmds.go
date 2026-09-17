@@ -28,6 +28,8 @@ type InterpLevel struct {
 	// WillRun 片源 / 屏幕未知(没在播)时不发;false 时 Note 说为什么。
 	WillRun *bool  `json:"will_run,omitempty"`
 	Note    string `json:"note,omitempty"`
+	// FPS 在播时的实际帧数,比如「24→48 帧」。没在播为空
+	FPS string `json:"fps,omitempty"`
 }
 
 // InterpState 补帧面板要的全部东西。
@@ -233,8 +235,8 @@ func guardInterp(gen int64, level string, spec interp.Spec) {
 		}
 		bus.Logf("info", "补帧:%s 量了 %.0f 秒,丢 %.0f 帧 / 应出 %.0f 帧", level, measured.Seconds(), lost, want)
 		if lost > want*interpMaxDropRatio {
-			revertInterp(gen, level, fmt.Sprintf("显卡跟不上 %d 倍补帧(%.0f 秒丢了 %.0f 帧),已退回关闭。可以试试低一档的倍数",
-				spec.Multi, measured.Seconds(), lost))
+			revertInterp(gen, level, fmt.Sprintf("显卡跟不上%s(%.0f 秒丢了 %.0f 帧),已退回关闭。可以试试低一档的倍数",
+				interp.MultiName(spec.Multi), measured.Seconds(), lost))
 		}
 		return
 	}
@@ -312,7 +314,8 @@ func registerInterp() {
 		cur := currentInterpLevel()
 		src, hz := propF("container-fps"), interp.DisplayHz()
 		for _, l := range interp.Levels() {
-			one := InterpLevel{ID: l.ID, Name: l.Name, Group: l.Group, Multi: l.Multi, Selected: l.ID == cur}
+			one := InterpLevel{ID: l.ID, Name: l.Name, Group: l.Group, Multi: l.Multi, Selected: l.ID == cur,
+				FPS: interp.FPSNote(l.Multi, src)}
 			if spec, err := interp.SpecOf(l.ID); err == nil && src > 0 {
 				why := interp.WhyNot(spec, src, hz)
 				run := why == ""

@@ -51,3 +51,16 @@ func TestUnzip拒绝逃出目录的条目(t *testing.T) {
 		}
 	}
 }
+
+// 「倍」按补了几倍叫:24→48 是补 1 倍【用户定 2026-09-17】。内部 multi=2 不变。
+func TestMultiName按补几倍叫(t *testing.T) {
+	if got := MultiName(2); got != "补 1 倍" {
+		t.Fatalf("multi=2(24→48)应叫「补 1 倍」,实得 %q", got)
+	}
+	if got := FPSNote(3, 23.976); got != "24→72 帧" {
+		t.Fatalf("帧数说明不对:%q", got)
+	}
+	if FPSNote(2, 0) != "" {
+		t.Fatal("片源帧率未知时不该给帧数")
+	}
+}

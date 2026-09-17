@@ -44,11 +44,23 @@ func Levels() []Level {
 	for _, a := range algos {
 		for _, m := range []int{2, 3, 4} {
 			if _, ok := a.height[m]; ok {
-				out = append(out, Level{ID: a.id + "_" + strconv.Itoa(m), Name: strconv.Itoa(m) + " 倍", Group: a.name, Multi: m})
+				out = append(out, Level{ID: a.id + "_" + strconv.Itoa(m), Name: MultiName(m), Group: a.name, Multi: m})
 			}
 		}
 	}
 	return out
+}
+
+// MultiName 档位名按「补几倍」叫【用户定 2026-09-17:「1 倍率,比如 24 补帧到 48」】。
+// 内部 Multi 仍是「输出是源的几倍」(2 = 24→48),id 也不变,记住的档位不受影响。
+func MultiName(multi int) string { return "补 " + strconv.Itoa(multi-1) + " 倍" }
+
+// FPSNote 片源帧率已知时给档位带上实际帧数,免得对「倍」的理解再对不上。
+func FPSNote(multi int, srcFPS float64) string {
+	if srcFPS <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%.0f→%.0f 帧", srcFPS, srcFPS*float64(multi))
 }
 
 // SpecOf 档位 id → 滤镜参数。认不出就报错,**不回落默认档** —— 回落等于用户选 A 实际跑 B。

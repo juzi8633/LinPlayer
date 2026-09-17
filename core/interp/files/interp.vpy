@@ -21,7 +21,9 @@ clip = video_in
 fps = float(container_fps)
 # 高帧率片源原样放行。核心层已经不让选,这里是第二道:抛异常的话 mpv 会整条滤镜停掉并报错。
 if 0 < fps <= 32:
-    clip = FMT_CTRL(clip, h_max=h_max, fmt_pix=0)
+    # 输出锁 8 位 420。10 位片源原样补出来是 10 位帧,LinPlayer 里渲染跟不上:
+    # 同一段 HEVC 10bit 动画,RIFE 2 倍 2 秒丢 37 帧;锁 8 位后 8 秒丢 0 帧(mpv.exe 不渲染时两者都不丢)
+    clip = FMT_CTRL(clip, h_max=h_max, fmt_pix=1)
     if algo == "rife":
         clip = RIFE_ORT_HUB(
             clip, model=46, turbo=True, fps_in=fps, fps_num=multi, fps_den=1, sc_mode=1, gpu_t=2,

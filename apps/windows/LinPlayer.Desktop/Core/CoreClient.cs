@@ -221,6 +221,11 @@ public sealed class CoreClient : ILinPlayerCommands, IDisposable
                          平时刷屏会把自检那几行断言淹掉。 */
                     if (name == "log" && _coreLog)
                         Console.WriteLine($"[核心层:{Str(data, "level")}] {Str(data, "msg")}");
+                    /* 补帧的判断过程(挂上 / 起来了 / 丢了几帧 / 为什么撤)进 desktop.log。
+                       用户报「RIFE 开不了」那次,日志里一个字都没有,只能靠复现猜原因 ——
+                       只收这一类:核心层日志每几秒就有几条,全收会把文件淹掉 */
+                    if (name == "log" && (Str(data, "msg") ?? "").StartsWith("补帧"))
+                        LinPlayer.Desktop.Core.Log.I("补帧", Str(data, "msg") ?? "");
                     OnEvent?.Invoke(name, data);
                     return;
                 }

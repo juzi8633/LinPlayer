@@ -3604,8 +3604,8 @@ public sealed class PlayerPage : UserControl
                 groups.Add((g, new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 }));
             var b = new Button
             {
-                Content = $"{l.GetProperty("multi").GetInt32()}×", Tag = id, // 自检按 id 找按钮点
-                MinWidth = 42, MinHeight = 30, Padding = new Thickness(0),
+                Content = Str(l, "name"), Tag = id, // 自检按 id 找按钮点
+                MinWidth = 42, MinHeight = 30, Padding = new Thickness(10, 0, 10, 0),
                 HorizontalContentAlignment = HorizontalAlignment.Center,
                 VerticalContentAlignment = VerticalAlignment.Center,
             };
@@ -3613,7 +3613,10 @@ public sealed class PlayerPage : UserControl
                选中的用 .ghost.on 的强调色描边 —— 一眼看得出现在开着哪一档。 */
             if (Bool(l, "selected")) { b.Classes.Add("ghost"); b.Classes.Add("on"); }
             else b.Classes.Add("osdstep");
-            var label = $"{g} {Str(l, "name")}";
+            // 在播时核心层给实际帧数(24→48 帧):「倍」按输出算还是按补的算,用户和我们理解过不一样
+            var fps = Str(l, "fps");
+            if (fps != "") ToolTip.SetTip(b, fps);
+            var label = fps == "" ? $"{g} {Str(l, "name")}" : $"{g} {Str(l, "name")}({fps})";
             b.Click += (_, _) => _ = PickInterp(id, label);
             groups[^1].Bar.Children.Add(b);
             shown++;
