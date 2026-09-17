@@ -1,0 +1,62 @@
+# 打 N 卡补帧加速包(TensorRT)并发 Release interp-trt-1(手动触发)
+#
+# 为什么在 CI 上打:上游 vsNV 分卷 2.9GB、我们的产物 1.3GB,本机网络下载单线程要一个多小时,
+# 上传 GitHub 反复失败(2026-09-18 七个文件并行传全部 rc=1)。Actions 的机器下上传都在 GitHub 内网。
+#
+# ★ 产物的 sha256 以这里打印的为准(Linux 的 zlib 和本机不一定逐字节一致),
+#   跑完把 SHA256SUMS 里的值填回 core/interp/trt_windows.go。
+# ★ --latest=false:不设的话会顶掉正式版,更新检查看的是 /releases/latest。
+name: interp-trt
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  pack:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download upstream vsNV volumes
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y p7zip-full aria2
+          mkdir -p vsnv
+          tag=$(python3 -c "import re;print(re.search(r'UPSTREAM_TAG = \"(\d+)\"', open('scripts/pack-interp-runtime.py').read()).group(1))")
+          for n in 001 002; do
+            aria2c -x 16 -s 16 --console-log-level=warn -d vsnv \
+              "https://github.com/hooke007/mpv_PlayKit/releases/download/$tag/mpv-lazy-$tag-vsNV.7z.$n"
+          done
+          ls -l vsnv
+
+      - name: Pack
+        run: |
+          set -euo pipefail
+          python3 scripts/pack-interp-runtime.py --trt vsnv out
+          cd out && sha256sum *.zip | tee SHA256SUMS && ls -l
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: interp-trt
+          path: out/SHA256SUMS
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag=interp-trt-1
+          notes=$'LinPlayer N 卡补帧加速包(TensorRT),叠加在 interp-runtime-1 之上,播放器按显卡架构按需下载。\n\n由 .github/workflows/interp-trt.yml 从 hooke007/mpv_PlayKit 的 vsNV 包挑选文件重新打包,各组件许可见包内 NOTICE-trt.txt。\n\n- common:TensorRT / CUDA 运行库 + vstrt + DRBA 模型(所有 N 卡都要)\n- smXX:按显卡 compute capability 选一个(sm75=RTX20/GTX16,sm86=RTX30,sm89=RTX40,sm120=RTX50)'
+          # 之前本机传失败留下的空草稿(同一个 tag)先删掉,再干净地建
+          for id in $(gh api "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.draft and .tag_name == \"$tag\") | .id"); do
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id"
+          done
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" out/*.zip out/SHA256SUMS --clobber
+          else
+            gh release create "$tag" out/*.zip out/SHA256SUMS --target "$GITHUB_SHA" --latest=false \
+              --title "N 卡补帧加速包 1" --notes "$notes"
+          fi
