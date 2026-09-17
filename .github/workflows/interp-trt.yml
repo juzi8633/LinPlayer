@@ -50,12 +50,7 @@ jobs:
           set -euo pipefail
           tag=interp-trt-1
           repo="$GITHUB_REPOSITORY"
-          notes=$'LinPlayer N 卡补帧加速包(TensorRT),叠加在 interp-runtime-1 之上,播放器按显卡架构按需下载。
-
-由 .github/workflows/interp-trt.yml 从 hooke007/mpv_PlayKit 的 vsNV 包挑选文件重新打包,各组件许可见包内 NOTICE-trt.txt。
-
-- common:TensorRT / CUDA 运行库 + vstrt + DRBA 模型(所有 N 卡都要)
-- smXX:按显卡 compute capability 选一个(sm75=RTX20/GTX16,sm86=RTX30,sm89=RTX40,sm120=RTX50)'
+          notes=$'LinPlayer N 卡补帧加速包(TensorRT),叠加在 interp-runtime-1 之上,播放器按显卡架构按需下载。\n\n由 .github/workflows/interp-trt.yml 从 hooke007/mpv_PlayKit 的 vsNV 包挑选文件重新打包,各组件许可见包内 NOTICE-trt.txt。\n\n- common:TensorRT / CUDA 运行库 + vstrt + DRBA 模型(所有 N 卡都要)\n- smXX:按显卡 compute capability 选一个(sm75=RTX20/GTX16,sm86=RTX30,sm89=RTX40,sm120=RTX50)'
           # 先有一个草稿再传:传到一半失败时,外面看不到一个空的正式 Release
           # (第一次跑就是 create 带文件、第一个文件 HTTP 500,留下一个空的**而且被设成了 latest** 的 Release)
           if ! gh release view "$tag" >/dev/null 2>&1; then
