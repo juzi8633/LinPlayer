@@ -3,7 +3,9 @@
 package interp
 
 import (
+	_ "embed"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 	"syscall"
@@ -12,6 +14,48 @@ import (
 
 // Supported 这个平台有补帧。
 const Supported = true
+
+// NeedsRuntime Windows 的补帧要先下载运行时(runtime.go)。
+const NeedsRuntime = true
+
+// algos 两种算法各自补帧前降到的高度。
+//
+// ★ 高度是按 RTX 5060 Laptop 实测定的(1080p24,DirectML):
+// DRBA 2 倍 1080p 不丢帧,3 倍 1080p 跟不上、720p 不丢,4 倍 720p 在 LinPlayer 里跑满 96 帧;
+// RIFE 比 DRBA 慢,2 倍 1080p 就跟不上、900p 不丢。RIFE 3/4 倍的 720/540 **没单独测过**,
+// 是按「倍数越高降得越多」推的 —— 跑不动由 core/player 的丢帧闸退回,不会卡着不动。
+var algos = []algo{
+	{"drba", "DRBA · 动画", map[int]int{2: 1080, 3: 720, 4: 720}},
+	{"rife", "RIFE · 通用", map[int]int{2: 900, 3: 720, 4: 540}},
+}
+
+//go:embed files/interp.vpy
+var script []byte
+
+// UserData 交给 vf=vapoursynth 的 user-data。
+func (s Spec) UserData(gpu int) string {
+	return fmt.Sprintf("algo=%s;x=%d;gpu=%d;h=%d", s.Algo, s.Multi, gpu, s.Height)
+}
+
+// FilterString 挂到 mpv `vf` 属性上的那一串。
+func FilterString(scriptPath string, spec Spec, gpu int) string {
+	return "@lpinterp:vapoursynth=file=" + quote(scriptPath) + ":user-data=" + quote(spec.UserData(gpu))
+}
+
+// ScriptPath 把嵌入的脚本落到运行时目录,返回路径。每次都写:升级后脚本要跟着换。
+func ScriptPath() (string, error) {
+	p := filepath.Join(Dir(), "linplayer-interp.vpy")
+	if err := os.WriteFile(p, script, 0o644); err != nil {
+		return "", fmt.Errorf("写补帧脚本失败: %w", err)
+	}
+	return p, nil
+}
+
+// Device 跑补帧的那块卡:名字 + DXGI 序号。
+func Device() (string, int, error) {
+	a, err := PickAdapter()
+	return a.Name, a.Index, err
+}
 
 // minDedicatedMB 独显门槛。核显报的专用显存是 128MB 上下,实测跑 720p DRBA 10 秒丢 178 帧。
 const minDedicatedMB = 2048
@@ -145,10 +189,13 @@ func Preload() error {
 	return preloadErr
 }
 
-// DisplayHz 主屏刷新率。拿不到返回 0(调用方当「未知」处理)。
+// DisplayHz 主屏刷新率。拿不到返回 0(调用方当「未知」处理)。UI 报过的话以 UI 为准。
 //
 // ponytail: 只看主屏。窗口拖到副屏且两块屏刷新率不同时会判错,要准就得按窗口所在显示器查。
 func DisplayHz() float64 {
+	if hz := reported(); hz > 0 {
+		return hz
+	}
 	// DEVMODEW 共 220 字节:dmSize 在 68,dmDisplayFrequency 在 184(本机实测:168 位深 32、172/176 宽高、184 刷新率)。
 	// 按偏移读而不是抄整个结构体:它中间两个 union,抄错一个字段后面全错位,编译照样绿。
 	var dm [220]byte

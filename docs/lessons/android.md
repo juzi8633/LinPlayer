@@ -114,12 +114,9 @@ bash scripts/build-android-apk.sh --release
 脚本自己会挑带 `libclang.dll` 的 NDK（要 30+）并处理 bindgen 的
 libclang/resource-dir/sysroot/INCLUDE 那一整套 Windows 坑。
 
-**先决条件**：`libmpv.so` 不入库（红线：脚本能拉的别入库），本地要手动拉一次，
-否则出的 APK 缺 libmpv、装上一播放就 UnsatisfiedLinkError：
-```bash
-curl -fsSL -o /tmp/libmpv.jar https://github.com/media-kit/libmpv-android-video-build/releases/download/v1.1.11/full-armeabi-v7a.jar
-unzip -o -j /tmp/libmpv.jar "lib/armeabi-v7a/libmpv.so" -d apps/android/gen/android/app/src/main/jniLibs/armeabi-v7a
-```
+**先决条件**：libmpv 不入库（红线：脚本能拉的别入库），`bash scripts/fetch-libmpv-android.sh <abi>` 现拉。
+2026-09-17 起是自编包（`.github/workflows/libmpv-android.yml`，一组 9 个 so：libmpv + ffmpeg 动态库 + libc++_shared），
+**全部**要进 APK（`build-core-android.sh` 整目录拷），少一个装上去就 dlopen 失败。
 
 **验收 APK**（SDK build-tools 里就有）：
 `apksigner verify --verbose <apk>` 看签名，`aapt2 dump badging <apk>` 看包名/应用名/banner。

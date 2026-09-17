@@ -42,6 +42,10 @@
         android:supportsRtl="false"
         android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/Theme.LinPlayer.Splash">
+        <!-- 补帧(自编 libmpv 里的 vf=lpinterp)按名字 dlopen 厂商的 OpenCL。targetSdk 31+
+             不声明的话,链接器命名空间直接拒掉;required=false:没有的机器照样能装 -->
+        <uses-native-library android:name="libOpenCL.so" android:required="false" />
+        <uses-native-library android:name="libOpenCL-pixel.so" android:required="false" />
 
         <!--
           configChanges 吃下形变,不让系统重建 Activity。

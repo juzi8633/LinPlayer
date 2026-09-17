@@ -107,10 +107,10 @@ func mountInterp(level string) string {
 	if err != nil {
 		return err.Error()
 	}
-	if !interp.Installed() {
+	if interp.NeedsRuntime && !interp.Installed() {
 		return "补帧组件还没下载"
 	}
-	ad, err := interp.PickAdapter()
+	name, idx, err := interp.Device()
 	if err != nil {
 		return err.Error()
 	}
@@ -125,9 +125,10 @@ func mountInterp(level string) string {
 	gen := interpGen.Add(1)
 	// 不设成 no 的话 seek 之后画面和时间轴会错开一段(mpv_PlayKit #123 里的配置)
 	setProp("hr-seek-framedrop", "no")
-	setProp("vf", interp.FilterString(script, spec, ad.Index))
+	vf := interp.FilterString(script, spec, idx)
+	setProp("vf", vf)
 	curInterp.Store(level)
-	bus.Logf("info", "补帧:挂上 %s(%s,显卡 #%d %s)", level, spec.UserData(ad.Index), ad.Index, ad.Name)
+	bus.Logf("info", "补帧:挂上 %s(%s,设备 #%d %s)", level, vf, idx, name)
 	go guardInterp(gen, level, spec)
 	return ""
 }
@@ -283,20 +284,31 @@ func applySavedInterp(level string) {
 
 // ---------------------------------------------------------------- 命令
 
+// noteDisplayHz 安卓 UI 随命令报屏幕刷新率(核心层在安卓上拿不到窗口系统)。Windows 不传。
+func noteDisplayHz(a map[string]any) {
+	if hz, ok := a["display_hz"].(float64); ok {
+		interp.SetDisplayHz(hz)
+	}
+}
+
 func registerInterp() {
 	bus.Register("player.interpLevels", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
-		st := InterpState{Supported: interp.Supported, Installed: interp.Installed(),
-			Installing: interpInstBusy.Load(), DownloadBytes: interp.RuntimeSize}
+		noteDisplayHz(a)
+		st := InterpState{Supported: interp.Supported, Installed: !interp.NeedsRuntime || interp.Installed(),
+			Installing: interpInstBusy.Load()}
+		if interp.NeedsRuntime {
+			st.DownloadBytes = interp.RuntimeSize
+		}
 		if !st.Supported {
 			st.Reason = "这个平台还没有补帧"
 			return st, nil
 		}
-		if ad, err := interp.PickAdapter(); err != nil {
+		name, _, err := interp.Device()
+		if err != nil {
 			st.Supported, st.Reason = false, err.Error()
 			return st, nil
-		} else {
-			st.GPU = ad.Name
 		}
+		st.GPU = name
 		cur := currentInterpLevel()
 		src, hz := propF("container-fps"), interp.DisplayHz()
 		for _, l := range interp.Levels() {
@@ -312,6 +324,7 @@ func registerInterp() {
 	})
 
 	bus.Register("player.setInterpLevel", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
+		noteDisplayHz(a)
 		level, _ := a["level"].(string)
 		if level == "" || level == "off" {
 			interpOff()
@@ -337,8 +350,8 @@ func registerInterp() {
 
 	// interpInstall 下载补帧组件。阻塞到装完;进度走 player.interpInstall 事件。
 	bus.Register("player.interpInstall", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
-		if !interp.Supported {
-			return nil, bus.NewErr(bus.EUnsupported, "这个平台还没有补帧")
+		if !interp.NeedsRuntime {
+			return nil, bus.NewErr(bus.EUnsupported, "这个平台的补帧不用下载组件")
 		}
 		if !interpInstMu.TryLock() {
 			return nil, bus.NewErr(bus.EInvalid, "补帧组件正在下载")

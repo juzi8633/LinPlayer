@@ -39,15 +39,6 @@ func Installed() bool {
 	return err == nil
 }
 
-// ScriptPath 把嵌入的脚本落到运行时目录,返回路径。每次都写:升级后脚本要跟着换。
-func ScriptPath() (string, error) {
-	p := filepath.Join(Dir(), "linplayer-interp.vpy")
-	if err := os.WriteFile(p, script, 0o644); err != nil {
-		return "", fmt.Errorf("写补帧脚本失败: %w", err)
-	}
-	return p, nil
-}
-
 // Progress 下载进度:(已收字节, 总字节)。
 type Progress func(done, total int64)
 

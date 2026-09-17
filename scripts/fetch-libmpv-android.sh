@@ -1,36 +1,42 @@
 #!/usr/bin/env bash
-# 拉 Android 的 libmpv.so(每个 ABI 一份),落到 third_party/libmpv/android/<abi>/。
+# 拉 Android 的 libmpv(每个 ABI 一包),落到 third_party/libmpv/android/<abi>/。
 #
-#   bash scripts/fetch-libmpv-android.sh [abi ...]     # 默认只有 arm64-v8a(x86_64 要显式传)
+#   bash scripts/fetch-libmpv-android.sh [abi ...]     # 默认只有 arm64-v8a
 #
 # 产物**不进版本库**(.gitignore),和 Windows 侧 libmpv-2.dll 一个待遇:
 # 大二进制由脚本现拉,CI 也跑这个脚本。
 #
-# 上游是 media-kit/libmpv-android-video-build 的 release —— 它把 mpv + ffmpeg 全静态
-# 链进一个 .so,不需要再拉一堆依赖库。旧 Rust 栈用的就是它的产物。
+# 来源是本仓库 .github/workflows/libmpv-android.yml 自编的包(发在 Release `libmpv-android-<n>`)。
+# 2026-09-17 以前用 media-kit 的成品:mpv 0.36 + `--disable-filters`,补帧滤镜没地方加,
+# 副字幕延迟/位置也一直静默没生效。mpv 官方没有安卓 libmpv 成品,所以自己编。
 #
-# ★ 变体选 full 不选 default:default 砍掉了一批解码器。判据是「蓝光 PGS 字幕一片空白」
-#   那类问题 —— 能编译、能播放、就是某一类轨道静默没有,和 Windows 侧选 shinchiro 完整版同因。
+# 包里是一组 .so:libmpv + ffmpeg 各库(官方 mpv-android 脚本把 ffmpeg 编成动态库)+ libc++_shared。
+# 全部要进 APK —— 少一个就是装上去 dlopen 失败,而 APK 照样打得出来。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TAG="${LP_LIBMPV_TAG:-v1.1.11}"
-VARIANT="${LP_LIBMPV_VARIANT:-full}"
-BASE="https://github.com/media-kit/libmpv-android-video-build/releases/download/$TAG"
+TAG="${LP_LIBMPV_TAG:-libmpv-android-2}"
+BASE="https://github.com/zzzwannasleep/LinPlayer/releases/download/$TAG"
 DEST="$ROOT/third_party/libmpv/android"
 ABIS=("$@")
-# ★ 默认只编 arm64-v8a【用户定 2026-09-06】。x86_64 只有模拟器用得上,
-#   32 位留给 TV。要别的 ABI 就当参数传进来,映射表都还在。
+# ★ 默认只编 arm64-v8a【用户定 2026-09-06】。32 位留给 TV。
+#   x86_64(模拟器)自编流程没出,要用得先在 workflow 里加这个 arch。
 [ ${#ABIS[@]} -eq 0 ] && ABIS=(arm64-v8a)
 
-# ELF 机器类型:LFS 指针 / 下错 ABI 都是「装得上、一跑就 UnsatisfiedLinkError」,
-# 而错误信息里那串 76657273 是 "vers"(指针文本的开头),不是机器码。所以逐个校验。
+# sha256 钉死在这里:换包 = 改 TAG + 这两行。只信 Release 里的 SHA256SUMS 等于没校验
+sha_of() {
+  case "$1" in
+    arm64-v8a)   echo "9e459bd5fb493b65b97f7cb0c15206638ef7a0c85d7718201af04a802e20ce1e" ;;
+    armeabi-v7a) echo "55607d1f058294706cb5d6ff2b248bc72df730d296305d2db0300994452411bc" ;;
+    *) echo "" ;;
+  esac
+}
+
+# ELF 机器类型:下错 ABI 是「装得上、一跑就 UnsatisfiedLinkError」,逐个校验。
 elf_machine() {
   case "$1" in
     arm64-v8a)   echo "AArch64" ;;
     armeabi-v7a) echo "ARM" ;;
-    x86_64)      echo "X86-64" ;;
-    x86)         echo "80386" ;;
     *) echo "?" ;;
   esac
 }
@@ -39,29 +45,34 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 for abi in "${ABIS[@]}"; do
-  out="$DEST/$abi/libmpv.so"
-  if [ -f "$out" ] && [ "${LP_LIBMPV_FORCE:-0}" != "1" ]; then
-    echo "已有 $out($(stat -c %s "$out") 字节),跳过。LP_LIBMPV_FORCE=1 可强拉"
+  want_sha="$(sha_of "$abi")"
+  [ -n "$want_sha" ] || { echo "!! 自编 libmpv 没有 $abi(见 .github/workflows/libmpv-android.yml)"; exit 1; }
+  mark="$DEST/$abi/.tag"
+  if [ -f "$mark" ] && [ "$(cat "$mark")" = "$TAG" ] && [ "${LP_LIBMPV_FORCE:-0}" != "1" ]; then
+    echo "已有 $abi($TAG),跳过。LP_LIBMPV_FORCE=1 可强拉"
     continue
   fi
-  jar="$VARIANT-$abi.jar"
-  echo "== 拉 $jar =="
-  curl -fL --retry 3 -o "$tmp/$jar" "$BASE/$jar"
-  ( cd "$tmp" && unzip -o -q "$jar" )
-  src="$tmp/lib/$abi/libmpv.so"
-  [ -f "$src" ] || { echo "!! 包里没有 lib/$abi/libmpv.so"; exit 1; }
+  pkg="libmpv-android-$abi.tar.gz"
+  echo "== 拉 $TAG/$pkg =="
+  curl -fL --retry 3 -o "$tmp/$pkg" "$BASE/$pkg"
+  got="$(sha256sum "$tmp/$pkg" | cut -d' ' -f1)"
+  [ "$got" = "$want_sha" ] || { echo "!! $pkg sha256 对不上:$got(应为 $want_sha)"; exit 1; }
 
+  # 整个目录换掉:上一版留下的旧 so(比如 media-kit 那颗单文件 libmpv)混进来,打包时会一起进 APK
+  rm -rf "$DEST/$abi"
   mkdir -p "$DEST/$abi"
-  cp -f "$src" "$out"
+  tar -xzf "$tmp/$pkg" -C "$DEST/$abi"
 
-  # 校验:魔数 + 机器类型。不校验的话下错包在这里悄悄过去,到运行时才炸。
-  head -c 4 "$out" | od -An -tx1 | tr -d ' \n' | grep -qi '^7f454c46$' \
-    || { echo "!! $out 不是 ELF(多半是 LFS 指针或 HTML 错误页)"; exit 1; }
   want="$(elf_machine "$abi")"
-  if command -v readelf >/dev/null 2>&1; then
-    readelf -h "$out" | grep -q "$want" || { echo "!! $out 的机器类型不是 $want"; exit 1; }
-  fi
-  echo "   -> $out($(stat -c %s "$out") 字节,$want)"
+  for so in "$DEST/$abi"/*.so; do
+    head -c 4 "$so" | od -An -tx1 | tr -d ' \n' | grep -qi '^7f454c46$' \
+      || { echo "!! $so 不是 ELF"; exit 1; }
+    if command -v readelf >/dev/null 2>&1; then
+      readelf -h "$so" | grep -q "$want" || { echo "!! $so 的机器类型不是 $want"; exit 1; }
+    fi
+  done
+  echo "$TAG" > "$mark"
+  echo "   -> $DEST/$abi($(ls "$DEST/$abi"/*.so | wc -l) 个 so,$want)"
 done
 
-echo "完成。libmpv.so 不入版本库,构建前跑本脚本。"
+echo "完成。libmpv 不入版本库,构建前跑本脚本。"

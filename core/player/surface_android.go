@@ -169,6 +169,9 @@ func platformOptions() [][2]string {
 		{"gpu-context", "android"},
 		{"opengl-es", "yes"},
 		{"sub-fonts-dir", "/system/fonts"},
+		// 自编 libmpv 的 libass 带 fontconfig,安卓上没有 fonts.conf;不关的话它按 fontconfig 找字体,
+		// 找不到就不显示。只用 sub-fonts-dir,和原来那颗没 fontconfig 的 0.36 一致
+		{"sub-font-provider", "none"},
 		{"vd-lavc-threads", strconv.Itoa(decodeThreads())},
 		{"vd-lavc-skiploopfilter", "nonref"},
 		{"vd-lavc-fast", "yes"},

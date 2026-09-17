@@ -83,6 +83,7 @@ extern int __android_log_print(int prio, const char *tag, const char *fmt, ...);
 
 // AUTODETECT:这份构建里没有 fontconfig / coretext / directwrite,
 // 于是它实际落到目录提供者上 —— 也就是 ass_set_fonts_dir 给的那个目录。
+#define LPA_FONTPROVIDER_NONE 0
 #define LPA_FONTPROVIDER_AUTODETECT 1
 
 // 已知能对上 ASS_Image 布局的 libass API 版本区间。
@@ -165,8 +166,10 @@ static int lpa_init_locked(const char *fontsDir) {
     if (!g_rend) {
         g_rend = ass_renderer_init(g_lib);
         if (!g_rend) return -1;
-        // 没有 fontconfig,第四个参数(config)给 NULL;update=1 让它当场扫目录。
-        ass_set_fonts(g_rend, NULL, "sans-serif", LPA_FONTPROVIDER_AUTODETECT, NULL, 1);
+        // 字体只从 ass_set_fonts_dir 那个目录来,provider 给 NONE。
+        // ★ 自编 libmpv 的 libass 编进了 fontconfig,AUTODETECT 会去初始化一个安卓上
+        //   没有配置文件的 fontconfig;显式 NONE 和原来那颗没 fontconfig 的 0.36 行为一致。
+        ass_set_fonts(g_rend, NULL, "sans-serif", LPA_FONTPROVIDER_NONE, NULL, 1);
         ass_set_pixel_aspect(g_rend, 1.0);
         // 渲染器是新的,把记着的样式补上去。不补的话:用户在上一集调好的
         // 字幕大小,换一集就回默认 —— 而设置页里明明还写着他调的值。
@@ -411,7 +414,7 @@ JNIEXPORT jint JNICALL Java_xyz_linplayer_app_core_Native_assAddFont(
     if (g_lib) {
         ass_add_font(g_lib, nm, (const char *)p, (int)n);
         if (g_rend) ass_set_fonts(g_rend, NULL, "sans-serif",
-                                  LPA_FONTPROVIDER_AUTODETECT, NULL, 1);
+                                  LPA_FONTPROVIDER_NONE, NULL, 1);
     } else {
         rc = -1;
     }

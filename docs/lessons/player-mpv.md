@@ -1837,14 +1837,51 @@ if (eof && !_leaving) { Leave(); }   // Leave() → Nav.Back()
 - 自检:`LP_INTERP=drba_2 LP_CORELOG=1 LP_WAIT=48 bash scripts/selfcheck-win.sh interp play:mv-1 <片子>`。
   页面参数必须是 `play:mv-1`,`player` 只进播放页不起播(status 里 duration 恒 0,闸永远在等)。
 
-### 安卓(调研结论,未实现)
+### 安卓:自编 libmpv + OpenCL 光流滤镜 vf=lpinterp(2026-09-17)
+
+用户定:「走 opencl」「肯定是走 libmpv」「能拿官方编译好的就拿,没有再自己编」。
+
+- **mpv 官方没有安卓 libmpv 成品,Windows 也没有 libmpv-2.dll**(官方 Release 的 msvc 包只有 mpv.exe + vulkan-1.dll)。
+  PC 维持 shinchiro(mpv 官网安装页列的构建);安卓用官方 mpv-android 的 buildscripts 自编
+  (`.github/workflows/libmpv-android.yml`,依赖全钉提交;本机没有 WSL / Docker,脚本只支持 Linux)。
+- 官方脚本的产物是**一组 so**:libmpv + ffmpeg 动态库 + libc++_shared。`av_jni_set_java_vm` 在 libavcodec.so 里,
+  lpcore 链接要加 `-lavcodec`;APK 里要带全部 so(`build-core-android.sh` 整目录拷)。
+- 滤镜在 `third_party/mpv-interp`,算法来自 HopperRender(作者 Windows 版 GPL-3.0 → 只能进 GPL 构建的 libmpv,本体 AGPL-3.0 兼容)。
+  上游**不能直接搬**:kernel 运行时从 `$HOME/mpv-build/...` 读盘;有桌面状态面板(fork python、写失败 `exit`);
+  用 `__local` + `barrier` 归约和已废弃的 `atomic_add`(Mali / 三星 ANGLE-CL 上编不过);
+  窗口求和 `unsigned int` 在大窗口溢出;输出比时间戳晚一个源帧(24fps 下 42ms)。全部重写。
+- **OpenCL 必须 dlopen**:硬链 libOpenCL.so 的话没有 OpenCL 的机器整颗 libmpv 加载失败,mpv 内核起不来。
+  targetSdk 31+ 还要在 manifest 声明 `<uses-native-library android:name="libOpenCL.so" android:required="false"/>`,否则命名空间直接拒。
+  Pixel 的库叫 `libOpenCL-pixel.so`。
+- **计算核在 PC 上先验**(`bench/lpi_bench.c`,不依赖 mpv):值噪声纹理平移,真值中间帧 = 平移一半。
+  不能用正弦叠加纹理 —— 周期纹理平移半周期和自己一样,光流对上错的周期,测到的是纹理的问题。
+
+| Intel UHD 770,1080p | 光流(半径 5) | 补帧 PSNR | 直接混合 |
+|---|---|---|---|
+| 上游算法 | 139 ms | — | — |
+| 重写后(一窗一个工作项,大窗口取 8×8 样) | 22 ms | 平移 12×6:33.5 dB | 24.6 dB |
+| 同上,平移 30×-10 | 17 ms | 24.1 dB | 18.7 dB |
+| 同上,平移 48×20 | 34 ms(半径 16 时 51 ms) | 16.1 dB(半径 16:20.6) | 16.0 dB |
+
+  RTX 5060 上半径 5 每源帧 10 ms。中间帧生成 + 读回每张 3~5 ms,上传两帧 1 ms —— 光流是唯一的大头。
+  **手机上没有实测**(截至 2026-09-17 没有真机)。滤镜按实测耗时自调搜索半径,最小半径连续 24 个源帧超预算就放弃并 MP_ERR。
+- 安卓核心层拿不到屏幕刷新率,由 UI 随 `player.interpLevels` / `setInterpLevel` 传 `display_hz`。
+
+### 两个排查坑
+
+- **`nm | grep -q` 在 `set -o pipefail` 下会把「找到了」报成「没找到」**:grep 命中即退出,nm 吃 SIGPIPE,整条管道判失败。
+  第一轮 CI 就这样把导出了的 `mpv_create` 报成缺失(`build-core-android.sh` 里早有同一条注释,又踩一次)。先落文件再 grep。
+- **mpv 日志事件的正文不带模块名**(`vapoursynth` / `lpinterp` 在 `prefix` 字段里)。补帧报错原来只按正文认,
+  `Script evaluation failed` 这种一条都认不出来,只能靠 15 秒「没生效」兜底。现在按 prefix 认(有单测)。
+
+### 安卓调研时排除掉的路(2026-09-17)
 
 - **蹭不到系统补帧**:手机厂商视频补帧全是包名白名单,没有 API、没有 manifest 标记;芯片厂的(高通 AFME、联发科 MFRC)只给游戏或整机厂。
 - **现有 libmpv.so 里做不了**:它是 media-kit v1.1.11 的现成包(不是自编),`--disable-filters`,没有 vapoursynth / minterpolate;GLSL 用户着色器拿不到上一帧。
   mpv 内建 `interpolation` 只是帧混合(去抖动,不是运动补偿),这份 0.36 的 so 只认旧名 `override-display-fps`。
 - **minterpolate 重编进去也不实时**:单线程无 SIMD,本机 i5-13500HX 单核 720p 2× 只有 17fps。
 - RIFE 上手机:骁龙 8 Gen 3 上 720p 约 10fps,瓶颈在 Resize / GridSample 算子,换推理框架救不了。
-- **真能跑的只有两条,都要先自编 libmpv**:
+- **真能跑的两条(都要先自编 libmpv),选了第 2 条**:
   1. ANVIL(arXiv 2603.26835,开源 `NihilDigit/mpv-android-anvil`,MIT):编进 libmpv 的 `vf=anvil`,骁龙 8 Gen 2/3 NPU,1080p 30→60。
      限制:只吃 H.264、必须软解、有 B 帧的片实际只有 30→45。番剧多是 HEVC,覆盖面窄。
   2. OpenCL 光流:SVPlayer(闭源,基于 mpv,推荐骁龙 855+)证明可行;开源参考 HopperRender(`HopperLogger/mpv-frame-interpolator`,mpv 版文件无许可头、作者的 Windows 版是 GPL-3.0 —— 只能进 GPL 构建的 libmpv;17 star,主打 Linux,安卓无人验证)。

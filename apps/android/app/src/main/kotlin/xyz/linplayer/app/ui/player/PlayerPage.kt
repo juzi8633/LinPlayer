@@ -374,6 +374,15 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
         }
     }
 
+    // 补帧跑不动 / 这一集不该补:核心层撤档后发这条,原因原样给用户
+    LaunchedEffect(engine) {
+        if (exo != null) return@LaunchedEffect
+        app.core.events.collect { ev ->
+            if (ev.name != "player.interpReverted") return@collect
+            app.toast((ev.data as? JsonObject).str("note") ?: "补帧已关闭", ToastKind.Error)
+        }
+    }
+
     // 订阅 player.status(4 Hz)。**不轮询**
     LaunchedEffect(engine) {
         if (exo != null) return@LaunchedEffect

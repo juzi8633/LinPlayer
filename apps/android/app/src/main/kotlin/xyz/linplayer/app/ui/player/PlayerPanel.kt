@@ -78,6 +78,10 @@ fun PlayerPanel(
 
     var options by remember { mutableStateOf<List<Triple<String, String?, String>>>(emptyList()) }
     var current by remember { mutableStateOf<String?>(null) }
+    // 补帧和画质增强同在一个面板里,各自有「当前档」
+    var currentInterp by remember { mutableStateOf<String?>(null) }
+    // 核心层在安卓上拿不到窗口系统:补完超过刷新率的档由它按这个数藏掉
+    val displayHz = androidx.compose.ui.platform.LocalView.current.display?.refreshRate ?: 0f
     var loading by remember { mutableStateOf(true) }
 
     LaunchedEffect(kind, itemId) {
@@ -148,6 +152,25 @@ fun PlayerPanel(
                     Triple(id, o.str("group"), o.str("name") ?: "档位")
                 }
                 current = lv.firstOrNull { it.obj().bool("selected") }.obj().str("id")
+                /* 补帧【用户定 2026-09-17:画质增强 / 补帧 / SDR2HDR 分三类】。
+                   同样只列 will_run 不为 false 的档;这台手机用不了时留一行说清原因 ——
+                   OpenCL 能不能用因机型而异,整段消失的话用户只会以为是没做。 */
+                val st = runCatching {
+                    app.call("player.interpLevels", args("display_hz" to displayHz.toDouble()))
+                }.getOrNull().obj()
+                if (st != null && !st.bool("supported")) {
+                    options = options + Triple("interp:na", "补帧", st.str("reason") ?: "这台手机用不了补帧")
+                } else if (st != null) {
+                    val il = st["levels"].arr()
+                    options = options + il.mapNotNull {
+                        val o = it.obj() ?: return@mapNotNull null
+                        val id = o.str("id") ?: return@mapNotNull null
+                        if (id != "off" && o.boolOrNull("will_run") == false) return@mapNotNull null
+                        val g = o.str("group")
+                        Triple("interp:$id", if (g.isNullOrEmpty()) "补帧" else "补帧 · $g", o.str("name") ?: "档位")
+                    }
+                    currentInterp = il.firstOrNull { it.obj().bool("selected") }.obj().str("id")?.let { "interp:$it" }
+                }
             }
             /* 画面比例。★ 档位表由 [VideoFit] 一处定 —— 面板里再抄一遍的话,
                加一档就得改两处,而漏掉的那处不会报错,只是少一个选项。
@@ -230,12 +253,13 @@ fun PlayerPanel(
                     items(options, key = { it.first }) { (id, badge, label) ->
                         OptRow(label, {
                             if (kind == "more" || id == "substyle") onOpen(id)
+                            else if (id == "interp:na") app.toast(label, ToastKind.Error)
                             else if (kind == "ratio") { onFit(VideoFit.of(id)); onClose() }
                             else {
-                                scope.launch { pick(app, kind, id, itemId, exo) }
+                                scope.launch { pick(app, kind, id, itemId, exo, displayHz) }
                                 onClose()
                             }
-                        }, selected = id == current, badge = badge)
+                        }, selected = id == current || id == currentInterp, badge = badge)
                     }
                 }
             }
@@ -437,6 +461,7 @@ private fun StepKey(glyph: String, onClick: () -> Unit) = Box(
 private suspend fun pick(
     app: xyz.linplayer.app.data.AppState, kind: String, id: String, itemId: String,
     exo: androidx.media3.exoplayer.ExoPlayer? = null,
+    displayHz: Float = 0f,
 ) {
     if (exo != null && (kind == "audio" || kind == "subtitle")) {
         runCatching { exoPick(exo, kind, id) }.onFailure { app.report(it) }
@@ -451,7 +476,14 @@ private suspend fun pick(
             /* ★ 超分**必须看返回体**:`setShaderLevel` 在着色器跑不起来时会
                自己退回关闭并带上 `reverted` —— 不看就是「界面说已启用、实际是关的」,
                本仓最贵的那类 bug。核心层把原因写在 note 里,原样转给用户。 */
-            "quality" -> {
+            // 补帧。挂上只说明滤镜收下了;跑不动由 player.interpReverted 事件回来说(PlayerPage 订阅)
+            "quality" -> if (id.startsWith("interp:")) {
+                val level = id.removePrefix("interp:")
+                val r = app.call("player.setInterpLevel",
+                    args("level" to level, "display_hz" to displayHz.toDouble())).obj()
+                if (r.bool("reverted")) app.toast(r.str("note") ?: "补帧开不了", ToastKind.Error)
+                else if (level != "off") app.toast("补帧已开启,光流起来要一两秒")
+            } else {
                 val r = app.call("player.setShaderLevel", args("level" to id)).obj()
                 if (r.bool("reverted")) {
                     app.toast(r.str("note") ?: "这档在你这台机器上跑不起来", ToastKind.Error)

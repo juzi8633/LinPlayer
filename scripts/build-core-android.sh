@@ -109,12 +109,15 @@ for abi in "${ABIS[@]}"; do
     export CC="$TOOLBIN/$TRIPLE$MIN_API-clang"
     export CXX="$TOOLBIN/$TRIPLE$MIN_API-clang++"
     export CGO_CFLAGS="-I$ROOT/third_party/libmpv"
-    export CGO_LDFLAGS="-L$MPVDIR -landroid -llog"
+    # -lavcodec:av_jni_set_java_vm 在 ffmpeg 自己的库里(自编 libmpv 的 ffmpeg 是动态库)
+    export CGO_LDFLAGS="-L$MPVDIR -lavcodec -landroid -llog"
     go build -buildmode=c-shared -ldflags "-s -w $SEAL $VER_FLAG" -o "$OUT/liblpcore.so" ./ffi
   )
 
   "$TOOLBIN/llvm-strip" --strip-unneeded "$OUT/liblpcore.so"
-  cp -f "$MPVDIR/libmpv.so" "$OUT/libmpv.so"
+  # libmpv 和它依赖的 ffmpeg / libc++_shared 全要进 APK;先清掉旧的,免得上一版的 so 混进包里
+  find "$OUT" -maxdepth 1 -name '*.so' ! -name 'liblpcore.so' -delete
+  cp -f "$MPVDIR"/*.so "$OUT"/
 
   # 判据:ELF 机器类型对得上 + 五个导出符号都在。
   # 少了任何一个,APK 照样打得出来,装上去才 UnsatisfiedLinkError。
@@ -137,7 +140,7 @@ for abi in "${ABIS[@]}"; do
     grep -E " (T|t|W) (lp_|Java_)" <<< "$syms" || true
     exit 1
   fi
-  echo "  -> $OUT/liblpcore.so($(stat -c %s "$OUT/liblpcore.so") 字节)+ libmpv.so"
+  echo "  -> $OUT/liblpcore.so($(stat -c %s "$OUT/liblpcore.so") 字节)+ $(ls "$MPVDIR"/*.so | wc -l) 个 libmpv 相关 so"
 done
 
 echo "完成。"
