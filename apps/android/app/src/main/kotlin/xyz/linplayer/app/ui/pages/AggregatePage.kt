@@ -99,6 +99,10 @@ fun AggregatePage(nav: NavController) {
 
             groups.forEach { g ->
                 item("head-${g.serverId}") { ServerHead(g) }
+                g.error?.let { err -> item("err-${g.serverId}") {
+                    Text("现在连不上:$err", color = Lp.colors.fg2, fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = Sp.x16))
+                } }
                 if (g.resume.isNotEmpty()) item("resume-${g.serverId}") {
                     LpRow("继续观看", g.resume, { app.imageUrl(it.id, "Primary", 220) },
                         { nav.navigate(Route.Detail(it.id, it.type)) }, thumb = true,
@@ -157,6 +161,8 @@ private data class Overview(
     val series: Long,
     val episode: Long,
     val resume: List<Item>,
+    /** 这台连不上的原因。以前吞掉,看着像「这台什么都没在看」。 */
+    val error: String?,
 ) {
     companion object {
         fun from(e: kotlinx.serialization.json.JsonElement?): Overview? {
@@ -170,6 +176,7 @@ private data class Overview(
                 series = counts.long("series") ?: 0,
                 episode = counts.long("episode") ?: 0,
                 resume = Item.list(o["resume"]),
+                error = o.str("error"),
             )
         }
     }

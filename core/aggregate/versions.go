@@ -24,8 +24,10 @@ type VersionGroup struct {
 	Current bool   `json:"current"`
 	// Reason 凭什么认为是同一部(本服那组为空)。给用户看的 ——
 	// 「剧名 + 季集号匹配」和「剧集 TMDB + 季集号匹配」的可信度差着一档。
-	Reason   string              `json:"reason"`
-	Versions []emby.MediaVersion `json:"versions"`
+	Reason string `json:"reason"`
+	// Confidence strong / possible(本服那组为空)。possible 的那组界面要标「可能匹配」。
+	Confidence history.Confidence  `json:"confidence,omitempty"`
+	Versions   []emby.MediaVersion `json:"versions"`
 }
 
 // 跨服找片时每台服务器最多看几个候选。
@@ -67,7 +69,6 @@ func registerVersionCommands() {
 		}
 		self := history.CandidateFromItem(*it)
 		selfTmdb := client.SeriesTmdbID(ctx, bs, strDeref(it.SeriesID))
-
 		slots := make([]*VersionGroup, len(c.AccountList))
 		var wg sync.WaitGroup
 		for i := range c.AccountList {
@@ -78,14 +79,16 @@ func registerVersionCommands() {
 			wg.Add(1)
 			go func(i int, acc config.Account) {
 				defer wg.Done()
+				ctx, cancel := context.WithTimeout(ctx, perServerTimeout)
+				defer cancel()
 				s := sessionOf(c, acc)
-				id, reason := self.ID, ""
+				id, reason, conf := self.ID, "", history.Confidence("")
 				if acc.Server != base.Server {
 					cand, m := findSame(ctx, s, self, selfTmdb)
 					if cand == nil {
 						return // 这台没有这部片(或者匹配不到可信的),不出现
 					}
-					id, reason = cand.ID, m.Reason
+					id, reason, conf = cand.ID, m.Reason, m.Confidence
 				}
 				vers, err := client.MediaVersions(ctx, s, id, regex)
 				if err != nil || len(vers) == 0 {
@@ -94,7 +97,7 @@ func registerVersionCommands() {
 				slots[i] = &VersionGroup{
 					ServerID: acc.Server, ServerName: acc.DisplayName(),
 					ItemID: id, Current: acc.Server == base.Server,
-					Reason: reason, Versions: vers,
+					Reason: reason, Confidence: conf, Versions: vers,
 				}
 			}(i, acc)
 		}
@@ -120,6 +123,7 @@ func registerVersionCommands() {
 //
 // ★★ 返回 nil = 没找到**可信**的,不是「随便挑一个」。挑错的后果是用户
 // 以为在选另一档画质,实际换了一部片 —— 而且从头到尾没有一个报错。
+// ★ 候选先按 TMDB id 查(译名不同也对得上),查不到才按名字搜。
 func findSame(ctx context.Context, s *emby.Session, self history.Candidate,
 	selfTmdb *string) (*history.Candidate, history.MatchResult) {
 	kind, ok := history.MediaKindFromItemType(self.Type)
@@ -129,10 +133,23 @@ func findSame(ctx context.Context, s *emby.Session, self history.Candidate,
 	if kind == history.KindEpisode {
 		return findEpisode(ctx, s, self, selfTmdb)
 	}
+	/* 电影 TMDB id 一样、那台服上又只有这一条,就是它 —— 不再要求标题也一样。
+	   history 的判据要「TMDB + 标题」才算强匹配,是因为恢复扫描的候选来自名字搜索;
+	   这里的候选本身就是按 TMDB 查出来的,译名不同恰恰是要解决的问题。 */
+	same := byTmdb(ctx, s, "Movie", self.TmdbID)
+	if len(same) == 1 {
+		if full, err := client.ItemForHistory(ctx, s, same[0].ID); err == nil {
+			c := history.CandidateFromItem(*full)
+			return &c, history.MatchResult{Confidence: history.ConfStrong, Reason: "TMDB 一致"}
+		}
+	}
+	if len(same) > 1 {
+		return pick(ctx, s, self, selfTmdb, same)
+	}
 	return pick(ctx, s, self, selfTmdb, searchFull(ctx, s, self.Name, []string{"Movie"}))
 }
 
-// findEpisode 剧集要**两跳**:先按剧名找剧,再在那部剧里按季集号取集。
+// findEpisode 剧集要**两跳**:先找剧,再在那部剧里按季集号取集。
 //
 // ★ 不能直接搜集名:Emby 的 Episode.Name 是「第 35 集」这种,
 // 搜出来的是全库所有剧的第 35 集。
@@ -142,9 +159,9 @@ func findEpisode(ctx context.Context, s *emby.Session, self history.Candidate,
 	if name == "" || self.SeasonNo == nil || self.EpisodeNo == nil {
 		return nil, history.MatchResult{}
 	}
-	series, err := client.Search(ctx, s, name, []string{"Series"}, versionPoolCap, "")
-	if err != nil {
-		return nil, history.MatchResult{}
+	series := byTmdb(ctx, s, "Series", selfTmdb)
+	if len(series) == 0 {
+		series = searchFull(ctx, s, name, []string{"Series"})
 	}
 	var pool []emby.Item
 	for _, sr := range series {
@@ -159,10 +176,23 @@ func findEpisode(ctx context.Context, s *emby.Session, self history.Candidate,
 	return pick(ctx, s, self, selfTmdb, pool)
 }
 
+// byTmdb 没有 TMDB id 或查失败都回空,由调用方退回名字搜索。
+func byTmdb(ctx context.Context, s *emby.Session, typ string, tmdb *string) []emby.Item {
+	if strDeref(tmdb) == "" {
+		return nil
+	}
+	items, err := client.ByTmdb(ctx, s, typ, []string{*tmdb})
+	if err != nil {
+		return nil
+	}
+	return items
+}
+
 // episodeAt 在某剧里取第 season 季第 episode 集。没有就 nil。
 //
 // ★ 先走 Seasons 再拉那一季,不是把整部剧的集全拉下来:上千集的剧那是一次几 MB
 // 的响应,而我们只要其中一条。没分季的剧(Seasons 空)才回落到按剧 id 拉。
+// ★ 要翻页:以前只看第一页 200 条,长篇番剧第 200 集以后的永远「这台没有」。
 func episodeAt(ctx context.Context, s *emby.Session, seriesID string, season, episode int64) *emby.Item {
 	parent := seriesID
 	if seasons, err := client.Seasons(ctx, s, seriesID); err == nil {
@@ -173,14 +203,19 @@ func episodeAt(ctx context.Context, s *emby.Session, seriesID string, season, ep
 			}
 		}
 	}
-	page, err := client.SeasonEpisodes(ctx, s, parent, 0, emby.ServerPageCap)
-	if err != nil || page == nil {
-		return nil
-	}
-	for i := range page.Items {
-		e := page.Items[i]
-		if e.SeasonNo != nil && *e.SeasonNo == season && e.EpisodeNo != nil && *e.EpisodeNo == episode {
-			return &e
+	for start := 0; start < 5000; start += emby.ServerPageCap {
+		page, err := client.SeasonEpisodes(ctx, s, parent, start, emby.ServerPageCap)
+		if err != nil || page == nil || len(page.Items) == 0 {
+			return nil
+		}
+		for i := range page.Items {
+			e := page.Items[i]
+			if e.SeasonNo != nil && *e.SeasonNo == season && e.EpisodeNo != nil && *e.EpisodeNo == episode {
+				return &e
+			}
+		}
+		if page.Total > 0 && int64(start+len(page.Items)) >= page.Total {
+			return nil
 		}
 	}
 	return nil

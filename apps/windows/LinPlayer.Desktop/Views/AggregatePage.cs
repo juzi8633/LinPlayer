@@ -94,7 +94,9 @@ public sealed class AggregatePage : PageBase
         }
         else
         {
-            body.Children.Add(Dim("这台服务器上没有在看的内容。"));
+            // 拉不到和「没在看」是两回事:连不上的要说原因,不然用户以为那台是空的
+            var err = Str(c, "error");
+            body.Children.Add(Dim(err == "" ? "这台服务器上没有在看的内容。" : $"这台服务器现在连不上:{err}"));
         }
         return Wrap(body);
     }

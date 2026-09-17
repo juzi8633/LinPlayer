@@ -211,16 +211,15 @@ internal fun sortCards(cards: List<VCard>): List<VCard> = cards.sortedWith(
         { if (it.current) 0 else 1 }, { -it.height() }, { -it.rate() }),
 )
 
-private fun norm(s: String?) = s.orEmpty().lowercase().filter { it.isLetterOrDigit() }
-
 /**
- * 当前服务器的版本立即出,**其它服务器回来一个填一个**(等齐再画 = 进页白屏两秒)。
- * 别台服务器靠 `emby.itemMedia {server_id}` 拿真规格(sessionFrom 里 server_id 压过当前会话);
- * 拿不到就如实写「规格未知」,**不许编分辨率**【用户定】。
+ * 当前服务器的版本立即出,别台服务器的等核心层 `emby.aggregateVersions` 认完片再填。
+ *
+ * ★ 认片交给核心层,不在这里按名字比:两台服的译名常常不一样(「V字仇杀队」/「V煞」),
+ *   名字比永远对不上;核心层按 TMDB / 原名在本地目录里对(2026-09-17 用户报「聚合不到」)。
+ * 核心层没给出的那台就是没有这部片,如实标「无」,**不许编分辨率**【用户定】。
  */
 internal suspend fun loadVersionCards(
-    app: AppState, scope: CoroutineScope, itemId: String, query: String?, match: (Item) -> Boolean,
-    matchExact: (Item) -> Boolean, onCards: (List<VCard>) -> Unit,
+    app: AppState, itemId: String, onCards: (List<VCard>) -> Unit,
 ) {
     val accounts = Account.list(runCatching { app.call("account.listAccounts") }.getOrNull())
     val current = accounts.firstOrNull { it.isActive }
@@ -231,27 +230,21 @@ internal suspend fun loadVersionCards(
     cards = mine.map { VCard(current?.id ?: "", current?.name ?: "", itemId, it, Probe.OK, current = true) }
     cards = cards + others.map { VCard(it.id, it.name, null, null, Probe.PROBING, false) }
     emit()
-    if (others.isEmpty() || query.isNullOrBlank()) return
+    if (others.isEmpty() || current == null) return
     val groups = runCatching {
-        app.call("emby.aggregateSearch", args("query" to query, "include_episodes" to true))
+        app.call("emby.aggregateVersions", args("item_id" to itemId, "server_id" to current.id))
     }.getOrNull().arr().mapNotNull { it.obj() }
-    others.forEach { acc ->
-        scope.launch {
-            val g = groups.firstOrNull { it.str("server_id") == acc.id }
-            val hit = Item.list(g?.get("items")).firstOrNull(match)
-            val replaced: List<VCard> = if (hit == null) listOf(VCard(acc.id, acc.name, null, null, Probe.ABSENT, false))
-            else {
-                val maybe = !matchExact(hit)
-                val vs = Version.list(runCatching {
-                    app.call("emby.itemMedia", args("item_id" to hit.id, "server_id" to acc.id))
-                }.getOrNull())
-                if (vs.isEmpty()) listOf(VCard(acc.id, acc.name, hit.id, null, Probe.OPAQUE, false, maybe))
-                else vs.map { VCard(acc.id, acc.name, hit.id, it, Probe.OK, false, maybe) }
-            }
-            cards = cards.filterNot { it.serverId == acc.id } + replaced
-            emit()
+    cards = cards.filter { it.current } + others.flatMap { acc ->
+        val g = groups.firstOrNull { it.str("server_id") == acc.id && !it.bool("current") }
+        val vs = Version.list(g?.get("versions"))
+        val maybe = g?.str("confidence") == "possible"
+        when {
+            g == null -> listOf(VCard(acc.id, acc.name, null, null, Probe.ABSENT, false))
+            vs.isEmpty() -> listOf(VCard(acc.id, acc.name, g.str("item_id"), null, Probe.OPAQUE, false, maybe))
+            else -> vs.map { VCard(acc.id, acc.name, g.str("item_id"), it, Probe.OK, false, maybe) }
         }
     }
+    emit()
 }
 
 /** 版本卡一行。卡片 ≤ 1 张时整行不画。 */
@@ -580,11 +573,7 @@ private fun MovieBody(id: String, d: JsonObject, overlay: Overlay, scope: Corout
         launch { similar = Item.list(app.block("emby.similarItems", args("item_id" to id, "limit" to 20)).valueOrNull) }
         launch { pick.loadPrefs(app) }
         launch {
-            val name = d.str("name")
-            val year = d.long("year")
-            loadVersionCards(app, this, id, name,
-                match = { it.type == "Movie" && norm(it.name) == norm(name) && (year == null || it.year == null || it.year == year) },
-                matchExact = { it.name == name && it.year == year }) { pick.cards = it }
+            loadVersionCards(app, id) { pick.cards = it }
         }
     }
     val resume = d.dbl("resume_secs") ?: 0.0

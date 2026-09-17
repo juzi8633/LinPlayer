@@ -46,6 +46,8 @@ type SourceOverview struct {
 	Active       bool        `json:"active"`
 	Counts       emby.Counts `json:"counts"`
 	Resume       []emby.Item `json:"resume"`
+	// Error 这台连不上时的原因(继续观看拉不到)。以前吞掉,界面上看着像「这台什么都没在看」。
+	Error *string `json:"error,omitempty"`
 }
 
 // RegisterCommands 由 lp_init 调用。
@@ -68,51 +70,7 @@ func RegisterCommands(version string) {
 		   这里显式收敛成 Movie,Series。
 		   ★ **不传 include_episodes = 关**:跨服选源那条路不传这个参数,
 		     它的行为因此一字未变。 */
-		types := []string{"Movie", "Series"}
-		if inc, _ := a["include_episodes"].(bool); inc {
-			types = append(types, "Episode")
-		}
-
-		type slot struct {
-			g  ServerGroup
-			ok bool
-		}
-		slots := make([]slot, len(c.AccountList))
-		var wg sync.WaitGroup
-		for i := range c.AccountList {
-			acc := c.AccountList[i]
-			if acc.IsFileBrowse() {
-				continue // 浏览型源没有 Emby 搜索接口
-			}
-			wg.Add(1)
-			go func(i int, acc config.Account) {
-				defer wg.Done()
-				s := sessionOf(c, acc)
-				items, err := client.Search(ctx, s, query, types, 0, "")
-				g := ServerGroup{ServerID: acc.Server, ServerName: acc.DisplayName()}
-				switch {
-				case err != nil:
-					// 单台失败隔离:其余照出。但**要说出来**,不能悄悄消失
-					msg := err.Error()
-					g.Error = &msg
-				case len(items) == 0:
-					return // 这台没有这部片 —— 不是失败,整条不出
-				default:
-					g.Items = items
-				}
-				slots[i] = slot{g, true}
-			}(i, acc)
-		}
-		wg.Wait()
-
-		// ★ 按账号表顺序拼回去,不按谁先返回 —— 否则每次搜索服务器顺序都在跳
-		out := []ServerGroup{}
-		for _, s := range slots {
-			if s.ok {
-				out = append(out, s.g)
-			}
-		}
-		return out, nil
+		return searchAll(ctx, c, query, a["include_episodes"] == true), nil
 	})
 
 	registerVersionCommands()
@@ -158,6 +116,9 @@ func RegisterCommands(version string) {
 					defer wg2.Done()
 					if items, err := client.Resume(ctx, s, 12); err == nil {
 						out[i].Resume = items
+					} else {
+						msg := err.Error()
+						out[i].Error = &msg
 					}
 				}()
 				wg2.Wait()

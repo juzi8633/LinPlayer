@@ -109,13 +109,8 @@ fun EpisodePage(r: TvRoute.Episode) {
             siblings = Item.list(app.block("emby.seasonEpisodes", args("parent_id" to parent, "limit" to 200)).valueOrNull)
             siblingsFor = parent
         }
-        val series = d.str("series_name")
-        val s = d.long("season_no")
-        val e = d.long("episode_no")
-        // 跨服务器认定同一集靠「剧名 + 季 + 集号」;剧名只是写法不同(大小写 / 空格)时标「可能匹配」
-        loadVersionCards(app, this, epId, series,
-            match = { it.isEpisode && norm2(it.seriesName) == norm2(series) && it.seasonNo == s && it.episodeNo == e },
-            matchExact = { it.seriesName == series }) { pick.cards = it }
+        // 跨服务器认定同一集交给核心层(剧 TMDB / 原名 + 季集号),见 loadVersionCards
+        loadVersionCards(app, epId) { pick.cards = it }
     }
 
     val d = detail.valueOrNull
@@ -213,7 +208,6 @@ fun EpisodePage(r: TvRoute.Episode) {
     }
 }
 
-private fun norm2(s: String?) = s.orEmpty().lowercase().filter { it.isLetterOrDigit() }
 
 private fun Modifier.fillMaxWidthFraction(f: Float) = this.fillMaxWidth(f.coerceIn(0f, 1f))
 

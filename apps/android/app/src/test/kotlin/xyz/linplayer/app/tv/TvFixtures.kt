@@ -88,9 +88,11 @@ fun FakeCore.movie(): FakeCore {
             arr(version("vb", "1080p", 1080, "h264", 12_400_000, 15_000_000_000, null, "ac3", listOf("chi"), false))
         else arr(version("va", "2160p", 2160, "hevc", 58_200_000, 71_000_000_000, "HDR10", "truehd", listOf("chi", "chi", "eng"), true))
     }
-    ret("emby.aggregateSearch", arr(
-        buildJsonObject { put("server_id", "http://emby-b.invalid"); put("server_name", "服务器 B"); put("items", arr(item("mb", "沙丘 2", year = 2024))) },
-        buildJsonObject { put("server_id", "http://emby-c.invalid"); put("server_name", "服务器 C"); put("items", arr(item("mc", "沙丘 2", year = 2024))) },
+    ret("emby.aggregateVersions", arr(
+        buildJsonObject { put("server_id", "http://emby-b.invalid"); put("server_name", "服务器 B"); put("item_id", "mb")
+            put("confidence", "strong"); put("versions", arr(version("vb", "1080p", 1080, "h264", 12_400_000, 15_000_000_000, null, "ac3", listOf("chi"), false))) },
+        buildJsonObject { put("server_id", "http://emby-c.invalid"); put("server_name", "服务器 C"); put("item_id", "mc")
+            put("confidence", "strong"); put("versions", arr(version("va", "2160p", 2160, "hevc", 58_200_000, 71_000_000_000, "HDR10", "truehd", listOf("chi", "chi", "eng"), true))) },
     ))
     ret("emby.similarItems", movieItems)
     return this
@@ -115,11 +117,11 @@ fun FakeCore.episode(): FakeCore {
             arr(version("eb", "1080p", 1080, "h264", 8_100_000, 3_200_000_000, null, "aac", listOf("chi"), false))
         else arr(version("ea", "2160p", 2160, "hevc", 24_600_000, 8_400_000_000, "HDR10", "truehd", listOf("chi", "chi"), true))
     }
-    ret("emby.aggregateSearch", arr(
-        buildJsonObject { put("server_id", "http://emby-b.invalid"); put("server_name", "服务器 B")
-            put("items", arr(item("b8", "大地之心", "Episode", series = "幕府将军", season = 1, episode = 8))) },
-        buildJsonObject { put("server_id", "http://emby-c.invalid"); put("server_name", "服务器 C")
-            put("items", arr(item("c8", "大地之心", "Episode", series = "幕府将军 ", season = 1, episode = 8))) },
+    ret("emby.aggregateVersions", arr(
+        buildJsonObject { put("server_id", "http://emby-b.invalid"); put("server_name", "服务器 B"); put("item_id", "b8")
+            put("confidence", "strong"); put("versions", arr(version("eb", "1080p", 1080, "h264", 8_100_000, 3_200_000_000, null, "aac", listOf("chi"), false))) },
+        buildJsonObject { put("server_id", "http://emby-c.invalid"); put("server_name", "服务器 C"); put("item_id", "c8")
+            put("confidence", "possible"); put("versions", arr(version("ea", "2160p", 2160, "hevc", 24_600_000, 8_400_000_000, "HDR10", "truehd", listOf("chi", "chi"), true))) },
     ))
     return this
 }

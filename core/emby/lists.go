@@ -19,10 +19,10 @@ import (
 	"linplayer/core/blocklist"
 )
 
-// ServerPageCap 是服务端对 Limit 的硬上限。
+// ServerPageCap 是有的服务端对 Limit 的硬上限。
 //
-// ★ **服务端把任何 Limit 都夹到这个值**,写 `Limit=500` 只会**静默少拿**。
-// 想要「全部」就必须自己按 StartIndex 翻到底。
+// ★ 夹 Limit 的服上写 `Limit=500` 只会**静默少拿**,想要「全部」就必须自己按 StartIndex 翻到底。
+// 不是每台都夹(2026-09-17 实测 4.10 那台 Limit=5000 一页给全),按 200 翻在那种服上只是慢。
 const ServerPageCap = 200
 
 // 让 Item 满足 blocklist.Item —— 屏蔽判定不依赖 emby 包,反过来也一样。
@@ -71,7 +71,7 @@ func (c *Client) fetchItems(ctx context.Context, s *Session, u string) ([]Item, 
 
 // fetchAllPaged 翻页拉全。
 //
-// ★ 服务端把任何 Limit 都夹到 ServerPageCap,写 `Limit=500` 只会**静默少拿**。
+// ★ 有的服把 Limit 夹到 ServerPageCap,写 `Limit=500` 只会**静默少拿**。
 //
 // `max` 是安全闸:防某天对上一个几万条的库把内存和服务端一起打爆。
 // 到闸就停并返回已拿到的,**不报错** —— 对收藏/分集这两个场景,

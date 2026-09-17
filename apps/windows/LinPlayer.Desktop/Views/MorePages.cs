@@ -122,11 +122,17 @@ public sealed class SearchPage : PageBase
                         ? res.EnumerateArray().ToList() : [];
                     var total = groups.Sum(g => g.TryGetProperty("items", out var it)
                         && it.ValueKind == JsonValueKind.Array ? it.GetArrayLength() : 0);
+                    /* 没搜成的服(带 error)要单独说。以前它们被当成「0 条」跳过,
+                       全部没搜成时显示「没有搜到」—— 把「没搜成」说成了「没有」。 */
+                    var failed = groups.Where(g => g.TryGetProperty("error", out var e)
+                        && e.ValueKind == JsonValueKind.String).ToList();
                     Dispatcher.UIThread.Post(() =>
                     {
                         if (mine != _seq) return;
-                        status.Text = total == 0 ? "" : $"{groups.Count} 台服务器 · 共 {total} 条";
-                        host.Content = total == 0 ? NoHit(q, true) : Groups(core, groups);
+                        var hit = groups.Count - failed.Count;
+                        status.Text = (total == 0 ? "" : $"{hit} 台服务器 · 共 {total} 条")
+                            + (failed.Count == 0 ? "" : $"{(total == 0 ? "" : " · ")}{failed.Count} 台没搜成");
+                        host.Content = total == 0 && failed.Count == 0 ? NoHit(q, true) : Groups(core, groups);
                     });
                     _ = Push(core, q);
                     return;
@@ -174,6 +180,15 @@ public sealed class SearchPage : PageBase
                 var nm = g.TryGetProperty("server_name", out var nv) ? nv.GetString() ?? "" : "";
                 var items = g.TryGetProperty("items", out var iv) && iv.ValueKind == JsonValueKind.Array
                     ? iv.EnumerateArray().Select(CardItem.From).ToList() : [];
+                if (g.TryGetProperty("error", out var ev) && ev.ValueKind == JsonValueKind.String)
+                {
+                    host2.Children.Add(new StackPanel
+                    {
+                        Spacing = 6,
+                        Children = { H2($"{(nm == "" ? srv : nm)} · 没搜成"), Dim(ev.GetString() ?? "") },
+                    });
+                    continue;
+                }
                 if (items.Count == 0) continue;
                 host2.Children.Add(new StackPanel
                 {
