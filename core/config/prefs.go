@@ -185,6 +185,11 @@ type Prefs struct {
 	//   分辨率和窗口大小绑定」,而 2026-09-07 重排之后六档都带一个不挑尺寸的锐化 pass,
 	//   那个理由本身也不成立了。挂不上的那一档核心层会自己退回关闭并明说。
 	ShaderLevel string `json:"shader_level"`
+	// ShaderBySeries 按**剧**记的画面增强档位。键 = 服务器|剧 id,和 SkipOverrides 同一口径。
+	//
+	// ★ 用户 2026-09-17:「在一个番剧里面选了,后续都是使用该模型」。选的时候在放剧集就记到这部剧上,
+	//   这部剧以后每一集都用它;没记过的剧和电影仍用 ShaderLevel(上一次在剧外选的那档)。
+	ShaderBySeries map[string]string `json:"shader_by_series"`
 	// 自动跳过片头 / 片尾。依赖**服务端章节**,没刮削章节的库自动静默不工作。
 	//
 	// ★ 片头片尾是**两个**开关:播放页「更多」面板里就是两行,

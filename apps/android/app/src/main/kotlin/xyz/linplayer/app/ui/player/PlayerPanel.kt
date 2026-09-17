@@ -94,7 +94,9 @@ fun PlayerPanel(
                 //    两处都错的表现是音轨/字幕面板恒空,而且一句错都不报。
                 val t = runCatching { app.call("player.tracks") }.getOrNull()
                 val want = if (kind == "audio") "audio" else "sub"
-                options = t.arr().mapNotNull {
+                // 字幕多给一项「关闭字幕」(id 空串 = 核心层设 sid=no),和 Exo 那边同一个理由
+                val off = if (want == "sub") listOf(Triple("", null, "关闭字幕")) else emptyList()
+                options = off + t.arr().mapNotNull {
                     val o = it.obj() ?: return@mapNotNull null
                     if (o.str("kind") != want) return@mapNotNull null
                     Triple(
@@ -103,7 +105,8 @@ fun PlayerPanel(
                         o.str("title") ?: o.str("lang") ?: "轨道",
                     )
                 }
-                current = t.arr().firstOrNull { it.obj().bool("selected") }.obj().str("id")
+                current = t.arr().firstOrNull { it.obj().str("kind") == want && it.obj().bool("selected") }
+                    .obj().str("id") ?: if (want == "sub") "" else null
             }
             "source" -> {
                 val m = runCatching { app.call("emby.itemMedia", args("item_id" to itemId)) }

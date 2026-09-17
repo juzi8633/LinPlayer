@@ -603,12 +603,11 @@ print(m.mpv_get_property_string(h, b"property-list"))   # ← 全部属性,别�
 >
 > ⚠️ 本条含 Flutter 时代 / `native-poc/` 时代的路径。2026-07-19 仓库重构后这些路径已作废(换算表见 [仓库结构(2026-07重构后)](build-release.md))。**原文按要求原样保留,未做改写。**
 
-> **更正(2026 会话,libmpv 升级到 0.41 后)**:字体方案已改成**版本无关双铺**,函数改名 `setupFontconfig`→`setupLibassFonts`。二进制核实关键差异:**0.36 无 fontconfig**(FcInit 全 miss)、只走 libass **目录 provider**(扫 `config-dir/fonts` + `config-dir/subfont.ttf` 默认字体);**0.41 有 fontconfig** 且读 `FONTCONFIG_FILE`。所以现在 `setupLibassFonts` **同时**:①把 `/system/fonts` 软链进 `config-dir/fonts` + 挑 CJK 字体软链成 `subfont.ttf`(喂 0.36 目录 provider,零打包);②生成 `fonts.conf`+设 `FONTCONFIG_FILE`(喂 0.41 fontconfig)。两套 .so 都能显示文本字幕。`sub-fonts-dir`/`sub-font` 选项在**两版都不存在**(核实过),别再设。诊断行 `sub-diag` 已带 `libass-fonts` 字段(软链数/默认字体/fontconfig 状态)。下面旧内容(fonts.conf 单铺)是 0.36 时的中间态,已被双铺取代。
+> **更正(2026 会话,libmpv 升级到 0.41 后)**:字体方案已改成**版本无关双铺**,函数改名 `setupFontconfig`→`setupLibassFonts`。二进制核实关键差异:**0.36 无 fontconfig**(FcInit 全 miss)、只走 libass **目录 provider**(扫 `config-dir/fonts` + `config-dir/subfont.ttf` 默认字体);**0.41 有 fontconfig** 且读 `FONTCONFIG_FILE`。所以现在 `setupLibassFonts` **同时**:①把 `/system/fonts` 软链进 `config-dir/fonts` + 挑 CJK 字体软链成 `subfont.ttf`(喂 0.36 目录 provider,零打包);②生成 `fonts.conf`+设 `FONTCONFIG_FILE`(喂 0.41 fontconfig)。两套 .so 都能显示文本字幕。诊断行 `sub-diag` 已带 `libass-fonts` 字段(软链数/默认字体/fontconfig 状态)。下面旧内容(fonts.conf 单铺)是 0.36 时的中间态,已被双铺取代。
 
 安卓原生 mpv（MpvPlayerPlugin.kt → libmpv.so）**内封/外挂文本字幕(SRT/ASS)整段不渲染**的根因:Android 上 libass 没有 fontconfig,若不显式给字体目录,libass 找不到任何字体 → 文本字幕画面空白(位图 PGS/SUP 不依赖字体,不受影响,所以"全都不显示"其实主因是文本类)。
 
-> **↑ 本条自己的更正(双铺 `setupLibassFonts`)已取代下面这套旧方案,原文已删除。**
-> 旧方案是 `sub-fonts-dir` + `sub-font` 守卫;而更正里核实 `sub-fonts-dir`/`sub-font` 在 0.36/0.41 **两版都不存在**。
+> Go 栈(2026-09 起)的安卓字体做法见本文末「安卓 mpv 内核字幕:三处接线 + 默认字体」。
 
 **How to apply:** 排"原生 mpv 选了字幕轨也不显示"先查字体,不是查选轨。诊断:FILE_LOADED 日志里 sid 已选中但无画面字幕 → 几乎都是 libass 无字体。位图字幕(PGS)走 OSD 覆盖层、`blend-subtitles=no`/`sub-visibility=yes` 即可,与字体无关。相关原生坑见 「android-storage-and-mpv-logs」(该条不在本库,多为 Flutter 时代的旧记忆,已作废)、[Android R8 JNI keep](android.md)。
 
@@ -732,7 +731,13 @@ shader 取自 `hooke007/mpv_PlayKit/portable_config/shaders`(AMD/ 与 Anime4K/ �
 
 
 **画面增强档位要落盘、要起播自动挂回来**(用户 2026-09-12:「画面增强需要支持记忆」)。
-落在 `Prefs.ShaderLevel`,起播走 `applyPlaybackDefaults → applySavedShader`。两条不能省:
+起播走 `applyPlaybackDefaults → applySavedShader(shaderLevelFor(prefs, scope))`。
+
+**按剧记**(用户 2026-09-17:「在一个番剧里面选了,后续都是使用该模型进行画面增强」):
+在放剧集时选的档位记进 `Prefs.ShaderBySeries["服务器|剧 id"]`(和片头片尾手动设定同一口径),
+这部剧以后每一集都用它,关掉(`off`)也记;没记过的剧、电影、本地文件、源用 `Prefs.ShaderLevel`(剧外最后选的那档),
+在剧里选**不改**全局那档。scope 在 `play()` 取完观看判据后设、`Stop` / 源起播 / 本地起播清掉 ——
+不清的话停播后在设置页改档位会记到上一部剧头上。两条不能省:
 
 - **编译校验放 goroutine。** 那一步要等真的渲染一帧才等得到错误,而起播路径上同步等
   就是白白多出几百毫秒黑屏。
@@ -1554,7 +1559,7 @@ mpv.conf 写 keep-open=yes,我们在 mpv_initialize 之前设 keep-open=no
   **两个都发**,谁在就谁生效。
 - **`sub-pos` 上限是 150 不是 100。** 100 是画面下沿,再往下是黑边;
   宽银幕片子上「把字压进黑边、一点画面都不挡」是最常用的一档。
-- **必须落库 + 起播时重压一次**(`applySubStyle`,调用点在 `playFile` 里)。
+- **必须落库 + 起播时重压一次**(`applySubStyle`,调用点在 `applyPlaybackDefaults` 里 —— Emby 起播和源起播都经过它)。
   mpv 每次冷启动都是新的,不落库的表现是「调好了,关掉软件再打开又回默认」。
   ☠ 落库那一步**不能在 `ensureMpv` 里做** —— 它全程持着 `mpvMu`,而 `setProp`
   自己也要拿这把锁。
@@ -1759,3 +1764,29 @@ if (eof && !_leaving) { Leave(); }   // Leave() → Nav.Back()
 下一个嫌疑是预取代理里那批**没有 recover 的 goroutine**
 (`prefetch.go:285`、`serve.go:405`/`:152` —— seek 一次就新开一批),
 那条会表现为**整个进程无声消失**而不是退页,两者可以按「程序还在不在」分开。
+
+## 安卓 mpv 内核字幕:三处接线 + 默认字体(2026-09-17)
+
+用户报「MPV 内核的字幕显示出问题了」,附的日志里**一行字幕相关的都没有**(mpv 日志只订了 error 级)。
+下面全是读代码查出来的,四处都修了,真机还没复验。
+
+1. **字幕样式冷启动不生效**:`applySubStyle` 以前只在 `playFile` 里调,而 `playFile` 只有探针那条
+   「只传 path」的分支会进 —— Emby 起播从来不经过。表现:调好的大小 / 位置,杀掉重开回默认,面板上的数却还是调过的。
+   挪进 `applyPlaybackDefaults`(`loadDanmakuStyle` 同理)。
+2. **选轨偏好从没在起播时应用**:`prefs.applyPrefs` 全仓没有调用方,只有生成的绑定里有。
+   「默认开启字幕」关了照样出字幕;开着时外挂字幕(FILE_LOADED 之后才 `sub-add … auto`)永远不会被 `sid=auto` 选上。
+   现在 `onFileLoaded` 挂完外挂字幕后调 `applyTrackPrefs`:关 → `sid=no`;开 → 正则 / 语言挑,
+   挑不出且 mpv 一条没选时补选第一条。详情页显式选的轨由壳在这之后设,会覆盖它。
+3. **手机 mpv 内核的字幕面板没有「关闭字幕」**(只加在 Exo 那边)。顺带修了 `current` 取的是
+   **任意类型**里第一条 selected(字幕面板高亮的其实是音轨的 id)。
+4. **默认字体族名不存在**:这颗 libmpv(0.36)无 fontconfig,libass 只认 `sub-fonts-dir` 读进来的字体、按**族名**找;
+   mpv 默认 `sub-font=sans-serif`,`/system/fonts` 里没有叫这个名字的字体。SRT 的样式字体就是它,
+   ASS 指名的字体不在系统里时也回落到它 → 找不到就不画。现在起手从候选文件
+   (`NotoSansCJK-Regular.ttc` → `NotoSansSC` → `DroidSansFallback*` → `MiSansVF.ttf`)里读 **name 表的族名**
+   (`core/player/subfont.go`,零依赖,按偏移读,20MB 的 ttc 只读几百字节),ttc 优先 ` SC` 那张脸,设给 `sub-font`。
+   **`sub-fonts-dir` 在这颗 libmpv 上是存在的**:日志里没有「mpv 选项没设上」,上面 Flutter 时代那句「两版都不存在」是错的,已删。
+   `config=no` 时 `~~/subfont.ttf` 那条路走不通(没有 config dir),所以没照搬 Flutter 时代的软链做法。
+
+**真机复验时看**:mpv 日志临时订到 warn,确认没有 `fontselect: failed to find any fallback`;
+`player.opts` 回读 `sub-font` 是族名;设置里关字幕后起播 `sid=no`。
+

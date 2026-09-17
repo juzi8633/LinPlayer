@@ -53,6 +53,8 @@ func onFileLoaded() {
 	if len(subs) > 0 {
 		bus.Logf("info", "挂载外挂字幕 %d 条", len(subs))
 	}
+	// 外挂字幕挂完才选:它们也得在候选里
+	applyTrackPrefs()
 	bus.Emit("player.fileLoaded", map[string]any{"subs": len(subs)}, "")
 }
 
@@ -71,9 +73,13 @@ func applyPlaybackDefaults(p config.Prefs, isDolbyVision bool) {
 	}
 	setProp("hwdec", hwdec)
 	setProp("speed", strconv.FormatFloat(p.DefaultSpeed, 'f', -1, 64))
+	/* 字幕样式和弹幕样式同理。以前只在 playFile(探针那条)里压,Emby 起播不经过它 ——
+	   表现是「调好的字幕大小,杀掉重开就回默认,面板上的数还是调过的」。 */
+	applySubStyle()
+	loadDanmakuStyle()
 	// 画面增强档位跟着回来【用户定 2026-09-12:「画面增强需要支持记忆」】。
 	// 和上面两项同理:mpv 的 glsl-shaders 跨文件粘连,每次起播都要重设一遍。
-	applySavedShader(p.ShaderLevel)
+	applySavedShader(shaderLevelFor(p, currentScope()))
 }
 
 // PlayResult 起播回执。
@@ -189,6 +195,8 @@ func play(ctx context.Context, s *emby.Session, itemID string, resumeSecs float6
 	bus.Logf("info", "PLAY item=%s resume=%.1f psid=%s method=%s",
 		itemID, resumeSecs, target.PlaySessionID, target.PlayMethod)
 
+	// 画面增强按剧记:先定这一片属于哪部剧,applyPlaybackDefaults 才挂得对档位
+	setShaderScope(seriesScope(s.Server, whCtx))
 	if useMpv {
 		if r := ensureMpv(); r != 0 {
 			return nil, errors.New(mpvDownMsg)
@@ -320,6 +328,14 @@ type historyContext struct {
 
 var currentCtx *historyContext
 
+// seriesScope 剧集的「服务器|剧 id」;电影、取不到判据时回空串。
+func seriesScope(server string, h *historyContext) string {
+	if h == nil || h.candidate.SeriesID == nil || *h.candidate.SeriesID == "" {
+		return ""
+	}
+	return server + "|" + *h.candidate.SeriesID
+}
+
 // buildHistoryContext 取「带全部匹配判据的条目」+ 剧的 TMDB id。
 //
 // ★ 取不到判据(网络抖 / 权限)**不该拦住播放** —— 返回 nil,
@@ -383,6 +399,7 @@ func Stop(ctx context.Context, s *emby.Session, pos float64) error {
 	current = nil
 	pendingSubs = nil
 	currentMu.Unlock()
+	setShaderScope("")
 	_ = command("stop")
 	closeSharedProxy() // 停播就把代理停掉:端口、goroutine、缓存文件一起收
 	thumbs.close()     // 缩略图那个实例也收掉:它装的是这一片

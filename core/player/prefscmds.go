@@ -70,11 +70,27 @@ type ShaderApplied struct {
    没有这个就回显不出「现在开着哪一档」,用户看到的是一张全都没选中的表。 */
 var curShader atomic.Value
 
+/* 这一片属于哪部剧(服务器|剧 id)。空 = 电影 / 本地文件 / 源,档位按全局记。
+   起播时设,换片和停播时清 —— 留着的话在设置页里改档位会记到上一部剧头上。 */
+var shaderScope atomic.Value
+
+func setShaderScope(key string) { shaderScope.Store(key) }
+
+func currentScope() string { v, _ := shaderScope.Load().(string); return v }
+
+// shaderLevelFor 这部剧记过就用剧的,没记过用全局那档。
+func shaderLevelFor(p config.Prefs, scope string) string {
+	if v, ok := p.ShaderBySeries[scope]; ok && scope != "" {
+		return v
+	}
+	return p.ShaderLevel
+}
+
 // currentShaderLevel 进程里没有就回落到**记住的那一档**(还没起播时就是这条路)。
 func currentShaderLevel() string {
 	v, _ := curShader.Load().(string)
 	if v == "" {
-		v = config.Current().PrefsOf().ShaderLevel
+		v = shaderLevelFor(config.Current().PrefsOf(), currentScope())
 	}
 	if v == "" {
 		return "off"
@@ -93,15 +109,36 @@ func rememberShader(level string) {
 	curShader.Store(level)
 	c := config.Current()
 	p := c.PrefsOf()
-	if p.ShaderLevel == level {
+	if !rememberInto(&p, currentScope(), level) {
 		return
 	}
-	p.ShaderLevel = level
 	if err := c.SetPrefs(p); err == nil {
 		err = c.Save()
 	} else {
 		bus.Logf("warn", "画面增强档位没记住: %v", err)
 	}
+}
+
+// rememberInto 把档位记到这部剧上(scope 非空)或全局。没变化回 false,省一次落盘。
+func rememberInto(p *config.Prefs, scope, level string) bool {
+	if scope == "" {
+		if p.ShaderLevel == level {
+			return false
+		}
+		p.ShaderLevel = level
+		return true
+	}
+	if old, ok := p.ShaderBySeries[scope]; ok && old == level {
+		return false
+	}
+	// 拷一份再改:PrefsOf 给的 map 和配置里那份是同一个,原地改等于绕过 SetPrefs
+	m := make(map[string]string, len(p.ShaderBySeries)+1)
+	for k, v := range p.ShaderBySeries {
+		m[k] = v
+	}
+	m[scope] = level
+	p.ShaderBySeries = m
+	return true
 }
 
 // applySavedShader 起播时把记住的那一档挂回去。

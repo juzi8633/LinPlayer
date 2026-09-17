@@ -164,7 +164,7 @@ func setSurfProp(h unsafe.Pointer, k, v string) int {
 // 顶不住的片子会回落软解,那时不调的表现是 1080p 以上卡顿(TODO N2 丢过一次)。
 // sub-fonts-dir:不给的话 libass 找不到字体,**文本字幕整个不显示**(桌面早有、安卓漏过)。
 func platformOptions() [][2]string {
-	return [][2]string{
+	opts := [][2]string{
 		{"vo", "gpu"},
 		{"gpu-context", "android"},
 		{"opengl-es", "yes"},
@@ -174,4 +174,9 @@ func platformOptions() [][2]string {
 		{"vd-lavc-fast", "yes"},
 		{"hdr-compute-peak", "no"},
 	}
+	// 默认字体得是个真存在的族名,见 subfont.go。挑不出来就不设 —— 设成空串比 mpv 默认还糟
+	if f := systemSubFont("/system/fonts"); f != "" {
+		opts = append(opts, [2]string{"sub-font", f})
+	}
+	return opts
 }

@@ -40,6 +40,7 @@ func PlaySource(url, title string, resumeSecs float64,
 	prefs := config.Current().PrefsOf()
 	// ★ 源播放没有 Emby 的 MediaStreams,**判不出 DV** → 按用户设的默认解码方式走。
 	//   硬塞一个 isDolbyVision=true 会让所有网盘片都跑软解,白白卡顿。
+	setShaderScope("") // 源没有「剧」这个概念,档位按全局记
 	applyPlaybackDefaults(prefs, false)
 
 	/* ★★ 换片时 pending 字幕和当前目标**必须在 loadfile 之前复位**。
