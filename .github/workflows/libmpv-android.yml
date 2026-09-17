@@ -1,0 +1,119 @@
+# 自编安卓 libmpv(手动触发)
+#
+# 为什么不再用 media-kit 的成品:那颗是 mpv 0.36 + `--disable-filters`,
+# 副字幕延迟/位置在安卓上一直静默没生效,补帧滤镜也没地方加(docs/lessons/player-mpv.md「补帧」)。
+# mpv 官方没有安卓 libmpv 成品,所以用官方 mpv-android 的构建脚本自己编。
+#
+# 产物发到本仓库 Release `libmpv-android-<run>`,**--latest=false**(不设 latest 会顶掉正式版,
+# 更新检查看的是 /releases/latest)。scripts/fetch-libmpv-android.sh 按 tag 拉并校验 sha256。
+#
+# 本机编不了:mpv-android 的脚本只支持 Linux,本机没有 WSL / Docker。
+name: libmpv-android
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # 全部钉死。mpv-android 自己的 CI 拉 master,我们要可复现
+  MPV_ANDROID_REF: 276dad8e07a34bf1b22b1cfb257f2d24ba659c7d
+  # HopperRender 分叉点(补帧滤镜在这个基底上编得过)
+  MPV_REF: e167836802da6d5a4301bd4c4eeb3c5c3c17ccb8
+  LIBASS_REF: b2fe9d8770678a7b5271387d38c20657ebf3429a
+  LIBPLACEBO_REF: 3330a515d62139259c26239014f286e233bd3a5c
+  DAV1D_REF: 362bc1138228390a0a521ecf3af18b23c6afeb9e
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - name: Install packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf pkgconf libtool ninja-build python3-pip gperf nasm
+          sudo pip3 install --break-system-packages meson
+
+      - name: Fetch mpv-android buildscripts + pinned sources
+        run: |
+          set -euo pipefail
+          git clone https://github.com/mpv-android/mpv-android mpva
+          git -C mpva checkout -q "$MPV_ANDROID_REF"
+          cd mpva/buildscripts
+          mkdir -p deps
+          pin() { git clone --recursive "$1" "deps/$2" && git -C "deps/$2" checkout -q "$3" && git -C "deps/$2" submodule update --init --recursive; }
+          pin https://github.com/mpv-player/mpv mpv "$MPV_REF"
+          pin https://github.com/libass/libass libass "$LIBASS_REF"
+          pin https://github.com/haasn/libplacebo libplacebo "$LIBPLACEBO_REF"
+          pin https://github.com/videolan/dav1d dav1d "$DAV1D_REF"
+          # 我们自己的 mpv 补丁(补帧滤镜等)。没有补丁时这一步什么都不做
+          shopt -s nullglob
+          for p in "$GITHUB_WORKSPACE"/third_party/mpv-patches/*.patch; do
+            echo "apply $p"
+            git -C deps/mpv apply --whitespace=nowarn "$p"
+          done
+          IN_CI=1 WGET="wget --progress=dot:giga" ./include/download-sdk.sh
+          # 已经克隆好的目录 download-deps 会跳过
+          IN_CI=1 WGET="wget --progress=dot:giga" ./include/download-deps.sh
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          cd mpva/buildscripts
+          for arch in arm64 armv7l; do
+            ./buildall.sh --only-deps mpv --arch "$arch"
+            ./buildall.sh -n mpv --arch "$arch" || { cat "deps/mpv/_build_$arch/meson-logs/meson-log.txt" | tail -80; exit 1; }
+          done
+
+      - name: Collect + verify symbols
+        run: |
+          set -euo pipefail
+          B="$PWD/mpva/buildscripts"
+          NDK=$(echo "$B"/sdk/android-ndk-*)
+          TC=$(echo "$NDK"/toolchains/llvm/prebuilt/*)
+          NM="$TC/bin/llvm-nm"; RE="$TC/bin/llvm-readelf"
+          mkdir -p out
+          for pair in arm64:arm64-v8a:aarch64-linux-android armv7l:armeabi-v7a:arm-linux-androideabi; do
+            IFS=: read arch abi triple <<<"$pair"
+            d="out/$abi"; mkdir -p "$d"
+            cp -L "$B"/prefix/$arch/lib/libmpv.so "$B"/prefix/$arch/lib/libav*.so "$B"/prefix/$arch/lib/libsw*.so "$d"/
+            echo "== $abi NEEDED"; "$RE" -d "$d/libmpv.so" | grep NEEDED
+            if "$RE" -d "$d"/*.so | grep -q "libc++_shared.so"; then
+              cp "$TC/sysroot/usr/lib/$triple/libc++_shared.so" "$d"/
+            fi
+            # Go 核心直接调这些符号(core/ffi/libass_android.go、jni_android.go、core/player)。
+            # 少一个就是装机后 UnsatisfiedLinkError,所以在这里就让 job 红
+            for sym in mpv_create mpv_render_context_create ass_library_init ass_render_frame ass_process_codec_private ass_set_fonts_dir; do
+              "$NM" -D --defined-only "$d/libmpv.so" | grep -qw "$sym" || { echo "!! $abi libmpv.so 没导出 $sym"; exit 1; }
+            done
+            "$NM" -D --defined-only "$d"/libavcodec.so | grep -qw av_jni_set_java_vm || { echo "!! $abi 没有 av_jni_set_java_vm"; exit 1; }
+            cp -r "$B"/prefix/$arch/include/mpv "$d/include-mpv"
+            tar -czf "libmpv-android-$abi.tar.gz" -C "$d" .
+          done
+          sha256sum libmpv-android-*.tar.gz | tee SHA256SUMS
+          ls -l libmpv-android-*.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libmpv-android
+          path: |
+            libmpv-android-*.tar.gz
+            SHA256SUMS
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="libmpv-android-${{ github.run_number }}"
+          gh release create "$tag" libmpv-android-*.tar.gz SHA256SUMS \
+            --target "$GITHUB_SHA" --latest=false \
+            --title "安卓 libmpv ${{ github.run_number }}" \
+            --notes "mpv $MPV_REF · mpv-android buildscripts $MPV_ANDROID_REF · 由 .github/workflows/libmpv-android.yml 构建。scripts/fetch-libmpv-android.sh 按 tag 拉取。"
