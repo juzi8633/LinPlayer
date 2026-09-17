@@ -34,7 +34,11 @@ var script []byte
 
 // UserData 交给 vf=vapoursynth 的 user-data。
 func (s Spec) UserData(gpu int) string {
-	return fmt.Sprintf("algo=%s;x=%d;gpu=%d;h=%d", s.Algo, s.Multi, gpu, s.Height)
+	be := s.Backend
+	if be == "" {
+		be = "dml"
+	}
+	return fmt.Sprintf("algo=%s;x=%d;gpu=%d;h=%d;be=%s", s.Algo, s.Multi, gpu, s.Height, be)
 }
 
 // FilterString 挂到 mpv `vf` 属性上的那一串。

@@ -3556,6 +3556,15 @@ public sealed class PlayerPage : UserControl
         try { st = await _core.PlayerInterpLevels(); }
         catch (Exception e) { host.Children.Add(Dimmed(LibraryPage.Advice(e))); return; }
         if (!Bool(st, "supported")) { host.Children.Add(Dimmed(Str(st, "reason"))); return; }
+        /* 检测到能用 TensorRT 的 N 卡:第一次下载就直接装 N 卡加速版,不让用户先装通用版再装一遍
+           【用户定 2026-09-18:「检测到 N 卡的时候,补帧选择的方案直接就是 N 卡的特供方案」】 */
+        var nvidiaFirst = !Bool(st, "installed") && st.TryGetProperty("trt", out var trt0) &&
+                          trt0.ValueKind == JsonValueKind.Object && Bool(trt0, "available");
+        if (nvidiaFirst)
+        {
+            AddTrtOffer(host, st);
+            return;
+        }
         if (!Bool(st, "installed"))
         {
             var mb = st.TryGetProperty("download_bytes", out var b) && b.TryGetInt64(out var n) ? n / (1 << 20) : 0;
@@ -3576,6 +3585,7 @@ public sealed class PlayerPage : UserControl
             };
             host.Children.Add(dl);
             host.Children.Add(_interpProgress);
+            AddTrtOffer(host, st);
             return;
         }
         /* 一种算法一行,倍数横着排(2× 3× 4×)。竖着一档一行的话七档加两个组名,
@@ -3630,6 +3640,54 @@ public sealed class PlayerPage : UserControl
             host.Children.Add(row);
         }
         if (shown == 0 && why != "") host.Children.Add(Dimmed(why));
+        AddTrtOffer(host, st);
+    }
+
+    /// <summary>
+    /// N 卡加速包(TensorRT)的入口。只有 N 卡才有这一段 —— A 卡 / I 卡照旧用通用版,界面上不提。
+    ///
+    /// <para>用户 2026-09-17:5060 上 RIFE 通用版开不起来,「得加入 N 卡特供的版本」,
+    /// 并定了「TensorRT 单独一个 Release,A 卡那些直接默认用」。</para>
+    /// </summary>
+    private void AddTrtOffer(StackPanel host, JsonElement st)
+    {
+        if (!st.TryGetProperty("trt", out var trt) || trt.ValueKind != JsonValueKind.Object) return;
+        if (Bool(trt, "ready"))
+        {
+            host.Children.Add(Dimmed("已启用 N 卡加速(TensorRT)"));
+            return;
+        }
+        if (!Bool(trt, "available"))
+        {
+            if (Str(trt, "reason") != "") host.Children.Add(Dimmed(Str(trt, "reason")));
+            return;
+        }
+        var mb = trt.TryGetProperty("bytes", out var b) && b.TryGetInt64(out var n) ? n / (1 << 20) : 0;
+        var first = !Bool(st, "installed");
+        // 下的是上游 mpv_PlayKit 的完整包,解出需要的几个文件后就删掉包,最后占盘约 700MB
+        var size = mb >= 1024 ? $"{mb / 1024.0:F1} GB" : $"{mb} MB";
+        host.Children.Add(Dimmed(first
+            ? $"检测到 N 卡({Str(st, "gpu")}),补帧组件装 N 卡加速版(TensorRT):要下载约 {size}(解压后占约 700 MB)," +
+              "下完解压、为显卡准备引擎还要两三分钟。"
+            : $"N 卡加速(TensorRT):补帧余量大得多,1080p 原画补 3 倍也不掉帧。要下载约 {size}(解压后占约 700 MB)," +
+              "下完解压、准备引擎还要两三分钟;装好之前先用通用版。"));
+        _interpProgress = Dimmed(Bool(trt, "preparing") ? "正在为显卡准备加速引擎…" : Bool(st, "installing") ? "正在下载…" : "");
+        var dl = MenuRow(first ? "下载补帧组件(N 卡加速版)" : "下载 N 卡加速包");
+        dl.IsEnabled = !Bool(st, "installing");
+        dl.Click += async (_, _) =>
+        {
+            dl.IsEnabled = false;
+            _interpProgress.Text = "正在下载…";
+            try
+            {
+                await _core.PlayerInterpInstall(new { pack = "trt" });
+                Toast.Show("N 卡加速已启用");
+                await FillInterp();
+            }
+            catch (Exception e) { _interpProgress.Text = LibraryPage.Advice(e); dl.IsEnabled = true; }
+        };
+        host.Children.Add(dl);
+        host.Children.Add(_interpProgress);
     }
 
     /// <summary>选一档补帧。挂上只说明滤镜收下了,跑不动由核心层事件回来说(见 <see cref="OnInterpEvent"/>)。</summary>
@@ -3653,9 +3711,18 @@ public sealed class PlayerPage : UserControl
             case "player.interpInstall":
                 var done = data.TryGetProperty("done", out var d) ? d.GetInt64() : 0;
                 var total = data.TryGetProperty("total", out var t) ? t.GetInt64() : 0;
+                var step = data.TryGetProperty("step", out var sp) ? sp.GetInt32() : 0;
+                var steps = data.TryGetProperty("steps", out var sps) ? sps.GetInt32() : 0;
+                var prepare = Str(data, "stage") == "prepare";
+                var extract = Str(data, "stage") == "extract";
                 Dispatcher.UIThread.Post(() =>
                 {
-                    if (_interpProgress is not null && total > 0)
+                    if (_interpProgress is null) return;
+                    if (extract)
+                        _interpProgress.Text = "下载完成,正在解压(一两分钟)";
+                    else if (prepare)
+                        _interpProgress.Text = $"正在为显卡准备加速引擎({step}/{steps},一个约一分钟,期间可以照常看片)";
+                    else if (total > 0)
                         _interpProgress.Text = $"正在下载 {done * 100 / total}%({done >> 20} / {total >> 20} MB)";
                 });
                 break;
@@ -3687,6 +3754,14 @@ public sealed class PlayerPage : UserControl
                 var t0 = DateTime.UtcNow;
                 await _core.PlayerInterpInstall();
                 Console.WriteLine($"[interp] 组件装好,用时 {(DateTime.UtcNow - t0).TotalSeconds:F1}s");
+            }
+            // LP_SELFCHECK_INTERP_TRT=1:先装 N 卡加速包并预建引擎(走真下载)
+            if (Environment.GetEnvironmentVariable("LP_SELFCHECK_INTERP_TRT") == "1" &&
+                st.TryGetProperty("trt", out var trt) && trt.ValueKind == JsonValueKind.Object && !Bool(trt, "ready"))
+            {
+                var t1 = DateTime.UtcNow;
+                await _core.PlayerInterpInstall(new { pack = "trt" });
+                Console.WriteLine($"[interp] N 卡加速包装好 + 引擎建好,用时 {(DateTime.UtcNow - t1).TotalSeconds:F1}s");
             }
             await OpenEnhanceAndClick(id);
             for (var i = 0; i < 12; i++)

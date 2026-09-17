@@ -30,6 +30,8 @@ type Spec struct {
 	Algo   string
 	Multi  int
 	Height int // 补帧前降到的高度;0 = 滤镜自己定
+	// Backend Windows 上的推理后端:"dml"(默认,任何 DX12 独显)/ "trt"(N 卡加速包装好之后)
+	Backend string
 }
 
 // algo 平台后端提供的一种算法。height[倍数] 必须有键,那一档才存在。
@@ -57,7 +59,7 @@ func MultiName(multi int) string { return "补 " + strconv.Itoa(multi-1) + " 倍
 
 // FPSNote 片源帧率已知时给档位带上实际帧数,免得对「倍」的理解再对不上。
 func FPSNote(multi int, srcFPS float64) string {
-	if srcFPS <= 0 {
+	if srcFPS <= 0 || multi < 2 { // 「关闭」那一档 multi=0,不该写成「24→0 帧」
 		return ""
 	}
 	return fmt.Sprintf("%.0f→%.0f 帧", srcFPS, srcFPS*float64(multi))

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -43,7 +44,18 @@ type Err struct {
 func (e *Err) Error() string { return e.Code + ": " + e.Msg }
 
 // NewErr 造一个带 code 的错误。
+//
+// 两种调法:msg 带 % 占位符 → 按 printf 格式化(核心层 121 处是这么写的);
+// 不带占位符 → 第一个 string 参数当 Detail。
+// ☠ 原来只有第二种:NewErr(E, "%v", err) 交给用户的就是字面的「%v」,原因整个丢了
+// (2026-09-18 补帧装包失败时界面上只写着「%v」才发现)。
 func NewErr(code, msg string, args ...any) *Err {
+	if len(args) > 0 && strings.ContainsRune(msg, '%') {
+		// 拷一份再转发:直接透传 args... 会让 go vet 把 NewErr 认成 printf 包装器,
+		// 于是第二种调法(不带占位符 + detail)全部报「arguments but no formatting directives」
+		a := append([]any(nil), args...)
+		return &Err{Code: code, Msg: fmt.Sprintf(msg, a...)}
+	}
 	e := &Err{Code: code, Msg: msg}
 	if len(args) > 0 {
 		if d, ok := args[0].(string); ok {

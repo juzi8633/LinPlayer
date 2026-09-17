@@ -379,7 +379,19 @@ jobs:
           sha256sum ./*.zip ./*.apk > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
+      # ☠ GITHUB_TOKEN 没有 workflows 权限,**不能在一个改了 .github/workflows/ 的提交上打 tag**:
+      #   Create Pre-release 会 403「Resource not accessible by integration」(2026-09-18 在 70cc78b7 上连红两次,
+      #   三个包全编过了)。这种提交就不发预发布,下一个普通提交照常发 —— 那时 tag 打在不改 workflow 的提交上。
+      - name: Skip if this commit changes workflows
+        id: wf
+        run: |
+          if git diff --name-only "${{ github.sha }}^" "${{ github.sha }}" | grep -q '^\.github/workflows/'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::这个提交改了 .github/workflows/,GITHUB_TOKEN 打不了 tag,跳过预发布(包已编过,产物在 artifacts)"
+          fi
+
       - name: Create Pre-release
+        if: steps.wf.outputs.skip != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.version.outputs.version }}-pre

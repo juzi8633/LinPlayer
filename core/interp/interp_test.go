@@ -2,9 +2,16 @@ package interp
 
 import (
 	"archive/zip"
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestWhyNot(t *testing.T) {
@@ -60,7 +67,38 @@ func TestMultiName按补几倍叫(t *testing.T) {
 	if got := FPSNote(3, 23.976); got != "24→72 帧" {
 		t.Fatalf("帧数说明不对:%q", got)
 	}
+	if FPSNote(0, 23.976) != "" {
+		t.Fatal("「关闭」那一档不该带帧数")
+	}
 	if FPSNote(2, 0) != "" {
 		t.Fatal("片源帧率未知时不该给帧数")
+	}
+}
+
+// 多线程分段下载:内容必须逐字节落在 [off, off+size),前面的字节不能被碰。
+func TestDownloadRanged落在对的偏移(t *testing.T) {
+	data := make([]byte, 3<<20+123)
+	for i := range data {
+		data[i] = byte(i*31 + i>>8)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.ServeContent(w, r, "v", time.Time{}, bytes.NewReader(data))
+	}))
+	defer srv.Close()
+	out := filepath.Join(t.TempDir(), "pkg")
+	const off = 1000
+	if err := os.WriteFile(out, bytes.Repeat([]byte{7}, off), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := downloadRanged(context.Background(), srv.URL, out, off, int64(len(data)), nil); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(out)
+	if !bytes.Equal(got[off:], data) || !bytes.Equal(got[:off], bytes.Repeat([]byte{7}, off)) {
+		t.Fatal("分段下载的内容或位置不对")
+	}
+	want := sha256.Sum256(data)
+	if sum, _ := sha256Range(out, off, int64(len(data))); sum != hex.EncodeToString(want[:]) {
+		t.Fatal("区段 sha256 不对")
 	}
 }

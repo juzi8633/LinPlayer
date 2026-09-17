@@ -1867,6 +1867,45 @@ if (eof && !_leaving) { Leave(); }   // Leave() → Nav.Back()
   **手机上没有实测**(截至 2026-09-17 没有真机)。滤镜按实测耗时自调搜索半径,最小半径连续 24 个源帧超预算就放弃并 MP_ERR。
 - 安卓核心层拿不到屏幕刷新率,由 UI 随 `player.interpLevels` / `setInterpLevel` 传 `display_hz`。
 
+### N 卡加速(TensorRT):直接用上游完整包(2026-09-18)
+
+用户 5060 上 RIFE 通用版(DirectML)开了就被丢帧闸撤掉,定了「加入 N 卡特供方案」「TensorRT 单独一个 Release,
+A 卡那些直接默认用」;随后自己重打的小包发不上去,又定「别人项目有完整的包,直接解析完整的包」。
+
+- **上传走不通**:1.3GB 的七个包,本机并行传全部 rc=1、CI 上 `gh release create` 第一个文件就 HTTP 500
+  「Error saving asset」,重试五次仍然 500。已经上传成功的都 ≤63MB。**所以不再自己托管大包**:
+  播放器直接下上游 hooke007/mpv_PlayKit 的 vsNV 分卷(2.9GB,16 段并发约 10MB/s),按区段校验 sha256,
+  用**系统自带的 tar.exe**(Windows 10 1803 起,libarchive 能读 7z)只解需要的几个文件(实测 104 秒),解完删包。
+  下过一次的包校验能对上就不再重下(上次解压被打断时用得上)。
+- **只要 6 个文件**:vstrt + cudart + nvinfer + nvinfer_plugin + nvonnxparser + trtexec,
+  再加一份按显卡架构的 `nvinfer_builder_resource_smXX`(7.5=RTX20,8.6=RTX30,8.9=RTX40,12.0=RTX50)。
+  少 nvinfer_plugin 的话 trtexec 报「Unable to open library」;cuBLAS / cuDNN / cuFFT 用不着
+  (k7sfunc 调 TRT 时 use_cublas / use_cudnn 都是 False)。TensorRT 10 不支持 Pascal(GTX 10 系)。
+- **引擎必须在用户机器上建**(和显卡、驱动绑定),一次 40~55 秒。**装完就预建**:
+  起一个 vo=null 的 mpv 实例喂 `av://lavfi:color=...s=1920x1080`,建出来的引擎和播放时要的是同一个。
+  为此脚本对 TRT **一律补黑边到 1920×1080** 再补帧、补完裁回去 —— DRBA 的 TRT 引擎是静态形状,
+  不统一尺寸的话每换一种分辨率就现建 45 秒,而且会被丢帧闸当成「没生效」撤掉。720p 片实测复用同一个引擎。
+
+| RTX 5060 Laptop,真实 HEVC 10bit 1080p 动画,LinPlayer 里量 8 秒 | 通用版(DirectML) | N 卡加速(TensorRT) |
+|---|---|---|
+| RIFE 补 1 倍 | 4% 丢帧(降到 900p 才跑得动) | 1080p 原画,丢 0 帧 |
+| DRBA 补 1 倍 | 丢 0 帧 | 丢 0 帧 |
+| RIFE 补 2 倍(24→72) | 没测(余量不够) | 丢 0 帧 |
+
+### 三个排查坑
+
+- **同一个进程里 Python 只有一份,脚本的全局变量却会被回收。** 脚本为了藏 trtexec 的控制台窗口替换了
+  `subprocess.Popen.__init__`,替换进去的函数引用脚本全局 `_popen_init` —— 第二次执行脚本时那个全局已经没了,
+  建引擎当场 `NameError`(预建 RIFE 实测撞上;mpv.exe 每次新进程,单跑永远复现不出来)。
+  原函数要用**默认参数**带进去,并且整个进程**只替换一次**(在 subprocess 模块上打标记)。
+- **`bus.NewErr` 从来不做格式化。** 它把第二个参数当原样文本,而核心层有 121 处写的是
+  `NewErr(code, "%v", err)` —— 用户看到的就是字面的「%v」,原因整个丢了(补帧装包失败时才发现)。
+  已改成:带 % 且有参数就 Sprintf,不带 % 的仍把参数当 Detail。
+  ☠ 直接把 args 透传给 Sprintf 会让 `go vet` 把 NewErr 认成 printf 包装器,于是第二种调法全仓报错 —— 拷一份再转发。
+- **等 mpv 的 END_FILE 之前要先抽干事件队列**:预建是一个实例里先 DRBA 后 RIFE,
+  RIFE 刚 loadfile 就吃到上一段留下的 END_FILE,被当成「放完了」,引擎一次都没建(连 trtexec 日志都没有)。
+  先抽干、再等 START_FILE、最后等 END_FILE,每一步之后还要核对**这一个算法**的引擎文件在不在。
+
 ### 两个排查坑
 
 - **`nm | grep -q` 在 `set -o pipefail` 下会把「找到了」报成「没找到」**:grep 命中即退出,nm 吃 SIGPIPE,整条管道判失败。

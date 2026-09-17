@@ -172,7 +172,7 @@
 | [x] | `player.getSubStyle` | **新增** | `-` | `SubStyle` | — | <!-- 读回落库的字幕样式，面板打开时用 -->
 | [x] | `player.interpLevels` | **新增** | `display_hz: Option<f64>` | `InterpState` | ❌ | <!-- 补帧面板:平台/独显支不支持、组件装没装、档位表(带 will_run + note)。安卓由 UI 报 display_hz;Linux 返回 supported=false -->
 | [x] | `player.setInterpLevel` | **新增** | `level: String, display_hz: Option<f64>` | `InterpApplied` | ❌ | <!-- 挂补帧档;挂上之后跑不动由 player.interpReverted 事件通知 -->
-| [x] | `player.interpInstall` | **新增** | `—` | `Result<(), String>` | ❌ | <!-- 下载补帧运行时,阻塞到装完;进度走 player.interpInstall 事件 -->
+| [x] | `player.interpInstall` | **新增** | `pack: Option<String>` | `Result<(), String>` | ❌ | <!-- 下载补帧运行时;pack=trt 装 N 卡加速包并预建引擎。阻塞到装完,进度走 player.interpInstall 事件(stage=download/prepare) -->
 | [x] | `player.setTrack` | `set_track` | `kind: String, id: String` | `Result<(), String>` | ✅ |
 | [x] | `player.setTrackRegexes` | `set_track_regexes` | `version_regex: String, sub_regex: String, audio_regex: String` | `Result<(), String>` | ✅ |
 | [x] | `player.setVolume` | `set_volume` | `volume: f64` | `Result<(), String>` | ✅ |

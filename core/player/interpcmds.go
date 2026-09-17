@@ -43,6 +43,21 @@ type InterpState struct {
 	Installing    bool          `json:"installing"`
 	DownloadBytes int64         `json:"download_bytes"`
 	Levels        []InterpLevel `json:"levels"`
+	// Backend 现在补帧走哪条:"trt"(N 卡加速包 + 引擎都就绪)/ "dml" / 安卓为空
+	Backend string `json:"backend,omitempty"`
+	// TRT 只有 N 卡才给;A 卡 / I 卡为 null,界面上不提这件事
+	TRT *InterpTRT `json:"trt,omitempty"`
+}
+
+// InterpTRT N 卡加速包的状态。
+type InterpTRT struct {
+	// Available false 时 Reason 说为什么(架构太老 / 驱动太旧)
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
+	Ready     bool   `json:"ready"`
+	Bytes     int64  `json:"bytes"`
+	// Preparing 包下好了,正在预建引擎(一两分钟)
+	Preparing bool `json:"preparing"`
 }
 
 // InterpApplied setInterpLevel 的回执。
@@ -62,6 +77,7 @@ var (
 	interpGen      atomic.Int64
 	interpInstMu   sync.Mutex
 	interpInstBusy atomic.Bool
+	interpWarming  atomic.Bool
 )
 
 func interpLevelFor(p config.Prefs, scope string) string {
@@ -127,6 +143,9 @@ func mountInterp(level string) string {
 	gen := interpGen.Add(1)
 	// 不设成 no 的话 seek 之后画面和时间轴会错开一段(mpv_PlayKit #123 里的配置)
 	setProp("hr-seek-framedrop", "no")
+	if interp.TRTReady() {
+		spec.Backend = "trt"
+	}
 	vf := interp.FilterString(script, spec, idx)
 	setProp("vf", vf)
 	curInterp.Store(level)
@@ -311,6 +330,21 @@ func registerInterp() {
 			return st, nil
 		}
 		st.GPU = name
+		if interp.NeedsRuntime {
+			st.Backend = "dml"
+			if interp.TRTReady() {
+				st.Backend = "trt"
+			}
+			if nv := interp.NvidiaGPU(); nv.Name != "" {
+				arch, size, why := interp.TRTOffer(nv)
+				// 没装通用运行时的话 N 卡包会顺带装它,下载量要算进去
+				if arch != "" && !interp.Installed() {
+					size += interp.RuntimeSize
+				}
+				st.TRT = &InterpTRT{Available: arch != "", Reason: why, Ready: interp.TRTReady(),
+					Bytes: size, Preparing: interpWarming.Load()}
+			}
+		}
 		cur := currentInterpLevel()
 		src, hz := propF("container-fps"), interp.DisplayHz()
 		for _, l := range interp.Levels() {
@@ -351,7 +385,8 @@ func registerInterp() {
 		return InterpApplied{Level: level}, nil
 	})
 
-	// interpInstall 下载补帧组件。阻塞到装完;进度走 player.interpInstall 事件。
+	// interpInstall 下载补帧组件。pack="trt" 装 N 卡加速包(没装通用的会先装)并预建引擎。
+	// 阻塞到装完;进度走 player.interpInstall 事件:stage=download(done/total 字节)/ prepare(step/steps)。
 	bus.Register("player.interpInstall", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
 		if !interp.NeedsRuntime {
 			return nil, bus.NewErr(bus.EUnsupported, "这个平台的补帧不用下载组件")
@@ -363,17 +398,60 @@ func registerInterp() {
 		interpInstBusy.Store(true)
 		defer interpInstBusy.Store(false)
 		last := time.Now()
-		err := interp.Install(ctx, func(done, total int64) {
-			// 限流:一百多 MB 按 32KB 一块报会把事件队列刷爆
+		progress := func(done, total int64) {
+			// 限流:几百 MB 按 32KB 一块报会把事件队列刷爆
 			if time.Since(last) < 200*time.Millisecond && done != total {
 				return
 			}
 			last = time.Now()
-			bus.Emit("player.interpInstall", map[string]any{"done": done, "total": total}, "player.interpInstall")
-		})
-		if err != nil {
-			return nil, bus.NewErr(bus.ENetwork, "%v", err)
+			bus.Emit("player.interpInstall", map[string]any{"stage": "download", "done": done, "total": total}, "player.interpInstall")
+		}
+		pack, _ := a["pack"].(string)
+		if pack != "trt" {
+			if err := interp.Install(ctx, progress); err != nil {
+				return nil, bus.NewErr(bus.ENetwork, "%v", err)
+			}
+			return map[string]any{"ok": true}, nil
+		}
+		// 阶段进日志(desktop.log 收「补帧」开头的行):几 GB 的下载没有日志的话,排查时分不清卡在哪一步
+		t0 := time.Now()
+		// 包已经解好、只是引擎没建完(上次预建被打断 / 失败)的话,直接去建,不再下 2.9GB
+		if interp.TRTInstalled() {
+			bus.Logf("info", "补帧:N 卡加速包已在,只预建引擎")
+		} else {
+			bus.Logf("info", "补帧:开始下载 N 卡加速包(上游 vsNV 完整包)")
+			err := interp.InstallTRT(ctx, progress, func(stage string) {
+				bus.Logf("info", "补帧:N 卡加速包下载完,开始解压(下载用时 %.0f 秒)", time.Since(t0).Seconds())
+				bus.Emit("player.interpInstall", map[string]any{"stage": stage}, "player.interpInstall")
+			})
+			if err != nil {
+				bus.Logf("warn", "补帧:N 卡加速包没装上 —— %v", err)
+				return nil, bus.NewErr(bus.ENetwork, "%v", err)
+			}
+		}
+		interpWarming.Store(true)
+		defer interpWarming.Store(false)
+		bus.Logf("info", "补帧:N 卡加速包装好(用时 %.0f 秒),开始预建引擎", time.Since(t0).Seconds())
+		t0 = time.Now()
+		if err := warmTRT(ctx, func(i, n int) {
+			bus.Emit("player.interpInstall", map[string]any{"stage": "prepare", "step": i, "steps": n}, "player.interpInstall")
+		}); err != nil {
+			bus.Logf("warn", "补帧:预建引擎失败 —— %v", err)
+			return nil, bus.NewErr(bus.EInternal, "%v", err)
+		}
+		bus.Logf("info", "补帧:引擎建好,用时 %.0f 秒,之后走 N 卡加速", time.Since(t0).Seconds())
+		// 正开着补帧的话换到 N 卡加速上;不重挂的话要等下一次开才生效
+		if lv := currentInterpLevel(); lv != "off" && curInterpMounted() {
+			if why := mountInterp(lv); why != "" {
+				interpOff()
+			}
 		}
 		return map[string]any{"ok": true}, nil
 	})
+}
+
+// curInterpMounted 本进程里是不是真挂着一档(而不只是配置里记着)。
+func curInterpMounted() bool {
+	v, _ := curInterp.Load().(string)
+	return v != "" && v != "off"
 }
