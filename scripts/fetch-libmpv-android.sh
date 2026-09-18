@@ -15,7 +15,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TAG="${LP_LIBMPV_TAG:-libmpv-android-3}"
+TAG="${LP_LIBMPV_TAG:-libmpv-android-4}"
 BASE="https://github.com/zzzwannasleep/LinPlayer/releases/download/$TAG"
 DEST="$ROOT/third_party/libmpv/android"
 ABIS=("$@")
@@ -26,8 +26,8 @@ ABIS=("$@")
 # sha256 钉死在这里:换包 = 改 TAG + 这两行。只信 Release 里的 SHA256SUMS 等于没校验
 sha_of() {
   case "$1" in
-    arm64-v8a)   echo "4e9cfaf7642f8f77a94bd8fa2a0601ccc920e8be1ffac863e2213362b15b4339" ;;
-    armeabi-v7a) echo "42e392838f992eb2b607cf93806446265795eff4f67134e4f4cc86e3abed42a9" ;;
+    arm64-v8a)   echo "2114bed01ec202c101cc441aa9349fe7af10d7934bae710729c60564c1b92f82" ;;
+    armeabi-v7a) echo "eaf8c9e55888fab79f82fef002d4513dc3d0132b3e3c7a478ce55bcde049037b" ;;
     *) echo "" ;;
   esac
 }
