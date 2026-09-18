@@ -188,7 +188,7 @@ public partial class MainWindow : Window
                 if (how == "ui") throw boom;
                 new System.Threading.Thread(() => throw boom).Start();
             }
-            if (_core is { } core) await Report.SendPendingCrash(core);
+            if (_core is { } core) await Report.AfterWindowOpened(core);
         };
     }
 

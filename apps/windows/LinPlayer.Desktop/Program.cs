@@ -225,6 +225,7 @@ internal static class Program
         {
             Core = new CoreClient(dll, dataDir, Version);
             Views.Report.Trail("核心层就绪");
+            Views.Report.SendPendingCrashEarly(Core);
         }
         catch (Exception e)
         {
@@ -233,6 +234,12 @@ internal static class Program
         }
 
         Perf.Log("核心层就绪");
+        // 自检:开窗前就崩(模拟「一开就崩」)。验证报告在这种机器上也发得出去
+        if (Environment.GetEnvironmentVariable("LP_SELFCHECK_CRASH") == "early")
+        {
+            new System.Threading.Thread(() => throw new InvalidOperationException("LP_SELFCHECK_CRASH=early")).Start();
+            System.Threading.Thread.Sleep(3000);
+        }
         Views.Report.Trail("开窗 渲染=" + (Environment.GetEnvironmentVariable("LP_RENDER") ?? "默认"));
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
 

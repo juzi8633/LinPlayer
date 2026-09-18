@@ -34,12 +34,17 @@ internal static class Report
                 if (!int.TryParse(Path.GetExtension(f).TrimStart('.'), out var pid) || Alive(pid)) continue;
                 var crash = Path.Combine(dir, $"crash.{pid}.txt");
                 var trail = Path.Combine(dir, $"trail.{pid}.txt");
-                LastCrash = (File.Exists(crash) ? File.ReadAllText(crash) : "(异常退出,没接到托管异常:可能被强杀或原生层崩溃)")
-                    + (File.Exists(trail) ? "\n== 死前最后几步 ==\n" + File.ReadAllText(trail) : "");
+                // ☠ 先落进 pending 再删现场:发出去之前又崩一次的话,读进内存的那份就没了 ——
+                //   「一开就崩」的机器会一直循环,一条都发不出来(issue #65 差点就是这样)
+                File.AppendAllText(_pending = Path.Combine(dir, "pending-crash.txt"),
+                    (File.Exists(crash) ? File.ReadAllText(crash) : "(异常退出,没接到托管异常:可能被强杀或原生层崩溃)")
+                    + (File.Exists(trail) ? "\n== 死前最后几步 ==\n" + File.ReadAllText(trail) : "") + "\n\n");
                 File.Delete(f);
                 File.Delete(crash);
                 File.Delete(trail);
             }
+            _pending = Path.Combine(dir, "pending-crash.txt");
+            if (File.Exists(_pending)) LastCrash = File.ReadAllText(_pending);
             File.WriteAllText(Path.Combine(dir, $"running.{me}"), "");
             _trail = Path.Combine(dir, $"trail.{me}.txt");
         }
@@ -109,17 +114,40 @@ internal static class Report
     public static async Task SendPendingCrash(CoreClient core)
     {
         if (LastCrash is not { } crash || Off) return;
-        LastCrash = null;
         try
         {
             await core.SystemSendReport(new { kind = "crash", crash, log = ReadLog() });
-            Toast.Show("上次异常退出,已把报告发给开发者");
+            LastCrash = null;
+            // 发出去才删:没发出去(断网 / 又崩)下次启动接着发
+            try { File.Delete(_pending); } catch (IOException) { /* 删不掉下次重发一遍,多一条而已 */ }
+            _sentEarly = true;
         }
         catch (Exception e)
         {
-            Log.W("报告", "上次崩溃的报告没发出去: " + e.Message); // 没发出去不打扰用户,Sentry 那边也有一份
+            Log.W("报告", "上次崩溃的报告没发出去: " + e.Message);
         }
     }
+
+    /// <summary>
+    /// 开窗<b>之前</b>先发一次,最多等 6 秒。只有上次崩过才等。
+    /// 等到首屏之后再发的话,「一开就崩」的机器永远走不到那一步。
+    /// </summary>
+    public static void SendPendingCrashEarly(CoreClient core)
+    {
+        if (LastCrash is null || Off) return;
+        try { SendPendingCrash(core).Wait(TimeSpan.FromSeconds(6)); }
+        catch (AggregateException) { /* SendPendingCrash 自己吞了异常;这里只可能是超时之外的取消,开窗后再试 */ }
+    }
+
+    /// <summary>开窗后调:早发成功就补一句提示,没发成功再试一次。</summary>
+    public static async Task AfterWindowOpened(CoreClient core)
+    {
+        if (!_sentEarly) await SendPendingCrash(core);
+        if (_sentEarly) { Toast.Show("上次异常退出,已把报告发给开发者"); _sentEarly = false; }
+    }
+
+    private static string _pending = "";
+    private static bool _sentEarly;
 
     /// <summary>出错横条上的「反馈」:点一下就把这次被兜住的异常发出去。</summary>
     public static Task FromError(Visual anchor, CoreClient core, Exception e) =>
