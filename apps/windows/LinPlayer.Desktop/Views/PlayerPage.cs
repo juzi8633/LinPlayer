@@ -56,7 +56,10 @@ internal sealed class MpvGlView : OpenGlControlBase
             var n = Marshal.PtrToStringAnsi(name);
             return n == null ? IntPtr.Zero : gl.GetProcAddress(n);
         };
+        // 双显卡机器上界面的 GL 落在哪张卡,是 issue #65 那类「建渲染上下文就崩」的头号线索
+        Report.Trail($"lp_gl_init 开始 GL={gl.GetString(GlConsts.GL_VENDOR)} / {gl.GetString(GlConsts.GL_RENDERER)}");
         var r = Native.lp_gl_init(Marshal.GetFunctionPointerForDelegate(_gpaKeepAlive), IntPtr.Zero);
+        Report.Trail($"lp_gl_init 返回 {r}");
         if (r != 0) { InitError = $"lp_gl_init 返回 {r}"; return; }
         _ready = true;
         OnReady?.Invoke();

@@ -33,11 +33,15 @@ internal static class Report
             {
                 if (!int.TryParse(Path.GetExtension(f).TrimStart('.'), out var pid) || Alive(pid)) continue;
                 var crash = Path.Combine(dir, $"crash.{pid}.txt");
-                LastCrash = File.Exists(crash) ? File.ReadAllText(crash) : LastCrash ?? "";
+                var trail = Path.Combine(dir, $"trail.{pid}.txt");
+                LastCrash = (File.Exists(crash) ? File.ReadAllText(crash) : "(异常退出,没接到托管异常:可能被强杀或原生层崩溃)")
+                    + (File.Exists(trail) ? "\n== 死前最后几步 ==\n" + File.ReadAllText(trail) : "");
                 File.Delete(f);
                 File.Delete(crash);
+                File.Delete(trail);
             }
             File.WriteAllText(Path.Combine(dir, $"running.{me}"), "");
+            _trail = Path.Combine(dir, $"trail.{me}.txt");
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -61,8 +65,32 @@ internal static class Report
 
     private static void Disarm(string dir, int me)
     {
-        try { File.Delete(Path.Combine(dir, $"running.{me}")); }
+        try
+        {
+            File.Delete(Path.Combine(dir, $"running.{me}"));
+            File.Delete(Path.Combine(dir, $"trail.{me}.txt"));
+        }
         catch (IOException) { /* 删不掉下次会误报一次「异常退出」,只多一条报告 */ }
+    }
+
+    private static string _trail = "";
+    private static readonly Queue<string> Steps = new();
+
+    /// <summary>
+    /// 记一步「现在走到哪了」,同步落盘。原生层崩溃(驱动 / libmpv)一个字不留,
+    /// 只有这份轨迹说得出死在哪一步 —— issue #65 就是没有它,只能反复找用户要 gdb 栈。
+    /// 只留最近 30 步,每次整份重写(几百字节)。
+    /// </summary>
+    public static void Trail(string step)
+    {
+        if (_trail.Length == 0) return;
+        lock (Steps)
+        {
+            Steps.Enqueue($"{DateTime.Now:HH:mm:ss.fff} {step}");
+            while (Steps.Count > 30) Steps.Dequeue();
+            try { File.WriteAllLines(_trail, Steps); }
+            catch (IOException) { /* 写不进只是少一条线索,不能为它打断正在做的事 */ }
+        }
     }
 
     /// <summary>自检和 CI 冒烟设 <c>LP_NO_REPORT=1</c>:它们的「崩溃」是故意的,别发到开发者那儿。</summary>
@@ -84,7 +112,7 @@ internal static class Report
         LastCrash = null;
         try
         {
-            await core.SystemSendReport(new { kind = "crash", crash = crash.Length > 0 ? crash : "(异常退出,没接到托管异常:可能被强杀或原生层崩溃)", log = ReadLog() });
+            await core.SystemSendReport(new { kind = "crash", crash, log = ReadLog() });
             Toast.Show("上次异常退出,已把报告发给开发者");
         }
         catch (Exception e)

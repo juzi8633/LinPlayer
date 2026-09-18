@@ -2175,3 +2175,22 @@ RIFE v4.26 引擎每秒推理次数:1080 档 46 次、720 档 106 次;24 帧片�
   格式来自 mpv track-list 的 `codec`(核心层 `Track.Codec`,原来没透出来)。
 - 弹幕「显示弹幕」右边写挂上的源和集:自动匹配走 `danmaku.lastMatch`(autoLoad 的返回是弹幕数组,
   三端都按数组读,不能改形状),手动搜索挂的直接用选中那一行。**没在真源上验过**:本地构建不带弹弹凭据。
+
+## Linux 双显卡一开就 SIGSEGV:libmpv 预加载 CUDA 互通(issue #65,2026-09-18,**推断,待用户确认**)
+
+现象:Ubuntu 26.04 / GNOME 50 Wayland / 英特尔核显 + RTX 3070,打开即 SIGSEGV;`LP_RENDER=software` 也崩。
+
+- **已排除**:26.04 系统库、中文路径、zh_CN、系统 libmpv、ibus 变量 —— CI 里 `ubuntu:26.04` 容器三次开窗全过。
+  软件渲染也崩 → 界面的 GL 不是嫌疑。
+- **线索**:用户 `info sharedlibrary` 的**最后一项是 `libcuda.so.1`**。它不在任何库的 DT_NEEDED 里,只可能被 dlopen ——
+  ffmpeg 的 CUDA 硬件上下文。libmpv 建渲染上下文时默认**预加载全部**显存互通,CUDA 那个要把 GL 绑到 N 卡,
+  而界面 GL 在核显(XWayland/Mesa)上。CI 容器没有 N 卡驱动,这段永远走不到。
+- **修法**:Linux 上 `gpu-hwdec-interop=vaapi`(`core/player/mpvhint_linux.go`)。核显 / A 卡照样零拷贝,N 卡落到 `*-copy`。
+- **兜底**:桌面端 `Report.Trail` 记「死前最后几步」(进哪页、`lp_gl_init` 前后、GL 厂商/渲染器),崩了下次启动随报告自动发来。
+  **不对的话,下一份自动报告会直接说死在哪一步** —— 不再找用户要 gdb。
+
+### 找用户要 gdb 栈时的两个坑(都栽了)
+- **gdb 默认停在 SIGPIPE**。Go 往断开的 socket 写会收到它(正常被忽略),gdb 却在那儿停下,栈停在半路,
+  真正的 SIGSEGV 没走到。必须 `-ex 'handle SIGPIPE nostop noprint pass'`。
+- **`bt` 后面跟 `info sharedlibrary` 再 `| tail`**:库列表一两百行,把栈挤出窗口。要分两次取,或者别截尾。
+- 之前回复里把日志路径写成 `userdata/desktop.log`,实际是 `userdata/logs/desktop.log`。用户说「没有这个文件」其实是找错了地方。

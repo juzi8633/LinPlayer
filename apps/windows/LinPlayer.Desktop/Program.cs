@@ -219,10 +219,12 @@ internal static class Program
         // 早于核心层:核心层起不来正是最该上报的一种失败。using 到进程结束 —— 释放就关了客户端
         using var telemetry = Telemetry.Init(Version);
         Views.Report.Arm(dataDir);
+        Views.Report.Trail($"启动 {Version} · {System.Runtime.InteropServices.RuntimeInformation.OSDescription}");
 
         try
         {
             Core = new CoreClient(dll, dataDir, Version);
+            Views.Report.Trail("核心层就绪");
         }
         catch (Exception e)
         {
@@ -231,6 +233,7 @@ internal static class Program
         }
 
         Perf.Log("核心层就绪");
+        Views.Report.Trail("开窗 渲染=" + (Environment.GetEnvironmentVariable("LP_RENDER") ?? "默认"));
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
 
         /* 退出时调 lp_shutdown(Dispose 里)。它**阻塞到落盘完成**:停 mpv、

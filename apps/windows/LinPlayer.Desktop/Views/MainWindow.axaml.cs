@@ -175,8 +175,10 @@ public partial class MainWindow : Window
         Opened += async (_, _) =>
         {
             Perf.Log("窗口 Opened");
+            Report.Trail("窗口已打开");
             await BootAsync();
             Perf.Log("BootAsync 结束");
+            Report.Trail("首屏加载完");
             AutoCheckUpdate();
             // 崩溃报告整条链的自检。=ui:界面线程抛(被兜住,出错横条带「反馈」);
             // 其它值:后台线程抛,进程真崩,下次启动应当弹「上次异常退出」

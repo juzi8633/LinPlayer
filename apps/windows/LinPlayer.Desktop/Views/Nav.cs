@@ -91,6 +91,7 @@ public static class Nav
 
     public static void Push(Control page, Func<Control>? make = null)
     {
+        Report.Trail("进入 " + page.GetType().Name);
         Stack.Push(new Entry(page, make));
         Host?.Invoke(page);
     }
@@ -120,6 +121,7 @@ public static class Nav
     /// </summary>
     public static void Replace(Control page, Func<Control>? make = null)
     {
+        Report.Trail("换到 " + page.GetType().Name);
         if (Stack.Count > 0) Stack.Pop();
         Stack.Push(new Entry(page, make));
         Host?.Invoke(page);
