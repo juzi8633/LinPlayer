@@ -8,16 +8,20 @@
 //
 // 不在 /api/ 下:Sentry 发不了 X-LinPlayer-Key 头,所以自己校验。
 
-// 只转发和崩溃有关的推送;内部集成还会推 installation 之类,回 200 但不打扰 TG
-const WANTED = new Set(['event_alert', 'issue', 'error']);
+// 明确无关的推送回 200 不打扰 TG。用黑名单不用白名单:新版告警引擎的推送类型名
+// 和文档对不上,白名单会把真告警当噪音吞掉 —— 而且回的是 200,Sentry 那边显示「成功」,谁也看不出来
+const NOISE = new Set(['installation', 'uninstallation', 'comment', 'seer']);
 
 export async function onRequestPost({ env, request }) {
   const raw = await request.text();
-  if (!(await authorized(env, request, raw))) return new Response('unauthorized', { status: 401 });
+  const resource = request.headers.get('Sentry-Hook-Resource');
+  const ok = await authorized(env, request, raw);
+  // CF 的实时日志(Pages → Functions → Logs)里看得到;不打任何密钥
+  console.log('sentry/hook', JSON.stringify({ resource, auth: ok, signed: !!request.headers.get('Sentry-Hook-Signature'), bytes: raw.length }));
+  if (!ok) return new Response('unauthorized', { status: 401 });
   if (!env.TG_BOT_TOKEN || !env.TG_CHAT_ID) return new Response('tg not configured', { status: 503 });
 
-  const resource = request.headers.get('Sentry-Hook-Resource');
-  if (resource && !WANTED.has(resource)) return new Response('ignored');
+  if (NOISE.has(resource)) return new Response('ignored');
 
   let b = {};
   try { b = JSON.parse(raw); } catch { /* Sentry 的测试按钮有时发空体,照样回一条测试消息 */ }
