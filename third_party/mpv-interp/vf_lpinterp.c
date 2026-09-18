@@ -97,6 +97,13 @@ static bool ensure_ocl(struct mp_filter *f, struct mp_image *img)
         give_up(f, err);
         return false;
     }
+    // 从最省的一档起步,再按耗时往上爬。
+    // ☠ 核心层有第二道闸(guardInterp):起播 8 秒窗口里丢帧超 10% 就整个撤掉补帧。
+    //   从默认档起步的话,慢机器要花十几个源帧才降到位,而那十几帧的卡顿足够触发那道闸 ——
+    //   阶梯还没来得及工作,功能已经被拔了。往上爬一档只要一个源帧,爬到顶也就半秒。
+    lpi_set_min_win(p->ocl, LPI_MIN_WIN_WORST);
+    lpi_set_res_shift(p->ocl, lpi_shift_base(p->ocl) + LPI_SHIFT_EXTRA_MAX);
+    p->cost = 0;
     p->ocl_w = img->w;
     p->ocl_h = img->h;
     p->ocl_stride = img->stride[0];
@@ -132,7 +139,9 @@ static bool warp_into(struct priv *p, float t, struct mp_image *out)
 static void adapt(struct mp_filter *f, double spent, double budget)
 {
     struct priv *p = f->priv;
-    p->cost += (spent - p->cost) * 0.12;  // ≈16 个源帧的窗口
+    // 头一帧直接拿实测值播种,不从 0 慢慢爬 —— 从 0 起步的话开头几帧的均值恒偏低,
+    // 会一路往上爬档,爬完才发现跟不上,等于自己制造了一段卡顿
+    p->cost = p->cost > 0 ? p->cost + (spent - p->cost) * 0.12 : spent;  // ≈16 个源帧的窗口
     const int r = lpi_radius(p->ocl), w = lpi_min_win(p->ocl);
     const int s = lpi_res_shift(p->ocl), s0 = lpi_shift_base(p->ocl);
     if (p->cost > budget * 0.8) {
