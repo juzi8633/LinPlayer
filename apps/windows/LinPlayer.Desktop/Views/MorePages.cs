@@ -595,6 +595,8 @@ public sealed class SettingsPage : PageBase
                     // ── 播放:从选轨到 mpv,由浅入深 ──
                     Add(gPlay, TrackPrefs(core, p));
                     Add(gPlay, Playback(core, p));
+                    // 补帧组件排在「播放」后面:N 卡包要装五六分钟,得在开片前就找得到(用户 2026-09-18)
+                    Add(gPlay, SettingsSections.Interp(core));
                     Add(gPlay, SettingsSections.SkipSegments(core, p));
                     // mpv 配置排这一节最后:它是同一件事的「高级」那一档
                     Add(gPlay, SettingsSections.MpvConf(core));
@@ -639,6 +641,9 @@ public sealed class SettingsPage : PageBase
                         // BringIntoView 走的是 Avalonia 自己的滚动请求,不用我们算偏移量
                         chip.Click += (_, _) => head.BringIntoView();
                         chips.Children.Add(chip);
+                        // 自检:LP_SELFCHECK_SETTINGS=节名,落到那一节(卡是异步长出来的,按偏移量滚够不准)
+                        if (Environment.GetEnvironmentVariable("LP_SELFCHECK_SETTINGS") == name)
+                            _ = Task.Delay(1500).ContinueWith(_ => Dispatcher.UIThread.Post(() => head.BringIntoView(new Rect(0, 0, 1, 1000))));
                     }
                 });
             }

@@ -40,6 +40,22 @@ func TestFilterString定长引用(t *testing.T) {
 	}
 }
 
+// TensorRT 的引擎只有 1080p / 720p 两档,降到两档之间只会被补黑边补回去:
+// 画质丢了、算力没省。所以 TRT 下 RIFE 2 倍不降(1080),4 倍降到 720 而不是 540。
+func TestTRT下高度贴着引擎档(t *testing.T) {
+	for m, want := range map[int]int{2: 1080, 3: 720, 4: 720} {
+		s, _ := SpecOf("rife_" + strconv.Itoa(m))
+		s.Backend = "trt"
+		if ud := s.UserData(0); !strings.Contains(ud, ";h="+strconv.Itoa(want)+";") {
+			t.Errorf("rife %d 倍 TRT:%s,要 h=%d", m, ud, want)
+		}
+	}
+	// DirectML 没有引擎档,照旧按实测降
+	if s, _ := SpecOf("rife_2"); !strings.Contains(s.UserData(0), ";h=900;") {
+		t.Errorf("DirectML 下 RIFE 2 倍应当还是 900:%s", s.UserData(0))
+	}
+}
+
 func TestParseNvidiaSMI(t *testing.T) {
 	nv := parseNvidiaSMI("NVIDIA GeForce RTX 5060 Laptop GPU, 12.0, 610.62\r\n")
 	if nv.Name != "NVIDIA GeForce RTX 5060 Laptop GPU" || nv.ComputeCap != "12.0" || nv.Driver != 610.62 {

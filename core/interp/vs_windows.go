@@ -29,6 +29,11 @@ var algos = []algo{
 	{"rife", "RIFE · 通用", map[int]int{2: 900, 3: 720, 4: 540}},
 }
 
+// trtHeight TensorRT 下的高度。引擎只建 1080p / 720p 两档(interp.vpy 补黑边凑档),
+// 降到两档之间的高度只会被补回去:画质丢了、算力一分没省。
+// RTX 5060 Laptop 实测 RIFE v4.26:1080p 引擎每秒 46 次、720p 106 次;24 帧片 2/3/4 倍要 24/48/72 次。
+var trtHeight = map[int]int{2: 1080, 3: 720, 4: 720}
+
 //go:embed files/interp.vpy
 var script []byte
 
@@ -38,7 +43,11 @@ func (s Spec) UserData(gpu int) string {
 	if be == "" {
 		be = "dml"
 	}
-	return fmt.Sprintf("algo=%s;x=%d;gpu=%d;h=%d;be=%s", s.Algo, s.Multi, gpu, s.Height, be)
+	h := s.Height
+	if th, ok := trtHeight[s.Multi]; ok && be == "trt" {
+		h = th
+	}
+	return fmt.Sprintf("algo=%s;x=%d;gpu=%d;h=%d;be=%s", s.Algo, s.Multi, gpu, h, be)
 }
 
 // FilterString 挂到 mpv `vf` 属性上的那一串。

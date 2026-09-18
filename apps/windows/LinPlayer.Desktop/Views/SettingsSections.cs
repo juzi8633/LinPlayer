@@ -492,6 +492,98 @@ public static class SettingsSections
         });
     }
 
+    /// <summary>
+    /// 补帧组件提前装(用户 2026-09-18:「准备工作要提前做好,不应该让用户观看的时候才做」)。
+    /// N 卡要下 2.9GB,再解压 + 预建引擎三五分钟(实测 104 + 105 秒),放到开片后才做等于这一集白看。
+    /// 和播放页弹层走同一条命令;核心层一次只让装一个,两边谁先点都一样。
+    /// </summary>
+    public static Control Interp(CoreClient core)
+    {
+        var body = new StackPanel { Spacing = 10 };
+        var hint = Hint();
+        // 自检:LP_SELFCHECK_SETTINGS=补帧 滚到这张卡;=补帧点 再真点按钮走完整条安装,进度打到 app.log
+        var sc = Environment.GetEnvironmentVariable("LP_SELFCHECK_SETTINGS");
+        var scClick = sc == "补帧点";
+        async Task Fill()
+        {
+            body.Children.Clear();
+            body.Children.Add(Note("开片后在「画质增强」里选补帧档位。组件在这里先装好,看的时候点开就能用。"));
+            JsonElement st;
+            try { st = await core.PlayerInterpLevels(); }
+            catch (Exception e) { body.Children.Add(Note(LibraryPage.Advice(e))); return; }
+            if (!Bool(st, "supported")) { body.Children.Add(Note(Str(st, "reason"))); return; }
+            var installed = Bool(st, "installed");
+            var hasTrt = st.TryGetProperty("trt", out var trt) && trt.ValueKind == JsonValueKind.Object;
+            var trtReady = hasTrt && Bool(trt, "ready");
+            var offerTrt = hasTrt && !trtReady && Bool(trt, "available");
+            var gpu = Str(st, "gpu");
+            body.Children.Add(Note(trtReady ? $"已装好,走 N 卡加速(TensorRT)。显卡:{gpu}"
+                : installed ? $"已装好(通用版)。显卡:{gpu}"
+                : $"还没装。显卡:{gpu}"));
+            if (hasTrt && !trtReady && !Bool(trt, "available") && Str(trt, "reason") != "")
+                body.Children.Add(Note(Str(trt, "reason")));
+
+            Button? btn = null;
+            object? pack = null;
+            if (offerTrt)
+            {
+                body.Children.Add(Note(PlayerPage.TrtNote(st, trt)));
+                btn = new Button { Classes = { "primary" }, Content = installed ? "下载 N 卡加速包" : "下载补帧组件(N 卡加速版)" };
+                pack = new { pack = "trt" };
+            }
+            else if (!installed)
+            {
+                var mb = st.TryGetProperty("download_bytes", out var b) && b.TryGetInt64(out var n) ? n / (1 << 20) : 0;
+                btn = new Button { Classes = { "primary" }, Content = $"下载补帧组件(约 {mb} MB)" };
+            }
+            var busy = Bool(st, "installing") || (hasTrt && Bool(trt, "preparing"));
+            hint.Text = busy ? "正在准备(播放页那边点的),进度在这里也看得到。" : "";
+            if (btn is not null)
+            {
+                btn.IsEnabled = !busy;
+                btn.Click += async (_, _) =>
+                {
+                    btn.IsEnabled = false;
+                    hint.Text = "正在下载…";
+                    try
+                    {
+                        await (pack is null ? core.PlayerInterpInstall() : core.PlayerInterpInstall(pack));
+                        Toast.Show(pack is null ? "补帧组件已装好" : "N 卡加速已启用");
+                        if (scClick) Console.WriteLine("[补帧卡] 装好了");
+                        await Fill();
+                    }
+                    catch (Exception e)
+                    {
+                        hint.Text = LibraryPage.Advice(e);
+                        btn.IsEnabled = true;
+                        if (scClick) Console.WriteLine($"[补帧卡] 失败:{e.Message}");
+                    }
+                };
+                body.Children.Add(Row(btn));
+                if (scClick && btn.IsEnabled)
+                    btn.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            }
+            // 装好了就没有进度可报,空着的一行会在卡底撑出一条空白
+            if (btn is not null || busy) body.Children.Add(hint);
+        }
+
+        void OnEvent(string name, JsonElement data)
+        {
+            if (name != "player.interpInstall") return;
+            var text = PlayerPage.InstallProgressText(data);
+            if (text is null) return;
+            if (scClick) Console.WriteLine($"[补帧卡] {text}");
+            Dispatcher.UIThread.Post(() => hint.Text = text);
+        }
+        var card = Group("补帧组件", body);
+        card.AttachedToVisualTree += (_, _) => core.OnEvent += OnEvent;
+        card.DetachedFromVisualTree += (_, _) => core.OnEvent -= OnEvent;
+        _ = Fill();
+        if (sc is "补帧" or "补帧点")
+            _ = Task.Delay(3000).ContinueWith(_ => Dispatcher.UIThread.Post(() => card.BringIntoView(new Rect(0, 0, 1, 1000))));
+        return card;
+    }
+
     public static Control Update(CoreClient core, JsonElement s)
     {
         var hint = Hint();

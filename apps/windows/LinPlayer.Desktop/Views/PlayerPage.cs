@@ -3690,15 +3690,8 @@ public sealed class PlayerPage : UserControl
             if (Str(trt, "reason") != "") host.Children.Add(Dimmed(Str(trt, "reason")));
             return;
         }
-        var mb = trt.TryGetProperty("bytes", out var b) && b.TryGetInt64(out var n) ? n / (1 << 20) : 0;
         var first = !Bool(st, "installed");
-        // 下的是上游 mpv_PlayKit 的完整包,解出需要的几个文件后就删掉包,最后占盘约 700MB
-        var size = mb >= 1024 ? $"{mb / 1024.0:F1} GB" : $"{mb} MB";
-        host.Children.Add(Dimmed(first
-            ? $"检测到 N 卡({Str(st, "gpu")}),补帧组件装 N 卡加速版(TensorRT):要下载约 {size}(解压后占约 700 MB)," +
-              "下完解压、为显卡准备引擎还要两三分钟。"
-            : $"N 卡加速(TensorRT):补帧余量大得多,1080p 原画补 3 倍也不掉帧。要下载约 {size}(解压后占约 700 MB)," +
-              "下完解压、准备引擎还要两三分钟;装好之前先用通用版。"));
+        host.Children.Add(Dimmed(TrtNote(st, trt)));
         _interpProgress = Dimmed(Bool(trt, "preparing") ? "正在为显卡准备加速引擎…" : Bool(st, "installing") ? "正在下载…" : "");
         var dl = MenuRow(first ? "下载补帧组件(N 卡加速版)" : "下载 N 卡加速包");
         dl.IsEnabled = !Bool(st, "installing");
@@ -3716,6 +3709,35 @@ public sealed class PlayerPage : UserControl
         };
         host.Children.Add(dl);
         host.Children.Add(_interpProgress);
+    }
+
+    /// <summary>N 卡加速包的说明。播放页弹层和设置页那张卡共用,改大小只改这一处。</summary>
+    internal static string TrtNote(JsonElement st, JsonElement trt)
+    {
+        var mb = trt.TryGetProperty("bytes", out var b) && b.TryGetInt64(out var n) ? n / (1 << 20) : 0;
+        var size = mb >= 1024 ? $"{mb / 1024.0:F1} GB" : $"{mb} MB";
+        // 整目录解出 TRT 相关的四个目录(只剔掉别代显卡的构建资源),包删掉后占盘约 2.3GB
+        return !Bool(st, "installed")
+            ? $"检测到 N 卡({Str(st, "gpu")}),补帧组件装 N 卡加速版(TensorRT):要下载约 {size}(解压后占约 2.3 GB)," +
+              "下完解压、为显卡准备引擎还要三五分钟。"
+            : $"N 卡加速(TensorRT):补帧余量大得多。要下载约 {size}(解压后占约 2.3 GB)," +
+              "下完解压、准备引擎还要三五分钟;装好之前先用通用版。";
+    }
+
+    /// <summary>player.interpInstall 进度事件 → 一行字。不是这个事件或没有可说的返回 null。</summary>
+    internal static string? InstallProgressText(JsonElement data)
+    {
+        var stage = Str(data, "stage");
+        if (stage == "extract") return "下载完成,正在解压(一两分钟)";
+        if (stage == "prepare")
+        {
+            var step = data.TryGetProperty("step", out var sp) ? sp.GetInt32() : 0;
+            var steps = data.TryGetProperty("steps", out var sps) ? sps.GetInt32() : 0;
+            return $"正在为显卡准备加速引擎({step}/{steps},一个一两分钟,期间可以照常看片)";
+        }
+        var done = data.TryGetProperty("done", out var d) ? d.GetInt64() : 0;
+        var total = data.TryGetProperty("total", out var t) ? t.GetInt64() : 0;
+        return total > 0 ? $"正在下载 {done * 100 / total}%({done >> 20} / {total >> 20} MB)" : null;
     }
 
     /// <summary>选一档补帧。挂上只说明滤镜收下了,跑不动由核心层事件回来说(见 <see cref="OnInterpEvent"/>)。</summary>
@@ -3737,21 +3759,10 @@ public sealed class PlayerPage : UserControl
         switch (name)
         {
             case "player.interpInstall":
-                var done = data.TryGetProperty("done", out var d) ? d.GetInt64() : 0;
-                var total = data.TryGetProperty("total", out var t) ? t.GetInt64() : 0;
-                var step = data.TryGetProperty("step", out var sp) ? sp.GetInt32() : 0;
-                var steps = data.TryGetProperty("steps", out var sps) ? sps.GetInt32() : 0;
-                var prepare = Str(data, "stage") == "prepare";
-                var extract = Str(data, "stage") == "extract";
+                var text = InstallProgressText(data);
                 Dispatcher.UIThread.Post(() =>
                 {
-                    if (_interpProgress is null) return;
-                    if (extract)
-                        _interpProgress.Text = "下载完成,正在解压(一两分钟)";
-                    else if (prepare)
-                        _interpProgress.Text = $"正在为显卡准备加速引擎({step}/{steps},一个约一分钟,期间可以照常看片)";
-                    else if (total > 0)
-                        _interpProgress.Text = $"正在下载 {done * 100 / total}%({done >> 20} / {total >> 20} MB)";
+                    if (_interpProgress is not null && text is not null) _interpProgress.Text = text;
                 });
                 break;
             case "player.interpReverted":

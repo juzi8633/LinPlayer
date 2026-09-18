@@ -42,17 +42,19 @@ if 0 < fps <= 32:
     # 同一段 HEVC 10bit 动画,RIFE 2 倍 2 秒丢 37 帧;锁 8 位后 8 秒丢 0 帧(mpv.exe 不渲染时两者都不丢)
     clip = FMT_CTRL(clip, h_max=h_max, fmt_pix=1)
     if backend == "trt":
-        # TensorRT 引擎按输入尺寸建,DRBA 还是静态形状 —— 每换一种分辨率重建一次,
-        # 一次 40~55 秒,期间画面卡住。一律补黑边到 1920×1080 再补帧,补完裁回去:
-        # 全程一个引擎,装包后预先建好(core/player 的 warmTRT),播放时不再建。
+        # TensorRT 引擎按输入尺寸建,每换一种尺寸重建一次(40~55 秒,画面卡住)。
+        # 只建 1080p / 720p 两档,装包后预建好(core/player 的 warmTRT);补黑边凑到装得下的最小一档,补完裁回去。
+        # 720p 的片按 1080p 算要多花 2.3 倍算力(RIFE v4.26 实测 213 对 92 帧/秒),所以不能只留一档。
         # TRT 的 gpu 是 CUDA 序号(只数 N 卡),单卡机器恒为 0,和 DXGI 序号无关
-        W, H = 1920, 1080
+        W, H = (1280, 720) if clip.height <= 720 else (1920, 1080)
         if clip.width > W:
             clip = core.resize.Bicubic(clip, width=W, height=(clip.height * W // clip.width) & ~1)
         w, h = clip.width, clip.height
         clip = core.std.AddBorders(clip, right=W - w, bottom=H - h)
         if algo == "rife":
-            clip = RIFE_NV(clip, model=46, turbo=2, fps_in=fps, fps_num=multi, fps_den=1, sc_mode=1, gpu=0, gpu_t=2)
+            # v4.26 而不是 v4.6:v4.6 的 onnx 在这版 TensorRT 下补出来是满屏黑线(fp32 也一样、
+            # 上游完整包原样跑也一样,RTX 5060 实测);v4.26 正常。DirectML 那条仍用 v4.6,它没问题
+            clip = RIFE_NV(clip, model=426, turbo=2, fps_in=fps, fps_num=multi, fps_den=1, sc_mode=1, gpu=0, gpu_t=2)
         else:
             clip = DRBA_NV(clip, model=2, turbo=2, fps_in=fps, fps_num=multi, fps_den=1, sc_mode=0, gpu=0, gpu_t=2)
         if (w, h) != (W, H):

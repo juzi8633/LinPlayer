@@ -22,6 +22,6 @@ func TRTInstalled() bool                      { return false }
 func InstallTRT(context.Context, Progress, func(string)) error {
 	return errors.New("这个平台没有 N 卡加速包")
 }
-func EngineBuilt(string) bool { return false }
+func EngineCount(string) int  { return 0 }
 func EnginesBuilt() bool      { return false }
 func MarkEnginesReady() error { return nil }

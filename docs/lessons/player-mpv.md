@@ -2049,22 +2049,77 @@ A 卡那些直接默认用」;随后自己重打的小包发不上去,又定「�
 - **上传走不通**:1.3GB 的七个包,本机并行传全部 rc=1、CI 上 `gh release create` 第一个文件就 HTTP 500
   「Error saving asset」,重试五次仍然 500。已经上传成功的都 ≤63MB。**所以不再自己托管大包**:
   播放器直接下上游 hooke007/mpv_PlayKit 的 vsNV 分卷(2.9GB,16 段并发约 10MB/s),按区段校验 sha256,
-  用**系统自带的 tar.exe**(Windows 10 1803 起,libarchive 能读 7z)只解需要的几个文件(实测 104 秒),解完删包。
+  用**系统自带的 tar.exe**(Windows 10 1803 起,libarchive 能读 7z)只解 TRT 相关的目录(实测 100 秒),解完删包。
   下过一次的包校验能对上就不再重下(上次解压被打断时用得上)。
-- **只要 6 个文件**:vstrt + cudart + nvinfer + nvinfer_plugin + nvonnxparser + trtexec,
-  再加一份按显卡架构的 `nvinfer_builder_resource_smXX`(7.5=RTX20,8.6=RTX30,8.9=RTX40,12.0=RTX50)。
-  少 nvinfer_plugin 的话 trtexec 报「Unable to open library」;cuBLAS / cuDNN / cuFFT 用不着
-  (k7sfunc 调 TRT 时 use_cublas / use_cudnn 都是 False)。TensorRT 10 不支持 Pascal(GTX 10 系)。
+- **整目录解,不按文件挑**(用户 2026-09-18 定):`vstrt.dll` + `vsmlrt-cuda/` + `models/rife_v2/` + `models/drba/`,
+  解出来 2.3GB。只剔别代显卡的 `nvinfer_builder_resource_smXX`(合计 1.8GB;7.5=RTX20,8.6=RTX30,8.9=RTX40,12.0=RTX50)。
+  挑文件那版少过 nvinfer_plugin(trtexec 报「Unable to open library」)。TensorRT 10 不支持 Pascal(GTX 10 系)。
+  ☠ bsdtar 里 **exclude 压过 include**:「全排除 builder_resource 再 --include 本机那份」一份都不解,只能按名字逐个 exclude
+  (`core/interp` 的 `TestExtract7z真包` 拿真包钉着,`LP_VSNV=包路径` 才跑)。
 - **引擎必须在用户机器上建**(和显卡、驱动绑定),一次 40~55 秒。**装完就预建**:
-  起一个 vo=null 的 mpv 实例喂 `av://lavfi:color=...s=1920x1080`,建出来的引擎和播放时要的是同一个。
-  为此脚本对 TRT **一律补黑边到 1920×1080** 再补帧、补完裁回去 —— DRBA 的 TRT 引擎是静态形状,
-  不统一尺寸的话每换一种分辨率就现建 45 秒,而且会被丢帧闸当成「没生效」撤掉。720p 片实测复用同一个引擎。
+  起一个 vo=null 的 mpv 实例,每个算法喂 1920×1080 和 1280×720 两段 lavfi 灰屏,建出来的引擎和播放时要的是同一个
+  (实测文件名一致:1080 档 DRBA a32e9cda / RIFE 86409c7,720 档 DRBA 64304a09 / RIFE ce7642cb)。
+  脚本对 TRT **补黑边凑到装得下的最小一档**(高 ≤720 走 720,其余 1080)再补帧、补完裁回去 ——
+  引擎是静态形状,不凑档的话每换一种分辨率就现建 45 秒,还会被丢帧闸当成「没生效」撤掉。
+  「引擎建好没」要两档都在(`EnginesBuilt` 数 `.engine` 个数),只建过 1080 档的老安装会被认成没好、只补建缺的。
+- **补帧组件在设置页「播放 → 补帧组件」就能装**(用户 2026-09-18:「准备工作要提前做好,不应该让用户观看的时候才做」)。
+  和播放页弹层走同一条 `player.interpInstall`,核心层一次只让装一个。实测解压 104 秒 + 预建 4 个引擎 101~105 秒。
+- 换了解包内容就把 `trtPack` 加一:标记文件名带它,老版本装的自动算没装、重下重建(旧引擎一并删,
+  不删的话「引擎建好没」只看目录里有没有 `.engine`,会被旧的骗过去)。
 
-| RTX 5060 Laptop,真实 HEVC 10bit 1080p 动画,LinPlayer 里量 8 秒 | 通用版(DirectML) | N 卡加速(TensorRT) |
-|---|---|---|
-| RIFE 补 1 倍 | 4% 丢帧(降到 900p 才跑得动) | 1080p 原画,丢 0 帧 |
-| DRBA 补 1 倍 | 丢 0 帧 | 丢 0 帧 |
-| RIFE 补 2 倍(24→72) | 没测(余量不够) | 丢 0 帧 |
+#### RIFE 在 TensorRT 下只能用 v4.26(2026-09-18)
+
+用户:「N 卡特供会出现一堆黑线,普通版没问题」,并建议「直接用完整包,不然容易出问题」。
+**整包不是原因**:上游完整包原样跑(自己的 VSPipe、自己的全部 DLL)补出来一模一样的满屏黑线。逐项排除:
+
+| 试过 | 结果 |
+|---|---|
+| 裁剪包 vs 上游完整包 | 都是黑线(Python 代码、模型、vstrt.dll 逐字节相同,差的只是用不上的 DLL) |
+| 720p 补边 vs 1080p 原生 | 都是黑线(不是补黑边的锅) |
+| turbo=2(`rife_v2` 模型)vs turbo=1(`rife` 模型) | 都是黑线 |
+| fp16 vs fp32 | 都是黑线 |
+| 模型 v4.6 / v4.25_lite / **v4.26** | 黑线 / 黑线 / **正常** |
+| DRBA(TRT)、RIFE v4.6(DirectML) | 正常 |
+
+上游 k7sfunc 的 `RIFE_NV` 默认就是 v4.6 —— 在 RTX 5060(sm120)+ 这版 TensorRT 10 上它是坏的。
+**之前表里「RIFE 丢 0 帧」量的是垃圾画面**:速度是真的,画面从来没对过。所以补了画面门禁
+`scripts/check-trt-interp.sh <运行时目录> <片子> [rife|drba]`:补出来的帧离前后原帧的 PSNR
+要不低于「两原帧互比 − 3dB」(封顶 30)。v4.6 9~16 dB 判坏,v4.26 22~47 dB 判好。
+DRBA 会重排时间轴、输出帧贴着一侧,只要求离一侧过线。**换 TRT 的 RIFE 模型之前先跑它。**
+
+#### TRT 的高度贴着引擎档走,720 档快 2.3 倍(2026-09-18)
+
+原来只有一个 1080 引擎,720p 的片补黑边到 1080 按 1080 的价钱算;而档位表的高度是按 DirectML 定的
+(RIFE 2 倍降 900、3 倍 720、4 倍 540)—— 在 TRT 下全被补回 1080:**2 倍白丢了画质,3 倍白花了算力**。
+RIFE v4.26 引擎每秒推理次数:1080 档 46 次、720 档 106 次;24 帧片补 1/2/3 倍要 24/48/72 次。
+所以 TRT 下另有一张高度表 `trtHeight`(2 倍 1080、3/4 倍 720),`TestTRT下高度贴着引擎档` 钉着。
+
+| RTX 5060 Laptop,动画,VSPipe 真解码 + interp.vpy | 之前 | 之后 | 实时要求 |
+|---|---|---|---|
+| RIFE 补 1 倍 | 94.7(900p) | 96(**1080p 原画**) | 48 |
+| RIFE 补 2 倍(1080p 或 720p 片) | 69.4 ✗ | **163** | 72 |
+| RIFE 补 3 倍 | —(540p) | 144(720p) | 96 |
+| DRBA 补 1 倍(1080p) | 144 | 144(没变,本来就是 1080 档) | 48 |
+| DRBA 补 2 倍(1080p / 720p 片) | — | 251 / 264 | 72 |
+
+画面门禁(`LP_H=720` 走 720 档)RIFE、DRBA × 720p 片 / 1080p 片都过。
+
+#### 调研过、实测不值得做的(2026-09-18)
+
+派了三个 agent 查 RIFE 原项目(Practical-RIFE / vs-mlrt / SVP / 学术新模型),结论逐条在本机量过:
+
+| 建议 | 实测 / 核对 |
+|---|---|
+| 换 v2 实现(说能快 43%)、开 CUDA Graph | **早就开着**:k7sfunc `RIFE_NV` 的 turbo=2 就是 `_implementation=2` + `use_cuda_graph=True` |
+| `builder_optimization_level=5` | 91.6 对 91.7 fps,没差别,建引擎还更慢 |
+| `num_streams` 2 → 3 | 91.9 对 91.7,没差别(1 条流掉到 68) |
+| RIFE `scale=0.5`(光流在半分辨率上算) | vs-mlrt 对 v4.7 以后直接拒绝(`vsmlrt.py` 里 `>= (4, 7) and scale != 1.0`) |
+| v4.26 heavy 换画质 | 抽掉一帧让模型补回来比真帧:1080p 动画 27.60 对 v4.26 的 27.59 dB,720p 27.40 对 27.40 —— **一样**,还慢 15~20% |
+| v4.25 lite 提速 | TRT 下黑线(见上) |
+| EMA-VFI / IFRNet / VFIMamba 等学术新模型 | 论文数字 1~10 fps(480p),离实时差一个数量级 |
+
+补帧质量的比法(`build/trt/qual.vpy` 那套,要时重写):源片隔帧抽掉,让模型把抽掉的补回来,和真帧比 PSNR,
+只算「真帧和前一帧不一样」的帧(动画一拍二,不滤的话谁都满分)。v4.6 在 TRT 下 19 dB,比「直接重复前一帧」的 26 还差 —— 又一次证实黑线。
 
 ### 三个排查坑
 
