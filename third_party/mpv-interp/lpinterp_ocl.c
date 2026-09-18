@@ -33,13 +33,15 @@ struct lpi_ctx {
     cl_context ctx;
     cl_command_queue q;
     cl_program prog;
-    cl_kernel k_search, k_adjust, k_blur, k_warp;
+    cl_kernel k_search, k_adjust, k_blur, k_occ, k_occ_post, k_warp;
     cl_mem frame[2];  // frame[cur] 是 next,另一个是 prev
     int cur;
     int pushed;
-    cl_mem out, offs, blurred, lowest;
+    cl_mem out, offs, blurred, lowest, occ, occ2;
     int stride, width, height;
     int low_w, low_h, res_shift, radius;
+    int use_occ;     // 遮挡掩膜。LPI_OCC=0 关掉做对照(bench 用)
+    int min_win;     // 光流最细算到多大的窗口。和 radius 一起构成自适应的两级旋钮
     char device[128];
 };
 
@@ -99,11 +101,12 @@ void lpi_destroy(struct lpi_ctx *c) {
     struct lpi_cl *cl = &c->cl;
     if (c->q)
         cl->Finish(c->q);
-    cl_mem mems[] = {c->frame[0], c->frame[1], c->out, c->offs, c->blurred, c->lowest};
+    cl_mem mems[] = {c->frame[0], c->frame[1], c->out, c->offs, c->blurred, c->lowest,
+                     c->occ, c->occ2};
     for (size_t i = 0; i < sizeof(mems) / sizeof(mems[0]); i++)
         if (mems[i])
             cl->ReleaseMemObject(mems[i]);
-    cl_kernel ks[] = {c->k_search, c->k_adjust, c->k_blur, c->k_warp};
+    cl_kernel ks[] = {c->k_search, c->k_adjust, c->k_blur, c->k_occ, c->k_occ_post, c->k_warp};
     for (size_t i = 0; i < sizeof(ks) / sizeof(ks[0]); i++)
         if (ks[i])
             cl->ReleaseKernel(ks[i]);
@@ -121,6 +124,10 @@ void lpi_set_radius(struct lpi_ctx *c, int r) {
     c->radius = r < LPI_RADIUS_MIN ? LPI_RADIUS_MIN : r > LPI_RADIUS_MAX ? LPI_RADIUS_MAX : r;
 }
 int lpi_radius(struct lpi_ctx *c) { return c->radius; }
+void lpi_set_min_win(struct lpi_ctx *c, int w) {
+    c->min_win = w < LPI_MIN_WIN_BEST ? LPI_MIN_WIN_BEST : w > LPI_MIN_WIN_WORST ? LPI_MIN_WIN_WORST : w;
+}
+int lpi_min_win(struct lpi_ctx *c) { return c->min_win; }
 int lpi_finish(struct lpi_ctx *c) { return c->cl.Finish(c->q); }
 
 #define FAIL(...) do { snprintf(err, errlen, __VA_ARGS__); lpi_destroy(c); return NULL; } while (0)
@@ -145,6 +152,9 @@ struct lpi_ctx *lpi_create(int stride, int width, int height, char *err, size_t 
     c->width = width;
     c->height = height;
     c->radius = LPI_RADIUS_MIN;
+    { const char *o = getenv("LPI_OCC"); c->use_occ = (o && o[0] == '0') ? 0 : 1; }
+    { const char *v = getenv("LPI_RADIUS"); if (v) c->radius = atoi(v); }
+    { const char *v = getenv("LPI_MINWIN"); c->min_win = v ? atoi(v) : LPI_MIN_WIN_DEF; }
     while ((height >> c->res_shift) > LPI_MAX_CALC_HEIGHT)
         c->res_shift++;
     c->low_w = (stride + (1 << c->res_shift) - 1) >> c->res_shift;
@@ -174,6 +184,8 @@ struct lpi_ctx *lpi_create(int stride, int width, int height, char *err, size_t 
     KERNEL(k_search, "lpi_search");
     KERNEL(k_adjust, "lpi_adjust");
     KERNEL(k_blur, "lpi_blur");
+    KERNEL(k_occ, "lpi_occ");
+    KERNEL(k_occ_post, "lpi_occ_post");
     KERNEL(k_warp, "lpi_warp");
 #undef KERNEL
 
@@ -188,6 +200,8 @@ struct lpi_ctx *lpi_create(int stride, int width, int height, char *err, size_t 
     BUF(offs, CL_MEM_READ_WRITE, 2 * low_px * sizeof(short));
     BUF(blurred, CL_MEM_READ_WRITE, 2 * low_px * sizeof(short));
     BUF(lowest, CL_MEM_READ_WRITE, low_px);
+    BUF(occ, CL_MEM_READ_WRITE, low_px);
+    BUF(occ2, CL_MEM_READ_WRITE, low_px);
 #undef BUF
     return c;
 }
@@ -218,14 +232,16 @@ int lpi_flow(struct lpi_ctx *c) {
     while (window * 2 <= max_dim)
         window *= 2;
     size_t g2[2] = {c->low_w, c->low_h};
-    for (int iter = 0; window >= 2; iter++, window /= 2) {
+    // 画面太小时起始窗口可能已经比 min_win 还小 —— 那也要跑一轮,否则流场恒为零
+    const int stop = window < c->min_win ? window : c->min_win;
+    for (; window >= stop; window /= 2) {
         size_t gw[2] = {(c->low_w + window - 1) / window, (c->low_h + window - 1) / window};
         for (int step = 0; step < 2; step++) {
             cl_kernel k = c->k_search;
             ARG(k, 0, c->lowest); ARG(k, 1, prev); ARG(k, 2, next); ARG(k, 3, c->offs);
             ARG(k, 4, c->height); ARG(k, 5, c->stride); ARG(k, 6, c->low_h); ARG(k, 7, c->low_w);
-            ARG(k, 8, window); ARG(k, 9, c->radius); ARG(k, 10, c->res_shift); ARG(k, 11, iter);
-            ARG(k, 12, step);
+            ARG(k, 8, window); ARG(k, 9, c->radius); ARG(k, 10, c->res_shift);
+            ARG(k, 11, step);
             e |= cl->EnqueueNDRangeKernel(c->q, k, 2, NULL, gw, NULL, 0, NULL, NULL);
 
             k = c->k_adjust;
@@ -234,11 +250,57 @@ int lpi_flow(struct lpi_ctx *c) {
             e |= cl->EnqueueNDRangeKernel(c->q, k, 2, NULL, g2, NULL, 0, NULL, NULL);
         }
     }
-    cl_kernel k = c->k_blur;
     size_t gb[3] = {c->low_w, c->low_h, 2};
+    cl_kernel k = c->k_blur;
     ARG(k, 0, c->offs); ARG(k, 1, c->blurred); ARG(k, 2, c->low_h); ARG(k, 3, c->low_w);
     e |= cl->EnqueueNDRangeKernel(c->q, k, 3, NULL, gb, NULL, 0, NULL, NULL);
+
+    // 遮挡掩膜。两个 kernel 都只跑低分辨率网格(1080p 时 480×270),相对光流那几轮可以忽略。
+    if (c->use_occ) {
+        k = c->k_occ;
+        ARG(k, 0, c->occ); ARG(k, 1, prev); ARG(k, 2, next); ARG(k, 3, c->blurred);
+        ARG(k, 4, c->height); ARG(k, 5, c->stride); ARG(k, 6, c->low_h); ARG(k, 7, c->low_w);
+        ARG(k, 8, c->res_shift);
+        e |= cl->EnqueueNDRangeKernel(c->q, k, 2, NULL, g2, NULL, 0, NULL, NULL);
+        k = c->k_occ_post;
+        ARG(k, 0, c->occ); ARG(k, 1, c->occ2); ARG(k, 2, c->low_h); ARG(k, 3, c->low_w);
+        e |= cl->EnqueueNDRangeKernel(c->q, k, 2, NULL, g2, NULL, 0, NULL, NULL);
+    } else {
+        const unsigned char z = 0;
+        e |= cl->EnqueueFillBuffer(c->q, c->occ2, &z, 1, 0, (size_t)c->low_w * c->low_h, 0, NULL, NULL);
+    }
     return e;
+}
+
+void lpi_flow_stats(struct lpi_ctx *c, struct lpi_stats *st) {
+    const size_t low_px = (size_t)c->low_w * c->low_h;
+    short *v = malloc(2 * low_px * sizeof(short));
+    unsigned char *m = malloc(low_px);
+    if (!v || !m) {
+        free(v);
+        free(m);
+        return;
+    }
+    c->cl.EnqueueReadBuffer(c->q, c->blurred, CL_TRUE, 0, 2 * low_px * sizeof(short), v, 0, NULL, NULL);
+    double sum = 0;
+    int mx = 0;
+    for (size_t i = 0; i < 2 * low_px; i++) {
+        const int a = v[i] < 0 ? -v[i] : v[i];
+        sum += a;
+        if (a > mx)
+            mx = a;
+    }
+    c->cl.EnqueueReadBuffer(c->q, c->occ2, CL_TRUE, 0, low_px, m, 0, NULL, NULL);
+    long hi = 0;
+    for (size_t i = 0; i < low_px; i++)
+        if (m[i] > 128)
+            hi++;
+    st->cells = (int)low_px;
+    st->mean_abs = sum / (2 * low_px);
+    st->max_abs = mx;
+    st->occ_pct = hi * 100.0 / low_px;
+    free(v);
+    free(m);
 }
 
 int lpi_warp(struct lpi_ctx *c, float t, uint8_t *y, uint8_t *uv) {
@@ -246,11 +308,11 @@ int lpi_warp(struct lpi_ctx *c, float t, uint8_t *y, uint8_t *uv) {
     cl_int e = 0;
     cl_mem prev = c->frame[c->cur ^ 1], next = c->frame[c->cur];
     cl_kernel k = c->k_warp;
-    ARG(k, 0, prev); ARG(k, 1, next); ARG(k, 2, c->blurred); ARG(k, 3, c->out); ARG(k, 4, t);
-    ARG(k, 5, c->low_h); ARG(k, 6, c->low_w); ARG(k, 7, c->height); ARG(k, 8, c->stride);
-    ARG(k, 9, c->width); ARG(k, 10, c->res_shift);
+    ARG(k, 0, prev); ARG(k, 1, next); ARG(k, 2, c->blurred); ARG(k, 3, c->occ2);
+    ARG(k, 4, c->out); ARG(k, 5, t); ARG(k, 6, c->low_h); ARG(k, 7, c->low_w);
+    ARG(k, 8, c->height); ARG(k, 9, c->stride); ARG(k, 10, c->width); ARG(k, 11, c->res_shift);
     for (int cz = 0; cz < 2; cz++) {
-        e |= cl->SetKernelArg(k, 11, sizeof(int), &cz);
+        e |= cl->SetKernelArg(k, 12, sizeof(int), &cz);
         size_t g[2] = {c->width, c->height >> cz};
         e |= cl->EnqueueNDRangeKernel(c->q, k, 2, NULL, g, NULL, 0, NULL, NULL);
     }

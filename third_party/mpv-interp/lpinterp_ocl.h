@@ -22,7 +22,27 @@ int lpi_warp(struct lpi_ctx *c, float t, uint8_t *y, uint8_t *uv);
 // 搜索半径:越大越准越慢。滤镜按实测耗时在 [LPI_RADIUS_MIN, LPI_RADIUS_MAX] 里调。
 #define LPI_RADIUS_MIN 5
 #define LPI_RADIUS_MAX 16
+
+// 光流最细算到多大的窗口(低分辨率格)。**这是比搜索半径更粗的那把旋钮**:
+// 实测最后几级窗口(W=8→2)占 60% 算力却几乎不改善结果 —— 流场随后还要过 3×3 中值,
+// 比格子更细的运动本来就被抹掉了。跑不动时先把它调粗,别先砍搜索半径
+// (实测 R=8/W=16 用 7.1ms 就压过 R=5/W=2 的 11.2ms)。
+#define LPI_MIN_WIN_BEST 8
+#define LPI_MIN_WIN_DEF  16
+#define LPI_MIN_WIN_WORST 32
 void lpi_set_radius(struct lpi_ctx *c, int radius);
 int lpi_radius(struct lpi_ctx *c);
+void lpi_set_min_win(struct lpi_ctx *c, int w);
+int lpi_min_win(struct lpi_ctx *c);
+
+// 一帧光流的统计量。bench 拿它量算法好坏 —— occ_pct(被判成遮挡的格子占比)
+// 是比 PSNR 更好用的质量代理:流场越可信,它越低。
+struct lpi_stats {
+    int cells;        // 低分辨率网格的格子数
+    double mean_abs;  // |ox|/|oy| 的平均(全分辨率像素)
+    int max_abs;      // 最大位移
+    double occ_pct;   // 遮挡掩膜 >128 的格子占比
+};
+void lpi_flow_stats(struct lpi_ctx *c, struct lpi_stats *st);
 // 等队列清空。只给基准拆分计时用 —— flow 是异步排队的,不等的话时间全算到 warp 头上。
 int lpi_finish(struct lpi_ctx *c);

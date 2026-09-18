@@ -125,9 +125,15 @@ static bool warp_into(struct priv *p, float t, struct mp_image *out)
 static void adapt(struct mp_filter *f, double spent, double budget)
 {
     struct priv *p = f->priv;
-    int r = lpi_radius(p->ocl);
+    const int r = lpi_radius(p->ocl), w = lpi_min_win(p->ocl);
     if (spent > budget * 0.8) {
-        if (r > LPI_RADIUS_MIN) {
+        // 降级顺序按实测的代价/质量曲线定:**先把窗口调粗,后砍搜索半径**。
+        // R=8/W=16 只要 7.1ms,质量却全面压过 R=5/W=2 的 11.2ms(Intel UHD 1080p)——
+        // 反过来先砍半径就是拿质量换了个更贵的档。
+        if (w < LPI_MIN_WIN_WORST) {
+            lpi_set_min_win(p->ocl, w * 2);
+            p->slow_runs = 0;
+        } else if (r > LPI_RADIUS_MIN) {
             lpi_set_radius(p->ocl, r - 1);
             p->slow_runs = 0;
         } else if (++p->slow_runs >= 24) {
@@ -137,8 +143,12 @@ static void adapt(struct mp_filter *f, double spent, double budget)
         }
     } else {
         p->slow_runs = 0;
-        if (spent < budget * 0.5 && r < LPI_RADIUS_MAX)
-            lpi_set_radius(p->ocl, r + 1);
+        if (spent < budget * 0.5) {
+            if (r < LPI_RADIUS_MAX)
+                lpi_set_radius(p->ocl, r + 1);
+            else if (w > LPI_MIN_WIN_BEST)
+                lpi_set_min_win(p->ocl, w / 2);
+        }
     }
 }
 

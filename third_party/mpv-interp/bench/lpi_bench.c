@@ -101,6 +101,9 @@ int main(int argc, char **argv) {
             double a = now();
             if (lpi_flow(c)) { printf("flow 失败\n"); return 1; }
             lpi_finish(c);
+            { struct lpi_stats st; lpi_flow_stats(c, &st);
+              fprintf(stderr, "  光流场 平均|v|=%.2f 最大=%d 遮挡掩膜 %.1f%%\n",
+                      st.mean_abs, st.max_abs, st.occ_pct); }
             double b = now();
             if (lpi_warp(c, 0.5f, oy, ouv)) { printf("warp 失败\n"); return 1; }
             double d = now();
