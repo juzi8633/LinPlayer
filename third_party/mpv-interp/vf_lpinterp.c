@@ -170,6 +170,30 @@ static void interpolate(struct mp_filter *f, struct mp_image *cur)
     if (!(dt > 0 && dt < 2.5 / fps) || p->broken)
         return;
 
+    // 一次 CPU 扫描(9216 个取样点,微秒级)同时回答两个问题,两个都能省掉整个光流。
+    struct lpi_pair st;
+    lpi_pair_stats(prev->planes[0], prev->stride[0], cur->planes[0], cur->stride[0],
+                   prev->w, prev->h, &st);
+
+    // 切镜:上面那条 dt 判据只挡得住 seek 和可变帧率的长间隔,挡不住正常帧距的硬切。
+    // 硬切的两帧内容毫不相干,光流会把它们拉成一团烂泥。
+    if (lpi_is_scene_cut(&st))
+        return;
+
+    // 按住的同一张原画(动画的一拍二 / 一拍三)。中间帧就是 prev 本身 ——
+    // 跑光流只会算出同一张图。这里只加引用计数,不拷像素。
+    if (lpi_is_duplicate(&st)) {
+        for (int k = 1; k < multi; k++) {
+            struct mp_image *out = mp_image_new_ref(prev);
+            if (!out)
+                break;
+            out->pts = prev->pts + dt * k / multi;
+            out->nominal_fps = fps * multi;
+            p->queue[p->qn++] = out;
+        }
+        return;
+    }
+
     double start = mp_time_sec();
     if (lpi_flow(p->ocl)) {
         give_up(f, "OpenCL 光流计算失败");

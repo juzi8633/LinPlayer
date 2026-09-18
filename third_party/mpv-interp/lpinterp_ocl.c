@@ -119,6 +119,66 @@ void lpi_destroy(struct lpi_ctx *c) {
     free(c);
 }
 
+// 阈值全部按真实番剧实测标定(2396 个相邻帧对 + 240 帧全分辨率复核,
+// 数字和标定过程见 docs/lessons/player-mpv.md「切镜检测与按住帧跳过」):
+//   真实快速运动:整体差 24~35,超标块 36%~59%
+//   真正的切镜:  整体差 76~165,超标块 84%~100%
+// ★ 两个条件都要满足才算切镜 —— MVTools 默认的 thSCD2=51% 在动画上会把快速运动误杀。
+#define LPI_SCD_BLOCK_TH 25
+#define LPI_SCD_HI_PCT   70
+#define LPI_SCD_MEAN_TH  50
+// ★ 判「按住」必须同时看整体差**和**最大块差:只看整体差的话,
+//   静止背景上一个小物体在动会被当成没动。实测放宽 max_block 到 6 只多跳过 0.8%,
+//   却把最差那一对从 47.1dB 拉到 34.2dB —— 不值。
+#define LPI_DUP_MEAN_TH  1
+#define LPI_DUP_BLOCK_TH 4
+
+#define LPI_SCD_BX 16
+#define LPI_SCD_BY 9
+
+void lpi_pair_stats(const unsigned char *a, int stride_a, const unsigned char *b, int stride_b,
+                    int w, int h, struct lpi_pair *out) {
+    const int bw = w / LPI_SCD_BX, bh = h / LPI_SCD_BY;
+    out->mean = out->max_block = out->hi_pct = 0;
+    if (bw < 8 || bh < 8) {
+        out->mean = LPI_DUP_MEAN_TH + 1;  // 画面太小分不出块:当作有运动,照常补
+        return;
+    }
+    long total = 0;
+    int hi = 0;
+    for (int by = 0; by < LPI_SCD_BY; by++) {
+        for (int bx = 0; bx < LPI_SCD_BX; bx++) {
+            int s = 0;
+            for (int j = 0; j < 8; j++) {
+                const int y = by * bh + j * bh / 8;
+                const unsigned char *pa = a + (ptrdiff_t)y * stride_a;
+                const unsigned char *pb = b + (ptrdiff_t)y * stride_b;
+                for (int i = 0; i < 8; i++) {
+                    const int x = bx * bw + i * bw / 8;
+                    const int d = pa[x] - pb[x];
+                    s += d < 0 ? -d : d;
+                }
+            }
+            s /= 64;
+            total += s;
+            if (s > out->max_block)
+                out->max_block = s;
+            if (s > LPI_SCD_BLOCK_TH)
+                hi++;
+        }
+    }
+    out->mean = (int)(total / (LPI_SCD_BX * LPI_SCD_BY));
+    out->hi_pct = hi * 100 / (LPI_SCD_BX * LPI_SCD_BY);
+}
+
+bool lpi_is_scene_cut(const struct lpi_pair *st) {
+    return st->hi_pct >= LPI_SCD_HI_PCT && st->mean >= LPI_SCD_MEAN_TH;
+}
+
+bool lpi_is_duplicate(const struct lpi_pair *st) {
+    return st->mean <= LPI_DUP_MEAN_TH && st->max_block <= LPI_DUP_BLOCK_TH;
+}
+
 const char *lpi_device_name(struct lpi_ctx *c) { return c->device; }
 void lpi_set_radius(struct lpi_ctx *c, int r) {
     c->radius = r < LPI_RADIUS_MIN ? LPI_RADIUS_MIN : r > LPI_RADIUS_MAX ? LPI_RADIUS_MAX : r;

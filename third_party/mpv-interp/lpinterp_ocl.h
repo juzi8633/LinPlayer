@@ -1,6 +1,7 @@
 // 补帧的 OpenCL 计算核:光流 + 按 t 混合。**不依赖 mpv**,PC 上能单独编译跑基准(bench/)。
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -32,6 +33,21 @@ int lpi_warp(struct lpi_ctx *c, float t, uint8_t *y, uint8_t *uv);
 #define LPI_MIN_WIN_WORST 32
 void lpi_set_radius(struct lpi_ctx *c, int radius);
 int lpi_radius(struct lpi_ctx *c);
+// 一对相邻源帧的粗略统计。16×9 个块、每块固定取 8×8 个点 —— 和分辨率无关,
+// 一共 9216 次取样,微秒级。放在这一层是因为它不依赖 mpv,可以单独测(bench/lpi_pair_test.c)。
+struct lpi_pair {
+    int mean;       // 整帧平均绝对差
+    int max_block;  // 最大的块平均差
+    int hi_pct;     // 块平均差超标的块占比
+};
+void lpi_pair_stats(const unsigned char *a, int stride_a, const unsigned char *b, int stride_b,
+                    int w, int h, struct lpi_pair *out);
+
+// 硬切:两帧内容毫不相干,光流会把它们拉成一团烂泥。不补,顺带省掉整个光流。
+bool lpi_is_scene_cut(const struct lpi_pair *st);
+// 按住的同一张原画(动画一拍二/一拍三)。中间帧就是前一帧本身,跑光流纯属浪费。
+bool lpi_is_duplicate(const struct lpi_pair *st);
+
 void lpi_set_min_win(struct lpi_ctx *c, int w);
 int lpi_min_win(struct lpi_ctx *c);
 
