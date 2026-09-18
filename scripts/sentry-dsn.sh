@@ -1,11 +1,10 @@
 # 由出包脚本 source:把崩溃上报用的 DSN 放进 $SENTRY_DSN,给 dotnet publish / gradle 读。
 #
-# DSN 不进仓库(全局红线:域名 + key 都不许出现在提交里),也不单独配一个 secret ——
-# CI 里已有的 SENTRY_AUTH_TOKEN 能从 Sentry API 现查。没 token(本地 / fork)就不带 DSN,
+# DSN 不进仓库(全局红线:域名 + key 都不许出现在提交里)。优先用 SENTRY_DSN secret,
+# 没配就拿 SENTRY_AUTH_TOKEN 从 Sentry API 现查(要 project:read)。都没有(本地 / fork)就不带 DSN,
 # 程序里 DSN 为空 = SDK 整个不启用,开发机的崩溃不会灌进线上的 issue 列表。
 #
-# ★ 有 token 却查不到就**构建失败**:否则发行包静默丢掉崩溃上报,而 CI 全绿
-#   (memory「CI 漏传编译期凭据」同一类事故)。
+# ★ 有 token 却查不到:挂 ::warning:: 出不上报的包(不卡发布),见下面 case
 SENTRY_ORG="${SENTRY_ORG:-linplayer}"
 # 历史原因叫 flutter(移动端先建的)。PC 与安卓都进这一个项目,靠 release 前缀区分
 SENTRY_PROJECT="${SENTRY_PROJECT:-flutter}"
@@ -18,8 +17,11 @@ if [ -z "${SENTRY_DSN:-}" ] && [ -n "${SENTRY_AUTH_TOKEN:-}" ]; then
     | grep -o '"public": *"[^"]*"' | head -1 | cut -d'"' -f4)" || SENTRY_DSN=""
   case "$SENTRY_DSN" in
     http*) ;;
-    *) echo "有 SENTRY_AUTH_TOKEN 却查不到 $SENTRY_ORG/$SENTRY_PROJECT 的 DSN(token 缺 project:read?)" >&2
-       exit 1 ;;
+    # 2026-09-18 实测:只能传符号的 token 在这里吃 403。不拿它卡死整条发布,
+    # 但要在 Actions 页面挂一条 warning —— 漏配得看得见
+    *) msg="有 SENTRY_AUTH_TOKEN 却查不到 $SENTRY_ORG/$SENTRY_PROJECT 的 DSN(token 缺 project:read,或另配 SENTRY_DSN secret),本包不带崩溃上报"
+       if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::warning::$msg"; else echo "$msg" >&2; fi
+       SENTRY_DSN="" ;;
   esac
   [ -n "${GITHUB_ACTIONS:-}" ] && echo "::add-mask::$SENTRY_DSN"
 fi

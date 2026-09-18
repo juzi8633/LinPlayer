@@ -940,7 +940,8 @@ GL 崩在驱动自己家里,`catch` 接不住,表现正好是「一个字不留�
 - **DSN 不入库**:Rust 栈那版把 DSN 写死在 `telemetry.rs` / `telemetry.ts` 里,违反提交红线。
   现在由 `scripts/sentry-dsn.sh` 在出包时拿 `SENTRY_AUTH_TOKEN` 调
   `GET /api/0/projects/<org>/<project>/keys/` 现查,经环境变量进 csproj 的
-  `AssemblyMetadata` / gradle 的 `buildConfigField`。**查不到就出包失败**,不静默出一个不上报的包。
+  `AssemblyMetadata` / gradle 的 `buildConfigField`。**实测这个 token 在 keys 接口吃 403**(只有传符号的权限),
+  所以查不到时挂 `::warning::` 照出包,不卡发布;补 `project:read` 或另配 `SENTRY_DSN` secret(优先用它)才真启用。
   本地没 token → DSN 空 → SDK 不启用(开发机崩溃不进线上)。
 - **PC 端探针第一版是假绿**:截住出站信封后判「不含主目录」,而信封是 JSON ——
   `C:\Users\x` 被写成 `C:\Users\x`,`<` 被写成 `\u003C`。「不含」恒成立。

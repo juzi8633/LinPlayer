@@ -145,6 +145,7 @@ jobs:
           LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
           # 崩溃上报:换 DSN + 传符号/混淆映射(scripts/sentry-dsn.sh)
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: bash scripts/pack-win.sh "$GITHUB_WORKSPACE/release"
 
       # ★ 出包了不等于包是对的。少一个 DLL 用户双击才发现,而 CI 早就绿了。
@@ -208,6 +209,7 @@ jobs:
           LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
           # 崩溃上报:换 DSN + 传符号/混淆映射(scripts/sentry-dsn.sh)
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: bash scripts/pack-linux.sh "$GITHUB_WORKSPACE/release"
 
       - name: Upload artifact
@@ -356,6 +358,7 @@ jobs:
           LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
           # 崩溃上报:换 DSN + 传符号/混淆映射(scripts/sentry-dsn.sh)
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: bash scripts/pack-android.sh arm64-v8a
 
       # TV 只出 32 位包(UI_TV.md §0.3)。凭据同上一步:这一步同样会重编 liblpcore.so
@@ -374,6 +377,7 @@ jobs:
           LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
           # 崩溃上报:换 DSN + 传符号/混淆映射(scripts/sentry-dsn.sh)
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: bash scripts/pack-android.sh tv
 
       - name: Upload artifact

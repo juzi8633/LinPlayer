@@ -31,7 +31,7 @@
 | `LP_AFDIAN_SPONSOR_URL` | 追剧日历的赞助入口 | 赞助按钮指向空地址 |
 | `LP_ICON_LIBRARY_SOURCES` | 服务器图标库(逗号分隔的多个 registry 地址) | 图标库页只能上传本地图片 |
 | `LP_CF_TEST_URL` | CF 优选的下载测速文件地址 | 测速跳过下载那段,排序退化成纯按延迟 |
-| `SENTRY_AUTH_TOKEN` | 只挂在**出包**步骤:`scripts/sentry-dsn.sh` 用它从 Sentry API 现查 DSN 编进程序,顺带传 .NET 符号 / 安卓混淆映射。token 要有 `project:read` | 发行包不带崩溃上报;有 token 却查不到 DSN 时出包直接失败 |
+| `SENTRY_AUTH_TOKEN` | 只挂在**出包**步骤:`scripts/sentry-dsn.sh` 用它从 Sentry API 现查 DSN 编进程序,顺带传 .NET 符号 / 安卓混淆映射。token 要有 `project:read`,否则另配 `SENTRY_DSN` secret(优先用它) | 发行包不带崩溃上报;查不到 DSN 时 Actions 页挂 warning,包照出 |
 
 **全部放 Secrets,不放 Variables** —— Variables 在日志里是明文可见的,
 而这批里有几个本身就是密钥。
