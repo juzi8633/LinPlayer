@@ -57,7 +57,8 @@ oauth-proxy/
    | `LINPLAYER_PROXY_KEY` | （可选）自定义共享密钥，挡脚本刷接口 |
    | `TG_BOT_TOKEN` | （崩溃报告用）@BotFather 给的 bot token。**只能放这里**，不能进客户端 |
    | `TG_CHAT_ID` | （崩溃报告用）收报告的会话 id：你和 bot 的私聊，或一个群 |
-   | `SENTRY_HOOK_KEY` | （Sentry 转 TG 用）一串长随机数，填进 webhook 地址的 `?key=` |
+   | `SENTRY_CLIENT_SECRET` | （Sentry 转 TG 用）Internal Integration 的 Client Secret，校验推送签名 |
+   | `SENTRY_HOOK_KEY` | （可选，Legacy WebHooks 才用）一串长随机数，填进 webhook 地址的 `?key=` |
 5. 保存并 **Deploy**。完成后得到地址，例如 `https://linplayer-oauth.pages.dev`。
 
 > 改了环境变量后需要 **Retry deployment / 重新部署** 才生效。
@@ -67,9 +68,12 @@ oauth-proxy/
 - **应用里发的**(崩溃后下次启动自动发、出错横条上点「反馈」、设置里「发送日志给开发者」):
   走 `POST /api/report`,客户端核心层先脱敏再发,这里转成一条消息 + 一个 `report.txt` 附件。
   同一 IP 一分钟一条。
-- **Sentry 收到的崩溃**:Sentry 项目 → Settings → Legacy Integrations → **WebHooks**,
-  回调地址填 `https://<你的项目>.pages.dev/sentry/hook?key=<SENTRY_HOOK_KEY>`;
-  再建一条 Alert Rule(新 issue / 回归时),动作选「Send a notification via WebHooks」。
+- **Sentry 收到的崩溃**(用 Internal Integration;Legacy WebHooks 官方已不推荐,测试按钮也不稳):
+  1. Settings → Developer Settings → Custom Integrations → Create New Integration → **Internal Integration**
+  2. Webhook URL 填 `https://<你的项目>.pages.dev/sentry/hook`;打开 **Alert Rule Action**;权限不用给;保存
+  3. 把它的 **Client Secret** 配成 CF 环境变量 `SENTRY_CLIENT_SECRET`(校验 `Sentry-Hook-Signature`),重新部署
+  4. 告警规则(Monitors → Alerts):WHEN 选 A new issue is created / A resolved issue regresses,
+     THEN 选刚建的这个集成,点 Send Test Notification
 
 ### 用 Wrangler CLI 部署（可选）
 
