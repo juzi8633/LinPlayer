@@ -588,6 +588,7 @@ public sealed class SettingsPage : PageBase
                     Add(gGeneral, SettingsSections.UiFontSection(core, p));
                     if (home is { } hm) Add(gGeneral, SettingsSections.Home(core, hm));
                     if (update is { } up) Add(gGeneral, SettingsSections.Update(core, up));
+                    Add(gGeneral, SettingsSections.Feedback(core));
                     Add(gGeneral, Shortcut(core));
                     // 快捷键不挂 Features 开关:它是操作方式,不是一块可下线的功能
                     Add(gGeneral, SettingsKeys.Section(core));

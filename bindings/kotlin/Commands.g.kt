@@ -271,6 +271,7 @@ object LinPlayerCommandNames {
         "system.downloadUpdate",
         "system.exportDiagnostics",
         "system.installUpdate",
+        "system.sendReport",
         "system.openDataDir",
         "system.shortcutStatus",
         "system.makeShortcut",
@@ -768,7 +769,7 @@ suspend fun LinPlayerCommands.prefsSetUpdateSettings(args: Map<String, Any?>? = 
 suspend fun LinPlayerCommands.prefsSetWritebackSettings(args: Map<String, Any?>? = null): JsonElement =
     call("prefs.setWritebackSettings", args)
 
-// ---- 系统 · system.* (19 条) ----
+// ---- 系统 · system.* (20 条) ----
 suspend fun LinPlayerCommands.systemAfdianSponsorUrl(args: Map<String, Any?>? = null): JsonElement =
     call("system.afdianSponsorUrl", args)
 suspend fun LinPlayerCommands.systemAfdianVerify(args: Map<String, Any?>? = null): JsonElement =
@@ -791,6 +792,8 @@ suspend fun LinPlayerCommands.systemExportDiagnostics(args: Map<String, Any?>? =
     call("system.exportDiagnostics", args)
 suspend fun LinPlayerCommands.systemInstallUpdate(args: Map<String, Any?>? = null): JsonElement =
     call("system.installUpdate", args)
+suspend fun LinPlayerCommands.systemSendReport(args: Map<String, Any?>? = null): JsonElement =
+    call("system.sendReport", args)
 suspend fun LinPlayerCommands.systemOpenDataDir(args: Map<String, Any?>? = null): JsonElement =
     call("system.openDataDir", args)
 suspend fun LinPlayerCommands.systemShortcutStatus(args: Map<String, Any?>? = null): JsonElement =

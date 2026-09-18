@@ -156,6 +156,7 @@
           <StackPanel Orientation="Horizontal" Spacing="10">
             <TextBlock Name="ErrorText" VerticalAlignment="Center" MaxWidth="900"
                        TextWrapping="Wrap" Foreground="{DynamicResource DangerInk}" />
+            <Button Name="ErrorReport" Classes="ghost" Content="反馈" />
             <Button Name="ErrorClose" Classes="ghost" Content="知道了" />
           </StackPanel>
         </Border>

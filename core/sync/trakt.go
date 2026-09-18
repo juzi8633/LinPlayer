@@ -42,6 +42,11 @@ func traktAPIHeaders(access string) map[string]string {
 }
 
 // postProxy 往自建代理发一条 JSON 请求。
+// PostProxy 给同步以外的代理路由用(system.sendReport)。
+func PostProxy(ctx context.Context, path string, body any) (int, []byte, error) {
+	return postProxy(ctx, path, body)
+}
+
 func postProxy(ctx context.Context, path string, body any) (int, []byte, error) {
 	if !UseProxy() {
 		return 0, nil, fmt.Errorf("这个构建没有配同步服务(需要在构建环境里提供 LP_SYNC_PROXY_BASE)")

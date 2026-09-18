@@ -892,6 +892,11 @@ private fun StoragePanel() {
             save.launch("linplayer-" + System.currentTimeMillis() + ".log")
         })
         Hairline()
+        // 不让用户描述:他说不清出了什么问题,日志说得清(用户 2026-09-18)
+        LpCell("发送日志给开发者", sub = "遇到 bug 点一下就行。服务器地址、账号和令牌会先抹掉", onClick = {
+            scope.launch { xyz.linplayer.app.data.Report.feedback(ctx, app) }
+        })
+        Hairline()
         LpCell("缓存占用", value = size ?: "…", arrow = false)
         Hairline()
         LpCell("清理缓存", onClick = {

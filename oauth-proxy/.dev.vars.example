@@ -12,3 +12,8 @@ AFDIAN_USER_ID=你的爱发电UserId
 AFDIAN_TOKEN=你的爱发电Token
 # 活跃用户徽章（/sentry/users 用）。只需 org:read 权限的 Sentry Auth Token，线上设为 Encrypted。
 SENTRY_TOKEN=你的Sentry只读Token
+# 崩溃报告 / 问题反馈转发到 Telegram(/api/report 与 /sentry/hook 共用)。线上设为 Encrypted。
+TG_BOT_TOKEN=BotFather给的token
+TG_CHAT_ID=收报告的会话id
+# Sentry 告警 webhook 的校验串(/sentry/hook?key=...),随便一串长随机数
+SENTRY_HOOK_KEY=一串长随机数

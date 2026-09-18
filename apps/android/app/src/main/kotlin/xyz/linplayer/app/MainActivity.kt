@@ -62,6 +62,12 @@ class MainActivity : ComponentActivity() {
             Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
         }.getOrNull()?.let { app.setDeviceId(it) }
 
+        // 上次崩了就自动把现场发给开发者,不问(用户说不清出了什么问题)
+        lifecycleScope.launch {
+            if (xyz.linplayer.app.data.Report.sendPending(this@MainActivity, app))
+                app.toast("上次异常退出,已把报告发给开发者")
+        }
+
         handleIntent(intent)
         // 自检直达:adb shell am start ... -e lp_login "<地址>|<用户>|<密码>"
         // 不能靠 input text —— 焦点落在哪儿不确定,实测一个字符都没进去(PC 端同一条教训)

@@ -139,10 +139,22 @@ public partial class MainWindow : Window
         var bar = this.FindControl<Border>("ErrorBar")!;
         var barText = this.FindControl<TextBlock>("ErrorText")!;
         this.FindControl<Button>("ErrorClose")!.Click += (_, _) => bar.IsVisible = false;
+        Exception? lastError = null;
+        var errReport = this.FindControl<Button>("ErrorReport")!;
+        errReport.IsVisible = _core is not null;
+        errReport.Click += async (_, _) =>
+        {
+            bar.IsVisible = false;
+            if (_core is { } c && lastError is { } ex) await Report.FromError(this, c, ex);
+        };
         Dispatcher.UIThread.UnhandledException += (_, e) =>
         {
             e.Handled = true; // 不让它打死进程
+            lastError = e.Exception;
             Console.WriteLine("[UI 线程] 未捕获异常: " + e.Exception);
+            // 接住了就不会走到进程级的崩溃上报 —— 界面 bug 大多是这一类,必须在这里自己报
+            Log.W("UI 线程", e.Exception.ToString());
+            Sentry.SentrySdk.CaptureException(e.Exception);
             barText.Text = $"这一步出错了:{e.Exception.Message}";
             bar.IsVisible = true;
         };
@@ -166,6 +178,15 @@ public partial class MainWindow : Window
             await BootAsync();
             Perf.Log("BootAsync 结束");
             AutoCheckUpdate();
+            // 崩溃报告整条链的自检。=ui:界面线程抛(被兜住,出错横条带「反馈」);
+            // 其它值:后台线程抛,进程真崩,下次启动应当弹「上次异常退出」
+            if (Environment.GetEnvironmentVariable("LP_SELFCHECK_CRASH") is { Length: > 0 } how)
+            {
+                var boom = new InvalidOperationException("LP_SELFCHECK_CRASH:故意崩一次");
+                if (how == "ui") throw boom;
+                new System.Threading.Thread(() => throw boom).Start();
+            }
+            if (_core is { } core) await Report.SendPendingCrash(core);
         };
     }
 

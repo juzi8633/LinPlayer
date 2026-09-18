@@ -201,6 +201,8 @@ scripts/           build, packaging and gate scripts (pack-win.sh / pack-linux.s
   OS and app version, and a randomly generated anonymous install ID (used only to count active devices). Your home-folder path is replaced
   with `~` and tokens / api_keys in URLs are stripped before anything leaves the device; no performance tracing, no screen recording.
   Builds you compile yourself carry no reporting address and report nothing.
+- **After a crash, the next launch automatically sends the crash details and recent logs to the developer**; the "反馈" button on error
+  notices and "发送日志给开发者" in Settings use the same path. Server addresses, accounts, tokens and your username are stripped first.
 - We **never collect any information that can identify you personally**: no accounts, passwords, cookies,
   tokens, server addresses, library contents, watch history, or IP addresses. **No screen recording, no behavior tracking.**
 - Crash data **is never sold, shared, or used for advertising or any commercial purpose**, and is deleted per

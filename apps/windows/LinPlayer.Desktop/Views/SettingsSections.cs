@@ -791,6 +791,25 @@ public static class SettingsSections
         });
     }
 
+    // ---------------------------------------------------------------- 反馈
+
+    /// <summary>问题反馈:直接发到开发者的 Telegram(见 <see cref="Report"/>)。</summary>
+    public static Control Feedback(CoreClient core)
+    {
+        var send = new Button { Content = "发送日志给开发者" };
+        send.Click += async (_, _) => await Report.Feedback(send, core);
+        return Group("反馈", new StackPanel
+        {
+            Spacing = 10,
+            Children =
+            {
+                Note("遇到 bug 点一下,把最近的日志发给开发者,不用描述。" +
+                     "崩溃不用点:下次启动会自动发。服务器地址、账号、令牌和你的用户名在离开本机前会先抹掉。"),
+                send,
+            },
+        });
+    }
+
     // ---------------------------------------------------------------- 跳过片头片尾
 
     /// <summary>

@@ -40,6 +40,7 @@ var Version = "dev"
 // RegisterCommands 由 lp_init 调用。
 func RegisterCommands() {
 	registerMiscCommands()
+	registerReportCommands()
 	registerUpdateCommands()
 	registerShortcutCommands()
 	bus.Register("system.ping", func(ctx context.Context, seq int64, args map[string]any) (any, error) {

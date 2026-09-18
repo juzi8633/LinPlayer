@@ -955,3 +955,25 @@ GL 崩在驱动自己家里,`catch` 接不住,表现正好是「一个字不留�
 - **别在 Python 字符串字面量里写反斜杠内容**:`'\1'` 是 `\x01`,`"\U..."` 直接语法错。
   改带反斜杠的代码用编辑工具,或先写文件再拼接。
 - 安卓用 `sentry-android-core` + `sentry-android-ndk`,**不用总包 `sentry-android`**(它会顺带拉录屏 replay)。
+
+## 崩溃报告直达 Telegram(2026-09-18)
+
+链路:应用 → 核心层 `system.sendReport`(脱敏 + 截尾 256KB)→ 自建代理 `/api/report` → TG。
+Sentry 那条另走 `/sentry/hook`。bot token 只在 CF 环境变量里 —— 进了客户端就能被提取来刷你的 bot。
+
+- **用户不描述**(用户原话:「让用户描述没用,用户根本不知道犯了什么问题」)。崩溃下次启动自动发;
+  界面错误在出错横条上点「反馈」一键发;设置里「发送日志给开发者」一键发。发不出去 → 复制**脱敏后**的报告(`dry=true`)。
+- **PC 界面线程的异常 Sentry 从来收不到**:`Dispatcher.UIThread.UnhandledException` 里 `Handled = true`
+  兜住了(为了不闪退),进程级的崩溃上报根本走不到。兜底里要自己 `SentrySdk.CaptureException` + 写 desktop.log。
+  界面 bug 大多是这一类。
+- **PC 异常退出靠 `logs/running.<pid>` 标记**,`ProcessExit` 里删(`Environment.Exit` 装更新也走这里,崩溃和强杀不走)。
+  按 pid 分开:没有单实例限制,开两个窗口时不能把对方当成崩了。
+- **安卓不能照抄这个标记**:后台被系统回收是常态,会满屏误报。只认 JVM 未捕获异常(当场写文件)
+  和 `ActivityManager.getHistoricalProcessExitReasons`(Android 11+,原生崩溃 / ANR)。
+  后者第一次跑只记时间戳 —— 否则一装新版就把历史旧崩溃全报一遍。
+- **自检的两个坑**:
+  - PowerShell 工具里 `Start-Process` 起的 exe,调用一结束就被连带关掉 —— 表现像「程序自己正常退出了」。
+    要从 bash 用 `(./LinPlayer.exe &)` 脱离起。
+  - Avalonia 的对话框在 UIA 树里是**主窗口的子节点**,不是顶层窗口。按顶层找永远找不到。
+- 本地端到端:Node 包一层真 `report.js` + `_middleware.js`,只把 `api.telegram.org` 打桩落盘;
+  `LP_SYNC_PROXY_BASE` 指过去打包。`LP_SELFCHECK_CRASH=1` 后台线程真崩,`=ui` 界面线程抛(被兜住)。

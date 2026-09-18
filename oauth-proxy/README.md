@@ -55,9 +55,21 @@ oauth-proxy/
    | `BANGUMI_APP_ID` | 你的 Bangumi app id |
    | `BANGUMI_APP_SECRET` | 你的 Bangumi app secret |
    | `LINPLAYER_PROXY_KEY` | （可选）自定义共享密钥，挡脚本刷接口 |
+   | `TG_BOT_TOKEN` | （崩溃报告用）@BotFather 给的 bot token。**只能放这里**，不能进客户端 |
+   | `TG_CHAT_ID` | （崩溃报告用）收报告的会话 id：你和 bot 的私聊，或一个群 |
+   | `SENTRY_HOOK_KEY` | （Sentry 转 TG 用）一串长随机数，填进 webhook 地址的 `?key=` |
 5. 保存并 **Deploy**。完成后得到地址，例如 `https://linplayer-oauth.pages.dev`。
 
 > 改了环境变量后需要 **Retry deployment / 重新部署** 才生效。
+
+### 崩溃报告 → Telegram
+
+- **应用里发的**(崩溃后下次启动自动发、出错横条上点「反馈」、设置里「发送日志给开发者」):
+  走 `POST /api/report`,客户端核心层先脱敏再发,这里转成一条消息 + 一个 `report.txt` 附件。
+  同一 IP 一分钟一条。
+- **Sentry 收到的崩溃**:Sentry 项目 → Settings → Legacy Integrations → **WebHooks**,
+  回调地址填 `https://<你的项目>.pages.dev/sentry/hook?key=<SENTRY_HOOK_KEY>`;
+  再建一条 Alert Rule(新 issue / 回归时),动作选「Send a notification via WebHooks」。
 
 ### 用 Wrangler CLI 部署（可选）
 

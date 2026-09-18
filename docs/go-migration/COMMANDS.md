@@ -351,6 +351,7 @@
 | [x] | `system.downloadUpdate` | **新增** | `-` | `Result<system::UpdateProgress, String>` | ✅ | <!-- 开下载,立刻返回;进度轮询 system.updateProgress -->
 | [x] | `system.exportDiagnostics` | **新增** | `-` | `{ ... }` | — | <!-- 诊断导出(SPEC 5.6)。**不许带凭据** -->
 | [x] | `system.installUpdate` | **新增** | `-` | `Result<system::InstallResult, String>` | ✅ | <!-- 装上。桌面端返回 restart 后宿主自己退出;安卓端返回 apk 路径交系统装包器 -->
+| [x] | `system.sendReport` | **新增** | `kind: "crash"|"feedback", text, crash?, log?, dry?` | `Result<Option<String>, String>` | ❌ | <!-- 崩溃报告 / 问题反馈:脱敏后经自建代理转 Telegram(代理 /api/report);dry=true 只返回脱敏后的文本不发 -->
 | [x] | `system.openDataDir` | `open_data_dir` | `sub: Option<String>` | `Result<(), String>` | ❌ |
 | [x] | `system.shortcutStatus` | **新增** | `—` | `ShortcutStatus` | ❌ | <!-- 桌面快捷方式体检：指向哪、还指不指得到。非 Windows 回 supported=false -->
 | [x] | `system.makeShortcut` | **新增** | `—` | `ShortcutStatus` | ❌ | <!-- 建/修桌面快捷方式。绿色包挪一次文件夹，手搓的 .lnk 就指坏了（用户 2026-09-12）-->

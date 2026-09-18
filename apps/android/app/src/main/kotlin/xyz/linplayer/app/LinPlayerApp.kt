@@ -26,6 +26,7 @@ class LinPlayerApp : Application(), SingletonImageLoader.Factory {
         Telemetry.init(this)
         // 日志排在核心层之前:核心层起不来本身就是最该留下记录的一种失败
         Logs.init(this)
+        xyz.linplayer.app.data.Report.arm(this)
         // 数据根是应用私有目录:安卓上没有「绿色包同级 userdata/」那回事,
         // 也不需要 —— 卸载即清干净,而且不用任何存储权限
         core = CoreClient.start(

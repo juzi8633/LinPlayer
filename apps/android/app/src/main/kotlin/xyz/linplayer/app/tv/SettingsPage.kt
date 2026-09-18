@@ -601,6 +601,12 @@ private fun StorageGroup(overlay: Overlay) {
         })
         Group("数据")
         root?.let { PanelItem("数据目录", sub = it, enabled = false) } ?: SkelRows(1)
+        // TV 上拿不出日志文件,一键发给开发者是唯一顺手的路
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        PanelItem("发送日志给开发者", sub = "遇到 bug 点一下就行。服务器地址、账号和令牌会先抹掉",
+            modifier = Modifier.memo("set.report"), onClick = {
+                scope.launch { xyz.linplayer.app.data.Report.feedback(ctx, app) }
+            })
     }
 }
 

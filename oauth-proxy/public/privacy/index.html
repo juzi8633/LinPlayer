@@ -23,6 +23,7 @@
     <ul>
       <li><strong>仅保存在你设备本地</strong>（我们无法读取）：服务器地址与凭据、OAuth 令牌、播放进度与历史、收藏、封面与视频分片缓存、应用设置。</li>
       <li><strong>崩溃与稳定性数据</strong>：应用崩溃时会通过 Sentry 上报错误堆栈、操作系统与应用版本，以及一个随机生成的匿名安装标识（用于统计活跃设备数）。其中不含你的文件名、账号、令牌或观看内容。</li>
+      <li><strong>崩溃与问题日志</strong>：应用崩溃后下次启动时，或你点击「反馈」「发送日志给开发者」时，会把崩溃信息和最近的运行日志发给开发者（经我们自建的中转服务转到开发者的 Telegram）。发送前会抹掉服务器地址、账号、令牌和你的系统用户名。</li>
       <li><strong>我们不收集</strong>：姓名、邮箱、电话号码、精确位置、通讯录、广告标识符。</li>
     </ul>
 
@@ -71,6 +72,7 @@
     <ul>
       <li><strong>端末内にのみ保存されるもの</strong>（当方は読み取れません）：サーバーアドレスと認証情報、OAuth トークン、再生位置と履歴、お気に入り、サムネイルおよび動画セグメントのキャッシュ、アプリ設定。</li>
       <li><strong>クラッシュ・安定性データ</strong>：クラッシュ発生時に Sentry を通じて、エラーのスタックトレース、OS とアプリのバージョン、ならびにランダム生成された匿名のインストール識別子（アクティブ端末数の集計用）を送信します。ファイル名、アカウント、トークン、視聴内容は含まれません。</li>
+      <li><strong>クラッシュ・不具合ログ</strong>：クラッシュ後の次回起動時、または「反馈」「发送日志给开发者」を押したときに、クラッシュ情報と直近の動作ログを開発者に送信します（自前の中継サービス経由で開発者の Telegram へ）。送信前にサーバーアドレス、アカウント、トークン、OS のユーザー名を削除します。</li>
       <li><strong>収集しないもの</strong>：氏名、メールアドレス、電話番号、正確な位置情報、連絡先、広告識別子。</li>
     </ul>
 
@@ -119,6 +121,7 @@
     <ul>
       <li><strong>Stored only on your device</strong> (we cannot read it): server addresses and credentials, OAuth tokens, playback positions and history, favorites, artwork and video-segment caches, app settings.</li>
       <li><strong>Crash and stability data</strong>: when the App crashes it reports, via Sentry, the error stack trace, operating-system and app version, and a randomly generated anonymous install identifier used to count active devices. It contains no file names, accounts, tokens or viewing content.</li>
+      <li><strong>Crash and problem logs</strong>: on the next launch after a crash, or when you tap "反馈" / "发送日志给开发者", the App sends the crash details and recent runtime logs to the developer (via our own relay to the developer's Telegram). Server addresses, accounts, tokens and your OS username are removed before sending.</li>
       <li><strong>We do not collect</strong>: name, email address, phone number, precise location, contacts, or advertising identifiers.</li>
     </ul>
 

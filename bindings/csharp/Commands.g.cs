@@ -281,6 +281,7 @@ public static class LinPlayerCommandNames
         "system.downloadUpdate",
         "system.exportDiagnostics",
         "system.installUpdate",
+        "system.sendReport",
         "system.openDataDir",
         "system.shortcutStatus",
         "system.makeShortcut",
@@ -780,7 +781,7 @@ public static class LinPlayerCommandsExtensions
     public static Task<JsonElement> PrefsSetWritebackSettings(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("prefs.setWritebackSettings", args, ct);
 
-    // ---- 系统 · system.* (19 条) ----
+    // ---- 系统 · system.* (20 条) ----
     public static Task<JsonElement> SystemAfdianSponsorUrl(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("system.afdianSponsorUrl", args, ct);
     public static Task<JsonElement> SystemAfdianVerify(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -803,6 +804,8 @@ public static class LinPlayerCommandsExtensions
         => c.CallAsync("system.exportDiagnostics", args, ct);
     public static Task<JsonElement> SystemInstallUpdate(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("system.installUpdate", args, ct);
+    public static Task<JsonElement> SystemSendReport(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("system.sendReport", args, ct);
     public static Task<JsonElement> SystemOpenDataDir(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("system.openDataDir", args, ct);
     public static Task<JsonElement> SystemShortcutStatus(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)

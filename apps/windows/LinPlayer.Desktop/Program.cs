@@ -218,6 +218,7 @@ internal static class Program
         Log.Init(dataDir);
         // 早于核心层:核心层起不来正是最该上报的一种失败。using 到进程结束 —— 释放就关了客户端
         using var telemetry = Telemetry.Init(Version);
+        Views.Report.Arm(dataDir);
 
         try
         {
