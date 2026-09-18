@@ -18,6 +18,8 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+# gradle 从环境变量读 SENTRY_DSN 编进 BuildConfig
+source scripts/sentry-dsn.sh
 SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-${LOCALAPPDATA:-}/Android/Sdk}}"
 OUT="$ROOT/build/android"
 ABIS=()

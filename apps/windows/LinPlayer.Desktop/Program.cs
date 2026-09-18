@@ -125,6 +125,13 @@ internal static class Program
             return;
         }
 
+        /* 崩溃上报脱敏自检:`LP_SENTRYPROBE=1 LinPlayer.exe`。截住出站信封,不真发。 */
+        if (Environment.GetEnvironmentVariable("LP_SENTRYPROBE") is { Length: > 0 })
+        {
+            Environment.ExitCode = Telemetry.Probe() ? 0 : 1;
+            return;
+        }
+
         /* mpv 键名自检:`LP_KEYPROBE=1 LinPlayer.exe` 打几行就退,不开窗口。
            纯映射,进得了 CI。 */
         if (Environment.GetEnvironmentVariable("LP_KEYPROBE") is { Length: > 0 })
@@ -209,6 +216,8 @@ internal static class Program
         MetaCache.Init(dataDir);
         // 日志要早于一切页面 —— 它是用来抓「只在用户那台机器上出现」的现象的
         Log.Init(dataDir);
+        // 早于核心层:核心层起不来正是最该上报的一种失败。using 到进程结束 —— 释放就关了客户端
+        using var telemetry = Telemetry.Init(Version);
 
         try
         {

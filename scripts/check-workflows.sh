@@ -131,6 +131,9 @@ for f in sorted(glob.glob('.github/workflows/*.yml')):
             # 变量可以挂在 step 或 job 上,两处都算。
             env = dict((job.get('env') or {}), **(step.get('env') or {}))
             miss = [k for k in NEED if not str(env.get(k, '')).strip()]
+            # 出包步骤还要 SENTRY_AUTH_TOKEN:缺了 = 发行包不带崩溃上报,CI 照绿
+            if run.lstrip().startswith('bash scripts/pack-') and not str(env.get('SENTRY_AUTH_TOKEN', '')).strip():
+                miss.append('SENTRY_AUTH_TOKEN')
             if miss:
                 bad.append('%s  缺少: %s' % (label, ', '.join(miss)))
 

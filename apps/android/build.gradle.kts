@@ -8,4 +8,6 @@ plugins {
     kotlin("plugin.serialization") version "2.4.10" apply false
     // TV 草稿不起模拟器出图(UI_TV.md §14.3)。三个工具里只有它把 tv-material 的焦点放大画了出来
     id("io.github.takahirom.roborazzi") version "1.74.0" apply false
+    // 崩溃上报:只用它传 R8 混淆映射(release 开了混淆,不传的话线上堆栈全是 a.b.c)
+    id("io.sentry.android.gradle") version "6.22.0" apply false
 }

@@ -197,12 +197,14 @@ scripts/           build, packaging and gate scripts (pack-win.sh / pack-linux.s
 
 ### About Telemetry & Privacy
 
-- **Every current release (Windows / Linux / Android / Android TV) ships no telemetry and no crash reporting.**
-  The Sentry integration was removed together with the Rust/Tauri stack on 2026-09-04 — `git grep -i sentry -- core/ apps/ bindings/` finds nothing.
+- **Releases (Windows / Linux / Android / Android TV) include anonymous crash reporting (Sentry)**: on a crash they send the stack trace,
+  OS and app version, and a randomly generated anonymous install ID (used only to count active devices). Your home-folder path is replaced
+  with `~` and tokens / api_keys in URLs are stripped before anything leaves the device; no performance tracing, no screen recording.
+  Builds you compile yourself carry no reporting address and report nothing.
 - We **never collect any information that can identify you personally**: no accounts, passwords, cookies,
   tokens, server addresses, library contents, watch history, or IP addresses. **No screen recording, no behavior tracking.**
-- If anonymous crash reporting is ever reintroduced, this section will state exactly what is collected, and we
-  **will never sell, share, or use that data for advertising or any commercial purpose**.
+- Crash data **is never sold, shared, or used for advertising or any commercial purpose**, and is deleted per
+  Sentry's retention policy (up to 90 days by default).
 
 ## License
 

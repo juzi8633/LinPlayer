@@ -39,6 +39,7 @@ run LP_MEDALPROBE  "排行榜前三的金银铜"
 run LP_RAILPROBE   "选集轨道:翻页到头再回来 + 长按拖动"
 run LP_GRIDPROBE   "竖向网格滚下去之后每行画的还是不是自己那行"
 run LP_DMPROBE     "弹幕层:帧间隔匀不匀(按 vblank)+ 中日文/emoji 不落成方块"
+run LP_SENTRYPROBE "崩溃上报出站前抹掉主目录和 token"
 
 if [ "$BAD" -eq 0 ]; then echo "探针全部通过。"; else echo "$BAD 组探针不过。"; fi
 exit "$BAD"

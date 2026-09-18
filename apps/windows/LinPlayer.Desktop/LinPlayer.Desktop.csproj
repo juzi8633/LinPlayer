@@ -51,7 +51,19 @@
     <PackageReference Include="Avalonia.Desktop" Version="11.3.11" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.11" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.11" />
+    <PackageReference Include="Sentry" Version="6.11.0" />
   </ItemGroup>
+
+  <!-- 崩溃上报。DSN 由 scripts/sentry-dsn.sh 放进环境变量,编进程序集元数据 ——
+       不进仓库(全局红线)。本地构建没有它 = SDK 不启用,见 Telemetry.cs。 -->
+  <ItemGroup>
+    <AssemblyMetadata Include="SentryDsn" Value="$(SENTRY_DSN)" />
+  </ItemGroup>
+  <!-- 有 token 才传符号(CI):不传的话线上堆栈只有方法名没有行号。
+       sentry-cli 自己读 SENTRY_AUTH_TOKEN / SENTRY_ORG / SENTRY_PROJECT。 -->
+  <PropertyGroup Condition="'$(SENTRY_AUTH_TOKEN)' != ''">
+    <SentryUploadSymbols>true</SentryUploadSymbols>
+  </PropertyGroup>
 
   <ItemGroup>
     <!-- 命令绑定是**生成的**(scripts/gen-bindings.py),不许手写。

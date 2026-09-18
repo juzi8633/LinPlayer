@@ -31,6 +31,7 @@
 | `LP_AFDIAN_SPONSOR_URL` | 追剧日历的赞助入口 | 赞助按钮指向空地址 |
 | `LP_ICON_LIBRARY_SOURCES` | 服务器图标库(逗号分隔的多个 registry 地址) | 图标库页只能上传本地图片 |
 | `LP_CF_TEST_URL` | CF 优选的下载测速文件地址 | 测速跳过下载那段,排序退化成纯按延迟 |
+| `SENTRY_AUTH_TOKEN` | 只挂在**出包**步骤:`scripts/sentry-dsn.sh` 用它从 Sentry API 现查 DSN 编进程序,顺带传 .NET 符号 / 安卓混淆映射。token 要有 `project:read` | 发行包不带崩溃上报;有 token 却查不到 DSN 时出包直接失败 |
 
 **全部放 Secrets,不放 Variables** —— Variables 在日志里是明文可见的,
 而这批里有几个本身就是密钥。
@@ -112,6 +113,7 @@ LinPlayer 客户端  ───────────────────�
 |---|---|
 | `core/httpx/httpx.go` `RepoURL` | 本仓库自己的公开地址(第三方 API 的 UA 里要带,bgm.tv 开发指引要求) |
 | `core/system/update.go` `githubAPI` | GitHub API 基址(检查更新) |
+| `scripts/sentry-dsn.sh` | Sentry 的公开 API 基址(出包时用 token 现查 DSN;DSN 本身不入库) |
 | `core/plugin/market.go` `officialSourceURL` | 本项目自己的公开插件仓库 |
 | `core/translate/settings.go` | OpenAI / Anthropic / 百度 的**厂商公开 API 基址**,而且是设置页里用户可改的默认值 |
 | `core/translate/engine.go` `TencentEndpoint` | 腾讯云 TMT 的公开 endpoint |

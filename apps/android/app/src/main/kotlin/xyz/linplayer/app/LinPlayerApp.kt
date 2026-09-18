@@ -22,6 +22,8 @@ class LinPlayerApp : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
+        // 最先起:核心层起不来本身就要能报上来
+        Telemetry.init(this)
         // 日志排在核心层之前:核心层起不来本身就是最该留下记录的一种失败
         Logs.init(this)
         // 数据根是应用私有目录:安卓上没有「绿色包同级 userdata/」那回事,

@@ -5,6 +5,7 @@ plugins {
     kotlin("plugin.compose")
     kotlin("plugin.serialization")
     id("io.github.takahirom.roborazzi")
+    id("io.sentry.android.gradle")
 }
 
 // 版本号唯一权威是仓库根的 VERSION(docs/VERSIONING.md)。写死字面量害过三次:
@@ -45,6 +46,9 @@ android {
         minSdk = 24
         targetSdk = 36
         versionName = lpVersion
+        // 崩溃上报 DSN 由 scripts/sentry-dsn.sh 放进环境变量,不进仓库(全局红线)。
+        // 本地构建为空 = SDK 不启用,见 LinPlayerApp
+        buildConfigField("String", "SENTRY_DSN", "\"${System.getenv("SENTRY_DSN") ?: ""}\"")
         // versionCode 从版本号算:1.2.3 -> 10203。手写会忘,忘了就是更新装不上
         versionCode = lpVersion.split("-")[0].split(".").let {
             it.getOrElse(0) { "0" }.toInt() * 10000 +
@@ -175,6 +179,10 @@ dependencies {
          OSD 是我们自己的 Compose,通知栏走 androidx.media 的 MediaSessionCompat
          (理由见上面那段)。多引一个包等于把两套通知实现摆在一起。 */
     implementation("androidx.media3:media3-exoplayer:1.11.0")
+    // 含 NDK 集成:libmpv / liblpcore 里的原生崩溃也接得住
+    // 不用总包 sentry-android:它顺带拉录屏(replay),我们不录屏
+    implementation("io.sentry:sentry-android-core:8.57.0")
+    implementation("io.sentry:sentry-android-ndk:8.57.0")
     implementation("androidx.window:window:1.5.1")
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
 
@@ -199,4 +207,15 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+// 映射只在 CI 有 token 时上传(sentry-cli 读 SENTRY_ORG / SENTRY_PROJECT,由 sentry-dsn.sh 给)。
+// 其余自动注入全关:依赖上面自己写,不要字节码插桩,不给 Sentry 回传构建遥测
+sentry {
+    includeProguardMapping.set(true)
+    autoUploadProguardMapping.set(System.getenv("SENTRY_AUTH_TOKEN") != null)
+    autoInstallation { enabled.set(false) }
+    tracingInstrumentation { enabled.set(false) }
+    includeDependenciesReport.set(false)
+    telemetry.set(false)
 }

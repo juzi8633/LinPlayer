@@ -46,6 +46,8 @@
              不声明的话,链接器命名空间直接拒掉;required=false:没有的机器照样能装 -->
         <uses-native-library android:name="libOpenCL.so" android:required="false" />
         <uses-native-library android:name="libOpenCL-pixel.so" android:required="false" />
+        <!-- Sentry 在 LinPlayerApp 里手动初始化(DSN 可能为空),不走它的自动初始化 -->
+        <meta-data android:name="io.sentry.auto-init" android:value="false" />
 
         <!--
           configChanges 吃下形变,不让系统重建 Activity。

@@ -934,3 +934,18 @@ GL 崩在驱动自己家里,`catch` 接不住,表现正好是「一个字不留�
 **真因未确认。** 已排除上面这几条,没排除的:发 release 的二级速率限制
 (当天该仓库已连发 10 个 release、每个 3~5 个大资产)。
 下次撞上先看**隔一段时间还红不红**,别再往「改了 workflow」上归。
+
+## 崩溃上报重新接回 Go 栈:DSN 从 token 现查,探针差点假绿(2026-09-18)
+
+- **DSN 不入库**:Rust 栈那版把 DSN 写死在 `telemetry.rs` / `telemetry.ts` 里,违反提交红线。
+  现在由 `scripts/sentry-dsn.sh` 在出包时拿 `SENTRY_AUTH_TOKEN` 调
+  `GET /api/0/projects/<org>/<project>/keys/` 现查,经环境变量进 csproj 的
+  `AssemblyMetadata` / gradle 的 `buildConfigField`。**查不到就出包失败**,不静默出一个不上报的包。
+  本地没 token → DSN 空 → SDK 不启用(开发机崩溃不进线上)。
+- **PC 端探针第一版是假绿**:截住出站信封后判「不含主目录」,而信封是 JSON ——
+  `C:\Users\x` 被写成 `C:\Users\x`,`<` 被写成 `\u003C`。「不含」恒成立。
+  修法:比对前 `Regex.Unescape`。凡是对**序列化产物**做「不含 X」断言的,先想转义。
+- **写脚本别用 Python 字符串拼 sed 反向引用**:`'\1'` 在 Python 里是 `\x01`,
+  DSN 变成一个不可见字符却显示「已启用」。用打桩 `curl()` 跑一遍才看出来;现在改用 `cut -d'"' -f4`。
+- 安卓用 `sentry-android-core` + `sentry-android-ndk`,**不用总包 `sentry-android`**(它会顺带拉录屏 replay)。
+  R8 映射靠 `io.sentry.android.gradle` 插件上传,只在有 token 时开。
