@@ -441,18 +441,10 @@ func registerPrefsCommands(version string) {
 		// ★ 不报错:没刮削章节的库返回空表,两个功能都自动静默不工作 ——
 		//   那是**正常情况**,不该让播放页弹红字。
 		info := prefsClient.ChapterInfoOf(ctx, sess, id, runtime, w)
-		/* ★★ 用户关了开关时这里就该恒为 null —— **调用方不必再判一次开关**。
-		   判两次早晚判岔:一边按核心层给的区间跳、一边按自己那份开关决定要不要跳,
-		   两处状态一不同步就是「关了还在跳」或者「开了不跳」。 */
+		/* ★★ 用户关了开关时这里就该恒为 null(手动填过的除外)——
+		   **调用方不必再判一次开关**,判两次早晚判岔。开关的规矩全在 fillSkip 里。 */
 		pf := config.Current().PrefsOf()
-		// 服务端章节只是三层来源里的一层,手动设定和第三方库在 fillSkip 里补
 		from := fillSkip(ctx, sess, id, runtime, info, pf)
-		if !pf.SkipIntro {
-			info.Intro = nil
-		}
-		if !pf.SkipOutro {
-			info.Outro = nil
-		}
 		if info.Intro == nil && info.Outro == nil {
 			from = ""
 		}

@@ -26,7 +26,7 @@ func TestParseTracks(t *testing.T) {
 	raw := `[
 		{"id":1,"type":"video","selected":true},
 		{"id":2,"type":"audio","lang":"jpn","title":"日语","default":true,"selected":true},
-		{"id":3,"type":"sub","lang":"chi","external":true},
+		{"id":3,"type":"sub","lang":"chi","external":true,"codec":"ass"},
 		{"id":4,"type":"其它没见过的类型"}
 	]`
 	got := parseTracks(raw)
@@ -36,6 +36,9 @@ func TestParseTracks(t *testing.T) {
 	if got[1].Kind != "audio" || got[1].Lang != "jpn" || got[1].Title != "日语" ||
 		!got[1].Default || !got[1].Selected {
 		t.Fatalf("音轨字段不对: %+v", got[1])
+	}
+	if got[2].Codec != "ass" {
+		t.Fatalf("字幕格式没透出来: %+v —— 字幕列表第二行就是它", got[2])
 	}
 	if got[2].Kind != "sub" || !got[2].External {
 		t.Fatalf("外挂字幕轨没标出来: %+v —— UI 分不出内封和外挂", got[2])

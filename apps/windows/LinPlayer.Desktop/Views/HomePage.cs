@@ -124,7 +124,7 @@ public sealed class HomePage : PageBase
             但**位置是先占好的**:每条轨道在发请求之前就把自己那一块(骨架)挂上去,
             所以屏幕上的顺序是固定的,不是「谁先回来谁排前面」。 */
         var resume = Track("继续观看", () => ResumeAndNextUp(core, s), true,
-            key: MetaCache.Key("home.resume", s));
+            key: MetaCache.Key("home.resume", s), resumeRow: true);
 
         /* 合集。<b><c>emby.listCollections</c> 早就注册着,UI 一次没调过</b> ——
            这是本仓第五次撞上「后端领先前端」。
@@ -319,6 +319,19 @@ public sealed class HomePage : PageBase
     ///
     /// <para>两条各自吞错:NextUp 在某些 fork 上没有,不能因此把「看了一半」也弄没。</para>
     /// </summary>
+    /// <summary>
+    /// 把一条从「继续观看」的缓存里抠掉。首页重建时先画缓存再刷新,
+    /// 不抠的话刚移除的那张会先闪回来一下。键的形状必须和上面建轨道时那份一致。
+    /// </summary>
+    internal static void ForgetResume(string itemId)
+    {
+        if (Nav.Session is not { } ns) return;
+        var key = MetaCache.Key("home.resume",
+            new { server = ns.server, token = ns.token, user_id = ns.user_id, device_id = ns.device_id });
+        if (MetaCache.PeekList(key) is { } old)
+            MetaCache.PutList(key, old.Where(it => Str(it, "id") != itemId).ToList());
+    }
+
     private static async Task<List<JsonElement>> ResumeAndNextUp(CoreClient core, object s)
     {
         var a = Arr(core.EmbyListResume(With(s, new { limit = 12 })));
@@ -369,7 +382,7 @@ public sealed class HomePage : PageBase
     /// <param name="lazy">true = 先只占位,滚到跟前了再真去拉。</param>
     private async Task Track(string title, Func<Task<List<JsonElement>>> load, bool wide,
         Action<List<JsonElement>>? onItems = null, StackPanel? host = null, string? libraryId = null,
-        string? key = null, bool lazy = false, bool hideWhenEmpty = false)
+        string? key = null, bool lazy = false, bool hideWhenEmpty = false, bool resumeRow = false)
     {
         /* 占位用**骨架**,不是「加载中…」。
            三个字只有 20px 高,内容一回来这一行从 20px 撑到 280px,
@@ -406,7 +419,7 @@ public sealed class HomePage : PageBase
         {
             Core.Perf.Log($"轨道「{title}」<- 缓存 {hit.Count} 条(零往返)");
             if (hit.Count == 0 && hideWhenEmpty) Vanish();
-            else Swap(hit.Count == 0 ? Dim($"这台服务器上没有「{title}」的内容。") : Strip(hit, wide));
+            else Swap(hit.Count == 0 ? Dim($"这台服务器上没有「{title}」的内容。") : Strip(hit, wide, resumeRow));
         }
 
         async Task Run()
@@ -422,7 +435,7 @@ public sealed class HomePage : PageBase
                 // hideWhenEmpty 的轨道例外:它整条消失,连标题都不留 ——
                 // 首页上一条用户没要求过的空轨道,写什么都是噪音。
                 if (items.Count == 0 && hideWhenEmpty) Vanish();
-                else Swap(items.Count == 0 ? Dim($"这台服务器上没有「{title}」的内容。") : Strip(items, wide));
+                else Swap(items.Count == 0 ? Dim($"这台服务器上没有「{title}」的内容。") : Strip(items, wide, resumeRow));
             }
             /* 已经用缓存画出内容之后再失败(离线 / 服务器挂了),<b>不要把内容换成一行红字</b> ——
                屏幕上那批旧数据仍然是用户能用的东西,擦掉它换成「加载失败」是纯粹的损失。 */
@@ -471,7 +484,7 @@ public sealed class HomePage : PageBase
     /// 全屏视口变高,一次判成「该拉了」的轨道更多,要造的卡和封面请求成倍涨,
     /// 而多出来的一张都不在屏幕上。间距仍传 12:这一轮没人要求改首页的间距。</para>
     /// </summary>
-    private Control Strip(List<JsonElement> items, bool wide)
+    private Control Strip(List<JsonElement> items, bool wide, bool resumeRow)
     {
         var shown = items.Take(20).ToList();
         using var _m = Core.Perf.Measure($"排 {shown.Count} 张卡(虚拟化,只造看得见的)");
@@ -484,7 +497,7 @@ public sealed class HomePage : PageBase
         {
             var w = Responsive.CardMin(avail, wide);
             host.Content = Carousel.Rail(shown,
-                it => new Card(_core!, _server, CardItem.From(it), wide, _onOpen, width: w),
+                it => new Card(_core!, _server, CardItem.From(it), wide, _onOpen, width: w, resumeRow: resumeRow),
                 wide ? w * 9 / 16 : w * 3 / 2, out _, gap: 12);
         });
         return host;

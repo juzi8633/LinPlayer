@@ -12,7 +12,7 @@
   "expect": [
     {"id":"movie-ok","name":"正常电影","type_":"Movie","is_folder":false,"has_primary":false,
      "runtime_secs":0,"resume_secs":0,"series_name":null,"episode_no":null,"season_no":null,
-     "video_height":null,"bitrate":null,"size_bytes":null,"played":false,"unplayed_item_count":0,
+     "video_height":null,"bitrate":null,"size_bytes":null,"video_range":null,"played":false,"unplayed_item_count":0,
      "genres":[],"year":null,"rating":null,"provider_ids":{},"presentation_unique_key":null,
      "path":null,"series_id":null,"date_updated":null,"sort_name":null,"tags":[],"studios":[]}
   ]

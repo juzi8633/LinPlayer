@@ -881,3 +881,14 @@ SVG 也判失败(两端都解不开,认它等于换一个静默失败);每条候
 
 **失效条件**:上面是这两台服当天的行为。某台服不认 `AnyProviderIdEquals` 时,补齐那一步静默为空(本地滤掉),
 退化成只靠各服自己搜。
+
+## 「取消观看记录」打 HideFromResume,不是标已看(2026-09-18)
+
+用户原话:「我不想看 我也不想标记为已观看」。标已看会把进度、播放数一起改掉,不对。
+
+- 端点:`POST /Users/{uid}/Items/{id}/HideFromResume?Hide=true`。**Emby 4.9.5 实测**(第 2 台测试服):
+  返回 200,`Items/Resume` 立刻不再出这一条,`UserData` 的 `Played` / 进度原样;`Hide=false` 能放回。
+- Jellyfin 没有这个端点(未测,按文档),打过去会是 404,界面原样报「移除失败」。
+- 核心层命令 `emby.hideResume`;PC 首页「继续观看」右键、安卓首页「继续观看」长按各多一项。
+  PC 首页重建时先画 MetaCache 里的旧表,不把那一条从缓存里抠掉的话,移除的卡会先闪回来一下(`HomePage.ForgetResume`)。
+- 「接下来看」(NextUp)上的条目**没验证** HideFromResume 对它有没有用:测试服那个号造不出 NextUp 数据。所以只挂在继续观看这一条上。

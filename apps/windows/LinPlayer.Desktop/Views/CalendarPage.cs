@@ -14,72 +14,87 @@ using LinPlayer.Desktop.Core;
 namespace LinPlayer.Desktop.Views;
 
 /// <summary>
-/// 追剧日历(<c>UI_PC.md</c> §7.12)。本周看板:一屏并排若干天,每列自己滚。
+/// 追剧日历(<c>UI_PC.md</c> §7.12)。上面一条「周几」日期条,下面是选中那天的海报墙。
 ///
-/// <para>几条被真事故定死的规矩:今天要居中不是靠边【用户定】;标题不许截成「…」
-/// (截了就是显示不全,大封面 <c>Uniform</c> 不裁 —— 源站给的是 2:3 竖版);
-/// 列不能上背景模糊(叠着内滚有残影);判「今天是周几」按上游时区 JST ——
-/// 按本地时区判的话,国内用户每天 23:00~01:00 之间看到的「今天」是错的。</para>
+/// <para>2026-09-18 重做(用户:「重做 排行榜 和 追剧日历 样式」)。原来是七列 320 宽的看板
+/// 横着滚:一屏只放得下三列,每列里一张小封面配一大块空白。现在一天占满整个宽度,
+/// 周几靠上面那条切 —— 打开日历最常见的目的是看「今天更新了什么」。</para>
+/// <para>仍然成立的规矩:今天居中(日期条从今天往前三天排起)【用户定】;标题不截成「…」;
+/// 封面 <c>Uniform</c> 不裁(源站给的是 2:3 竖版);不上背景模糊;「今天是周几」按 JST。</para>
 /// </summary>
 public sealed class CalendarPage : PageBase
 {
     private readonly CoreClient _core;
-    private readonly StackPanel _board = new() { Orientation = Orientation.Horizontal, Spacing = 14 };
+    private readonly StackPanel _days = new() { Orientation = Orientation.Horizontal, Spacing = 10 };
+    private readonly WrapPanel _wall = new() { ItemSpacing = 18, LineSpacing = 26 };
     private readonly TextBlock _status = Dim("");
-    private readonly ComboBox _source = new() { Width = 176, MinHeight = 34 };
-    private readonly CheckBox _onlyMine = new() { Content = "只看我追的", MinHeight = 34 };
+    private readonly List<Button> _sourceTabs = [];
+    private readonly Button _onlyMine = new() { Classes = { "chip" }, Content = "只看我追的" };
+    private string _source = "bangumi";
+    private List<JsonElement> _items = [];
+    private int _picked;
 
     private static readonly string[] WeekNames = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
     public CalendarPage(CoreClient core)
     {
         _core = core;
+        _picked = TodayWeekdayJst();
 
-        foreach (var (k, label) in new[] { ("bangumi", "番剧(Bangumi)"), ("trakt", "剧集(Trakt)") })
-            _source.Items.Add(new ComboBoxItem { Content = label, Tag = k });
-        _source.SelectedIndex = 0; // 解锁后默认 Bangumi(公开放送表免登录就能返回整张表)
-        // 先设默认值再挂事件 —— 反过来的话 SelectedIndex=0 会自己触发一次 Load,
-        // 页面一进来就打两次上游。
-        _source.SelectionChanged += (_, _) => _ = Load();
-        _onlyMine.IsCheckedChanged += (_, _) => _ = Load();
+        var sources = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        // 默认 Bangumi:公开放送表免登录就能返回整张表
+        foreach (var (k, label) in new[] { ("bangumi", "番剧 · Bangumi"), ("trakt", "剧集 · Trakt") })
+        {
+            var b = new Button { Classes = { "chip" }, Content = label };
+            b.Classes.Set("on", k == _source);
+            b.Click += (_, _) =>
+            {
+                if (_source == k) return;
+                _source = k;
+                foreach (var t in _sourceTabs) t.Classes.Set("on", t == b);
+                _ = Load();
+            };
+            _sourceTabs.Add(b);
+            sources.Children.Add(b);
+        }
+        _onlyMine.Click += (_, _) =>
+        {
+            _onlyMine.Classes.Set("on", !_onlyMine.Classes.Contains("on"));
+            _ = Load();
+        };
+
+        var bar = new DockPanel { LastChildFill = false };
+        DockPanel.SetDock(_onlyMine, Dock.Right);
+        bar.Children.Add(_onlyMine);
+        bar.Children.Add(sources);
 
         Content = Scrolled(new StackPanel
         {
-            Spacing = 14,
-            Children =
-            {
-                H1("追剧日历"),
-                new StackPanel
-                {
-                    Orientation = Orientation.Horizontal, Spacing = 10,
-                    Children = { _source, _onlyMine },
-                },
-                _status,
-                // 看板本身横向滚:并排四列放不下一周,剩下的靠横滚够得着
-                new ScrollViewer
-                {
-                    HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-                    VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
-                    Content = _board,
-                },
-            },
+            Spacing = 18,
+            Children = { H1("追剧日历"), bar, _days, _status, _wall },
         });
+        // 空的状态行不占位:Spacing 会把它算成一行,海报墙上方平白多一道空隙
+        _status.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == TextBlock.TextProperty) _status.IsVisible = !string.IsNullOrEmpty(_status.Text);
+        };
 
         _ = Load();
     }
 
-    private string Source => _source.SelectedItem is ComboBoxItem { Tag: string k } ? k : "bangumi";
+    private bool OnlyMine => _onlyMine.Classes.Contains("on");
 
     private async Task Load()
     {
-        _board.Children.Clear();
+        _wall.Children.Clear();
+        _days.Children.Clear();
         _status.Text = "加载中…";
-        var onlyMine = _onlyMine.IsChecked == true;
+        var onlyMine = OnlyMine;
 
         JsonElement arr;
         try
         {
-            arr = Source == "trakt"
+            arr = _source == "trakt"
                 ? await _core.SyncTraktCalendar(new { only_mine = onlyMine })
                 : await _core.SyncBangumiCalendar(new { only_mine = onlyMine });
         }
@@ -91,15 +106,16 @@ public sealed class CalendarPage : PageBase
         }
 
         var items = arr.ValueKind == JsonValueKind.Array ? arr.EnumerateArray().ToList() : [];
-        Dispatcher.UIThread.Post(() => Render(items));
+        Dispatcher.UIThread.Post(() => { _items = items; Render(); });
     }
 
-    private void Render(List<JsonElement> items)
+    private void Render()
     {
-        _board.Children.Clear();
-        if (items.Count == 0)
+        _days.Children.Clear();
+        _wall.Children.Clear();
+        if (_items.Count == 0)
         {
-            _status.Text = _onlyMine.IsChecked == true
+            _status.Text = OnlyMine
                 ? "你追的番里,这一季没有正在放送的。"
                 : "放送表是空的(上游没有返回条目)。";
             return;
@@ -107,100 +123,102 @@ public sealed class CalendarPage : PageBase
         _status.Text = "";
 
         var today = TodayWeekdayJst();
-        // **今天居中**:从「今天往前一格」开始排。周一 / 周日是今天时自然靠边。
-        var start = today - 1;
-        var order = new List<int>();
-        for (var i = 0; i < 7; i++) order.Add(((start - 1 + i + 7) % 7) + 1);
-
-        /* 七列全画,一屏放得下三四列,剩下的靠**横滚**够得着。
-           只画四列的话,周末那几天要换个筛选才看得到 —— 而日历本来就是拿来
-           一眼扫全周的。列宽固定 320:靠列宽不靠列多,塞七列每列都窄到看不清封面。 */
-        foreach (var wd in order)
+        // **今天居中**:从今天往前三天排起,七天里今天落在第四格
+        for (var i = 0; i < 7; i++)
         {
-            var ofDay = items.Where(e => Weekday(e) == wd).ToList();
-            _board.Children.Add(DayColumn(wd, wd == today, ofDay));
+            var wd = ((today - 4 + i + 7) % 7) + 1;
+            _days.Children.Add(DayTab(wd, wd == today, _items.Count(e => Weekday(e) == wd)));
         }
+
+        var ofDay = _items.Where(e => Weekday(e) == _picked).OrderBy(Time).ToList();
+        if (ofDay.Count == 0) { _status.Text = "这天没有更新。"; return; }
+        foreach (var e in ofDay) _wall.Children.Add(Poster(e));
     }
 
-    private Control DayColumn(int weekday, bool isToday, List<JsonElement> items)
+    /// <summary>日期条上的一格:周几 + 这天几部。今天那格写「今天」,选中那格上强调色。</summary>
+    private Control DayTab(int weekday, bool isToday, int count)
     {
-        var head = new TextBlock
+        var b = new Button
         {
-            Text = WeekNames[weekday] + (isToday ? "  ·  今天" : ""),
-            FontSize = 14,
-            FontWeight = isToday ? FontWeight.Bold : FontWeight.Normal,
-            Foreground = new SolidColorBrush(Color.Parse(isToday ? "#5b8def" : "#9aa4b4")),
-            Margin = new Thickness(2, 0, 0, 10),
-        };
-
-        var list = new StackPanel { Spacing = 10 };
-        foreach (var e in items) list.Children.Add(EntryRow(e));
-        if (items.Count == 0) list.Children.Add(Dim("这天没有更新"));
-
-        return new Border
-        {
-            // **不上背景模糊**:叠着内滚会有残影
-            Background = new SolidColorBrush(Color.Parse(isToday ? "#141922" : "#0f131a")),
-            BorderBrush = new SolidColorBrush(Color.Parse(isToday ? "#295b8def" : "#252c38")),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(14),
-            Width = 320, // 靠列宽不靠列多
-            Child = new StackPanel
+            Classes = { "chip" }, Width = 96, Padding = new Thickness(0, 10),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            Content = new StackPanel
             {
+                Spacing = 2, HorizontalAlignment = HorizontalAlignment.Center,
                 Children =
                 {
-                    head,
-                    new ScrollViewer
+                    new TextBlock
                     {
-                        MaxHeight = 620, // 每列自己滚
-                        VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-                        Content = list,
+                        Text = isToday ? "今天" : WeekNames[weekday], FontSize = 15, FontWeight = FontWeight.SemiBold,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                    },
+                    new TextBlock
+                    {
+                        Text = isToday ? $"{WeekNames[weekday]} · {count} 部" : $"{count} 部", FontSize = 11.5,
+                        Opacity = 0.7, HorizontalAlignment = HorizontalAlignment.Center,
                     },
                 },
             },
         };
+        b.Classes.Set("on", weekday == _picked);
+        b.Click += (_, _) => { _picked = weekday; Render(); };
+        return b;
     }
 
-    private Control EntryRow(JsonElement e)
+    /// <summary>海报一张:2:3 封面(Uniform 不裁)+ 完整标题 + 评分 · 集数。更新时刻压在封面左下。</summary>
+    private Control Poster(JsonElement e)
     {
+        const double w = 160, h = w * 3 / 2;
         var title = Str(e, "title");
-        var img = new Image { Stretch = Stretch.Uniform, Width = 80 };
-        var cover = new Border
+        var img = new Image { Stretch = Stretch.Uniform, Opacity = 0, Classes = { "art" } };
+        var layers = new Panel
         {
-            Width = 80, Height = 120, CornerRadius = new CornerRadius(6), ClipToBounds = true,
-            Background = Tok.Of("PanelAlt"),
-            Child = img,
-            VerticalAlignment = VerticalAlignment.Top,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = title, FontSize = 12, Margin = new Thickness(10), Foreground = Tok.Of("Ink3"),
+                    TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center,
+                },
+                img,
+            },
         };
         if (Str(e, "image_url") is { Length: > 0 } url) _ = Fill(img, url);
 
+        // 扫一排海报时最先要找的是「几点更新」,所以时刻压在封面上,不和评分挤在小字里
+        if (Time(e) is { Length: > 0 } t)
+        {
+            layers.Children.Add(new Border
+            {
+                HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(6), Padding = new Thickness(6, 2), CornerRadius = new CornerRadius(6),
+                Background = new SolidColorBrush(Color.Parse("#cc000000")),
+                Child = new TextBlock { Text = t, FontSize = 12, FontWeight = FontWeight.SemiBold, Foreground = Brushes.White },
+            });
+        }
+
         var bits = new List<string>();
-        if (Time(e) is { Length: > 0 } t) bits.Add(t);
-        if (e.TryGetProperty("rating", out var r) && r.ValueKind == JsonValueKind.Number)
-            bits.Add(r.GetDouble().ToString("0.0") + " 分");
+        if (e.TryGetProperty("rating", out var r) && r.ValueKind == JsonValueKind.Number && r.GetDouble() > 0)
+            bits.Add("★ " + r.GetDouble().ToString("0.0"));
         if (Str(e, "subtitle") is { Length: > 0 } sub) bits.Add(sub);
 
         return new StackPanel
         {
-            Orientation = Orientation.Horizontal, Spacing = 10,
+            Width = w, Spacing = 6,
             Children =
             {
-                cover,
-                new StackPanel
+                new Border
                 {
-                    Width = 190, Spacing = 6,
-                    Children =
-                    {
-                        // 标题**不许截成「…」** —— 截了就是显示不全。完整换行。
-                        new TextBlock { Text = title, FontSize = 13, TextWrapping = TextWrapping.Wrap },
-                        new TextBlock
-                        {
-                            Text = string.Join("  ·  ", bits), FontSize = 11.5, Opacity = 0.6,
-                            TextWrapping = TextWrapping.Wrap,
-                            IsVisible = bits.Count > 0,
-                        },
-                    },
+                    Width = w, Height = h, CornerRadius = new CornerRadius(10), ClipToBounds = true,
+                    Background = Tok.Of("PanelAlt"), Child = layers,
+                },
+                // 标题**不许截成「…」** —— 截了就是显示不全。完整换行。
+                new TextBlock { Text = title, FontSize = 13, FontWeight = FontWeight.Medium, TextWrapping = TextWrapping.Wrap },
+                new TextBlock
+                {
+                    Text = string.Join(" · ", bits), FontSize = 11.5, Classes = { "dim" },
+                    TextWrapping = TextWrapping.Wrap, IsVisible = bits.Count > 0,
                 },
             },
         };
@@ -210,7 +228,7 @@ public sealed class CalendarPage : PageBase
     {
         var bmp = await Images.LoadAsync(_core, url, 240);
         if (bmp is null) return;
-        Dispatcher.UIThread.Post(() => target.Source = bmp);
+        Dispatcher.UIThread.Post(() => { target.Source = bmp; target.Opacity = 1; });
     }
 
     /// <summary>

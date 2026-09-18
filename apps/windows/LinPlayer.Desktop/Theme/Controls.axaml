@@ -335,6 +335,16 @@
   <Style Selector="ComboBox:focus">
     <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
   </Style>
+  <!-- Fluent 的悬停 / 按下是直接写模板里那块 Border 的,上面两条管不到它:
+       悬停时冒出一圈亮白框,和旁边没悬停的那个摆在一起像两种控件。 -->
+  <Style Selector="ComboBox:pointerover /template/ Border#Background">
+    <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource LineStrong}" />
+  </Style>
+  <Style Selector="ComboBox:pressed /template/ Border#Background">
+    <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+  </Style>
 
   <!-- 卡面:悬停时描一圈强调色 + 压暗底色,告诉用户「这一张是当前的」。
        光靠放大是不够的:一行卡挨在一起时,放大 4% 在截图上几乎读不出来。 -->
@@ -352,6 +362,45 @@
   </Style>
   <Style Selector="Button.media:pointerover Border.art">
     <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+  </Style>
+
+  <!-- 播放页选集栏的一行(EpisodeDrawer)。压在画面上,所以用带 alpha 的白而不是 token。
+       悬停:底色提一档 + 封面放大一点(用户 2026-09-18:「鼠标悬浮在对应集卡片上面应该有一个效果」)。 -->
+  <Style Selector="Button.eprow">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Padding" Value="6" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.eprow /template/ ContentPresenter">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.14" />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="Button.eprow:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="#1fffffff" />
+  </Style>
+  <Style Selector="Button.eprow.on /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource AccentSoft}" />
+  </Style>
+  <Style Selector="Button.eprow:pressed">
+    <Setter Property="RenderTransform" Value="scale(0.985)" />
+  </Style>
+  <Style Selector="Button.eprow Border.cover">
+    <Setter Property="RenderTransform" Value="scale(1)" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.18" Easing="CubicEaseOut" />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="Button.eprow:pointerover Border.cover">
+    <Setter Property="RenderTransform" Value="scale(1.04)" />
   </Style>
 
   <!-- 封面淡入:图到了再显。直接塞上去会「啪」地跳一下,一屏几十张同时跳就是闪屏。 -->
@@ -493,12 +542,13 @@
     <Setter Property="BorderBrush" Value="#a6ffffff" />
   </Style>
 
-  <!-- 季/筛选之类的小胶囊 -->
+  <!-- 季/筛选之类的小片。圆角 6 不是胶囊:用户 2026-09-18「统一矩形吧 圆角看起来也并没有很好看」,
+       胶囊和旁边 6 圆角的按钮摆在一排就是两种形状。 -->
   <Style Selector="Button.chip">
     <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
     <Setter Property="Foreground" Value="{DynamicResource Ink2}" />
     <Setter Property="BorderThickness" Value="0" />
-    <Setter Property="CornerRadius" Value="999" />
+    <Setter Property="CornerRadius" Value="6" />
     <Setter Property="Padding" Value="14,7" />
     <Setter Property="FontSize" Value="12.5" />
     <Setter Property="Cursor" Value="Hand" />

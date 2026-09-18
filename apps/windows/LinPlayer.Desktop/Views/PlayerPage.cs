@@ -579,7 +579,7 @@ public sealed class PlayerPage : UserControl
         _qualityBtn.Click += (_, _) => ShowEnhance();
         _aspectBtn = Osd("比例", "画面比例");
         _aspectBtn.Click += (_, _) => Pick(_aspectBtn, _aspect, "画面比例", null, true);
-        var segBtn = Osd("片头片尾", "标记片头片尾 —— 这部剧以后一直用这一份");
+        var segBtn = Osd("片头片尾", "填片头片尾时长 —— 这部剧以后一直用这一份");
         segBtn.Click += (_, _) => ShowSegments(segBtn);
 
         /* 延迟**收进各自那个按钮里**(用户 2026-09-06:
@@ -755,6 +755,26 @@ public sealed class PlayerPage : UserControl
             VerticalAlignment = VerticalAlignment.Center,
             Children = { _net, shot, _qualityBtn, _aspectBtn, segBtn },
         };
+        /* 窗口三颗键。播放页把标题栏收掉了(画面铺满),连带最小化 / 最大化 / 关闭也没了 ——
+           不全屏看片时只剩 Alt+F4 能关窗口。全屏时不画:那时候窗口本来就不该被挪动。 */
+        Button Caption(string glyph, string tip, Action act)
+        {
+            var b = Glyph(glyph, tip);
+            b.FontSize = 12;
+            b.Click += (_, _) => act();
+            return b;
+        }
+        _caption = new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 2, Margin = new Thickness(10, 0, 0, 0),
+            Children =
+            {
+                Caption("\uE921", "最小化", () => { if (Win is { } w) w.WindowState = WindowState.Minimized; }),
+                Caption("\uE922", "最大化 / 还原(双击顶栏也行)", () => Win?.ShortcutToggleMaximize()),
+                Caption("\uE8BB", "关闭窗口", () => Win?.Close()),
+            },
+        };
+        topRight.Children.Add(_caption);
         var topRow = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
         Grid.SetColumn(topLeft, 0);
         Grid.SetColumn(titleText, 1);
@@ -768,6 +788,15 @@ public sealed class PlayerPage : UserControl
             Padding = new Thickness(18, 14, 18, 34),
             VerticalAlignment = VerticalAlignment.Top,
             Child = topRow,
+        };
+        /* 顶栏空白处 = 标题栏:按住拖窗口,双击最大化(用户 2026-09-18:「播放页加入边框
+           方便用户拖拉换位置」)。按钮自己会把按下吃掉,所以点按钮不会误拖。 */
+        _top.PointerPressed += (_, e) =>
+        {
+            if (_full || Win is not { } w || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+            if (e.ClickCount == 2) w.ShortcutToggleMaximize();
+            else w.BeginMoveDrag(e);
+            e.Handled = true;
         };
 
         /* 上下两条的淡入淡出。用户 2026-09-03 提过一次,2026-09-04 又说
@@ -818,7 +847,10 @@ public sealed class PlayerPage : UserControl
             Children = { _view, _dm, _top, _bottom, _lock, _dmPanel, _skip, _bubble },
         };
         _root = root;
-        Content = root;
+        /* 一圈发丝边:窗口化时画面四周是黑的,和桌面、别的黑窗口分不出边界,
+           不知道从哪儿能抓住它。全屏 / 最大化时收掉(那时没有边可抓)。 */
+        _frame = new Border { Child = root, BorderBrush = new SolidColorBrush(Color.Parse("#40ffffff")) };
+        Content = _frame;
 
         /* 「点面板以外就关掉」这一整段没了 —— 弹层是 Avalonia 的 Flyout,
            点外面它自己就关,点里面它自己不关。手写那一版栽过一跤:
@@ -836,6 +868,11 @@ public sealed class PlayerPage : UserControl
                代价是每个 OSD 按钮一个订阅,不开 debug 时处理器第一行就返回。 */
             WatchHover();
             Focus();
+            if (Win is { } w)
+            {
+                SyncFrame();
+                w.PropertyChanged += OnWindowProp;
+            }
             /* 用户 2026-09-03:「播放页不应该有侧边栏,还是有了」。
                原来只有按 F 进全屏才收 —— 不全屏看片时左边一直杵着导航栏,
                而那上面每一个入口点下去都会把正在放的片子扔掉。 */
@@ -845,8 +882,9 @@ public sealed class PlayerPage : UserControl
         };
         // 离场必须放回来。只在 Leave() 里放的话,用 Alt+← / 侧栏返回等别的路
         // 退出播放页时外壳再也不出现 —— 那就是「软件的导航没了」。
-        DetachedFromVisualTree += (_, _) =>
+        DetachedFromVisualTree += (_, e) =>
         {
+            if (e.Root is Window w) w.PropertyChanged -= OnWindowProp;
             if (_full) { _full = false; Nav.Fullscreen?.Invoke(false); }
             Nav.Immersive?.Invoke(false);
             Toast.AtTop = false;
@@ -903,6 +941,8 @@ public sealed class PlayerPage : UserControl
             空白处也会暂停,而那儿用户的意图是「什么都不做」。 */
         _view.PointerPressed += (_, e) =>
         {
+            // 选集栏开着时点画面 = 收起它,不是暂停:用户的意图是「不选了」
+            if (_drawer is not null) { CloseDrawer(); e.Handled = true; return; }
             if (e.ClickCount != 1) return;   // 第二下是双击全屏,别顺带再暂停一次
             if (Fire(Actions.Hit(Actions.Player, Actions.Spec(e.GetCurrentPoint(_view).Properties))))
                 e.Handled = true;
@@ -952,6 +992,22 @@ public sealed class PlayerPage : UserControl
                 .ContinueWith(_ => _core.PlayerSetPause(new { paused = true }));
         SelfCheckPanel();
         SelfCheckWatched();
+        /* 自检:LP_SELFCHECK_PLAYERUI=drawer|seg|subs|dm —— 起播 8 秒后把那一块打开并钉住 OSD。
+           这几块都是点开才有的东西,不打开截图里就永远没有它们。 */
+        if (Environment.GetEnvironmentVariable("LP_SELFCHECK_PLAYERUI") is { Length: > 0 } ui)
+            _ = Task.Delay(8000).ContinueWith(_ => Dispatcher.UIThread.Post(() =>
+            {
+                _lastMove = DateTime.UtcNow.AddYears(1);
+                ShowOsd(true);
+                switch (ui)
+                {
+                    case "drawer": ShowEpisodes(); break;
+                    case "seg": ShowSegments(segBtn); break;
+                    case "subs": subsBtn.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); break;
+                    case "dm": ShowDanmakuMenu(_dmBtn); break;
+                }
+                Console.WriteLine($"[播放页UI] 打开了 {ui}  选集 {_episodes.Count} 集  抽屉={_drawer is not null}");
+            }));
         // 自检:LP_SELFCHECK_PLAYER_DRILL=3 把跳过条钉出来 —— 它平时只在片头那几十秒里出现,
         // 截图永远抓不到,而它是这一版新加的东西里最容易画错位置的一个。
         if (Environment.GetEnvironmentVariable("LP_SELFCHECK_PLAYER_DRILL") == "3")
@@ -1075,34 +1131,38 @@ public sealed class PlayerPage : UserControl
         catch { /* 拉不到分集不影响正在放的这一集 */ }
     }
 
+    /// <summary>右侧那一栏(选集 + 章节)。开着时它就是这个;关着是 null。</summary>
+    private EpisodeDrawer? _drawer;
+
     /// <summary>
-    /// 选集浮层。<b>只写 S01E01,不写剧名和标题</b>
-    /// (用户 2026-09-05:长标题会把集号挤出可视区)。
-    ///
-    /// <para>打开时把正在放的那一集<b>滚进视野</b>:第 500 集的时候浮层停在第 1 集,
-    /// 等于让用户在一千行里自己找。</para>
+    /// 选集栏:贴右边滑出来,见 <see cref="EpisodeDrawer"/>。再按一次 / Esc / 点画面收起。
     /// </summary>
     private void ShowEpisodes()
     {
-        var at = _episodes.FindIndex(e => e.Id == _itemId);
-        var items = new List<(string, Action?)>();
-        if (_episodes.Count > 0)
-        {
-            items.Add(("选集", null));
-            items.AddRange(_episodes.Select((e, i) =>
-                ((i == at ? "▸ " : "") + e.PickerLabel, (Action?)(() => PlayEpisode(e)))));
-        }
-        /* 章节跟着一起进来。它原来住在设置抽屉里的一个下拉框中 ——
-           抽屉没了,而章节和选集是同一件事的两个粒度(跳到别的集 / 跳到本集的某一段),
-           一个按钮一个弹层装得下,不值得再开一个入口。 */
-        var chapters = _chapters.ItemsSource?.Cast<ChapterOption>().ToList() ?? [];
-        if (chapters.Count > 0)
-        {
-            items.Add(("章节", null));
-            items.AddRange(chapters.Select(c => (c.Label, (Action?)(() => _ = SeekTo(c.At)))));
-        }
-        if (items.Count == 0) return;
-        DetailPage.Flyout(_pickEp, items, at < 0 ? -1 : at);
+        if (_drawer is not null) { CloseDrawer(); return; }
+        var chapters = (_chapters.ItemsSource?.Cast<ChapterOption>() ?? [])
+            .Select(c => (c.At, c.Label)).ToList();
+        if (_episodes.Count == 0 && chapters.Count == 0) return;
+        var d = new EpisodeDrawer(_core, Nav.Session?.server ?? "", _episodes, _itemId, chapters,
+            e => { CloseDrawer(); PlayEpisode(e); },
+            at => _ = SeekTo(at),
+            CloseDrawer);
+        // 出场先摆在屏外,下一帧再给终值 —— 同一帧里设两次,过渡读不到「变过」
+        EpisodeDrawer.Slide(d, false);
+        d.Transitions = Fade(OsdInMs);
+        _drawer = d;
+        _root!.Children.Insert(_root.Children.IndexOf(_bubble), d);
+        Dispatcher.UIThread.Post(() => EpisodeDrawer.Slide(d, true), DispatcherPriority.Render);
+    }
+
+    private void CloseDrawer()
+    {
+        if (_drawer is not { } d) return;
+        _drawer = null;
+        EpisodeDrawer.Slide(d, false);
+        // 等滑出去再摘:当场摘掉就看不到收起的那一下
+        DispatcherTimer.RunOnce(() => _root?.Children.Remove(d), TimeSpan.FromMilliseconds(OsdOutMs));
+        Focus();
     }
 
     /// <summary>换一集。<b>替换</b>不压栈 —— 挑十次集会攒出十层播放页。</summary>
@@ -1175,7 +1235,7 @@ public sealed class PlayerPage : UserControl
     /// <para>设完<b>就地生效</b>,不等下一次起播 —— 用户刚量完就想看它对不对,
     /// 让他退出重进等于让他无法确认自己设对了没有。</para>
     /// </summary>
-    private async Task SaveSkipRange((double Start, double End)? intro, (double Start, double End)? outro)
+    private async Task SaveSkipRange((double Start, double End)? intro, double outroLen)
     {
         if (NoEmby || _itemId == "") return;
         try
@@ -1186,13 +1246,14 @@ public sealed class PlayerPage : UserControl
                 s.server, s.token, s.user_id, s.device_id, server_id = _serverId,
                 item_id = _itemId,
                 intro_start = intro?.Start ?? 0, intro_end = intro?.End ?? 0,
-                outro_start = outro?.Start ?? 0, outro_end = outro?.End ?? 0,
+                outro_len = outroLen,
             });
             _intro = intro is { End: > 0 } ? intro : null;
-            _outro = outro is { End: > 0 } ? outro : null;
+            _outro = outroLen > 0 && _duration > outroLen ? (_duration - outroLen, _duration) : null;
             _skipped = "";
-            _skipSource = intro is null && outro is null ? "" : "手动设定";
-            Toast.Show(intro is null && outro is null ? "已清除这部剧的片头片尾" : "已记下,这部剧都按它来");
+            var none = intro is null && outroLen <= 0;
+            _skipSource = none ? "" : "手动设定";
+            Toast.Show(none ? "已清除这部剧的片头片尾" : "已记下,这部剧都按它来");
         }
         catch (Exception e) { Toast.Show(LibraryPage.Advice(e)); }
     }
@@ -1488,6 +1549,18 @@ public sealed class PlayerPage : UserControl
             var idx = i;
             // 当前那一条要**看得出来**:一列一模一样的行里,用户没法知道现在用的是哪条
             var row = MenuRow((idx == model.SelectedIndex ? "● " : "○ ") + items[i]);
+            if (items[i] is TrackOption { Detail.Length: > 0 } opt)
+            {
+                row.Content = new StackPanel
+                {
+                    Spacing = 2,
+                    Children =
+                    {
+                        new TextBlock { Text = (idx == model.SelectedIndex ? "● " : "○ ") + opt.Label },
+                        new TextBlock { Text = opt.Detail, FontSize = 11.5, Opacity = 0.6, Margin = new Thickness(18, 0, 0, 0) },
+                    },
+                };
+            }
             row.Click += (_, _) => { fly?.Hide(); model.SelectedIndex = idx; };
             list.Children.Add(row);
         }
@@ -1522,32 +1595,88 @@ public sealed class PlayerPage : UserControl
     }
 
     /// <summary>
-    /// 片头片尾弹层:**标记从哪到哪**,这部剧以后一直用这一份。
+    /// 片头片尾弹层:**填时长**,不是「从这到这」(用户 2026-09-18:「给用户一个输入栏
+    /// 让用户输入跳过的时长 这样用户点一下就可以跳过了」)。
     ///
-    /// <para>用户 2026-09-06:「应该是让用户标记片头从哪里到哪里、片尾从哪里到哪里,
-    /// 这个剧就可以一直用这个了」。所以这里给的是「以当前位置为界」的两个动作 ——
-    /// 看片时准确的位置就在手上,让他去数分秒反而更容易填错,而填错会把正片切掉。</para>
+    /// <para>片头 = 从第几秒起、长几秒(大多数片子起点是 0,冷开场的番剧才要改);
+    /// 片尾只填长度,按每集最后几秒算 —— 每集长短不一,存绝对时间的话换一集就切进正片。
+    /// 进了区间右下角出「跳过片头 / 片尾」,点一下跳到区间末尾。</para>
     /// </summary>
     private void ShowSegments(Button anchor)
     {
-        var body = new StackPanel { Spacing = 2, MinWidth = 260 };
+        var body = new StackPanel { Spacing = 10, Width = 300, Margin = new Thickness(10, 6, 10, 10) };
         body.Children.Add(PopupTitle("片头片尾"));
-        body.Children.Add(Dimmed(SegmentText()));
-        Flyout? fly = null;
-        Button Act(string text, Func<Task> go)
+
+        TextBox Box(double secs) => new()
         {
-            var b = MenuRow(text);
-            b.Click += (_, _) => { fly?.Hide(); _ = go(); };
-            return b;
+            Text = secs > 0 ? Clock(secs) : "", Watermark = "秒 或 分:秒", Width = 96,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+        };
+        var introFrom = Box(_intro?.Start ?? 0);
+        if (_intro is null) introFrom.Text = "0:00";
+        var introLen = Box(_intro is { } a ? a.End - a.Start : 0);
+        var outroLen = Box(_outro is { } b && _duration > 0 ? _duration - b.Start : 0);
+
+        var here = new Button { Classes = { "ghost" }, Content = "取当前", Foreground = Brushes.White, Padding = new Thickness(10, 6) };
+        ToolTip.SetTip(here, "片头从现在这个位置开始");
+        here.Click += (_, _) => introFrom.Text = Clock(_position);
+
+        Control Line(string label, params Control[] parts)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            row.Children.Add(new TextBlock
+            {
+                Text = label, Width = 44, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center,
+            });
+            foreach (var p in parts) row.Children.Add(p);
+            return row;
         }
-        body.Children.Add(Act($"片头到这儿(0:00 ~ {Clock(_position)})",
-            () => SaveSkipRange((0, _position), _outro)));
-        body.Children.Add(Act($"片尾从这儿开始({Clock(_position)} ~ 结尾)",
-            () => SaveSkipRange(_intro, (_position, _duration))));
-        body.Children.Add(Act("清除这部剧的标记", () => SaveSkipRange(null, null)));
-        body.Children.Add(Dimmed("标记按**剧**存,同一部剧只用设一遍。"
-            + "自动跳过在「设置 → 跳过片头片尾」里开。"));
+        TextBlock Unit(string t) => new() { Text = t, Foreground = Brushes.White, Opacity = 0.62, VerticalAlignment = VerticalAlignment.Center };
+        body.Children.Add(Line("片头", Unit("从"), introFrom, here));
+        body.Children.Add(Line("", Unit("长"), introLen, Unit("秒")));
+        body.Children.Add(Line("片尾", Unit("最后"), outroLen, Unit("秒")));
+
+        var err = Dimmed("");
+        err.IsVisible = false;
+        body.Children.Add(err);
+
+        Flyout? fly = null;
+        var save = new Button { Classes = { "primary" }, Content = "保存" };
+        save.Click += (_, _) =>
+        {
+            if (!TryParseClock(introFrom.Text, out var from) || !TryParseClock(introLen.Text, out var il)
+                || !TryParseClock(outroLen.Text, out var ol))
+            {
+                err.Text = "填秒数(90)或 分:秒(1:30)";
+                err.IsVisible = true;
+                return;
+            }
+            fly?.Hide();
+            _ = SaveSkipRange(il > 0 ? (from, from + il) : null, ol);
+        };
+        var clear = new Button { Classes = { "ghost" }, Content = "清除", Foreground = Brushes.White };
+        clear.Click += (_, _) => { fly?.Hide(); _ = SaveSkipRange(null, 0); };
+        body.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 6, Children = { save, clear },
+        });
+        body.Children.Add(Dimmed("按剧存,同一部剧只填一遍。" + (_skipSource.Length > 0 ? $"现在用的是:{_skipSource}" : "")));
         fly = Popup(anchor, body, true);
+    }
+
+    /// <summary>「90」「1:30」「1:02:03」都认。空 = 0(这一段不设)。</summary>
+    internal static bool TryParseClock(string? text, out double secs)
+    {
+        secs = 0;
+        var t = (text ?? "").Trim().Replace('：', ':');
+        if (t == "") return true;
+        foreach (var part in t.Split(':'))
+        {
+            if (!double.TryParse(part, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var v) || v < 0) return false;
+            secs = secs * 60 + v;
+        }
+        return true;
     }
 
     /// <summary>片头片尾当前是什么,以及这份数据是谁给的。</summary>
@@ -1652,6 +1781,11 @@ public sealed class PlayerPage : UserControl
     {
         _lastMove = DateTime.UtcNow;
         ShowOsd(true);
+        if (e.Key == Key.Escape && _drawer is not null) { CloseDrawer(); e.Handled = true; return; }
+        /* 在输入框里打字(片头片尾的时长、弹幕搜索):数字键会被当成「跳到百分之几」、
+           空格会暂停。隧道阶段页面比输入框先拿到这一下,所以必须在最前面放行。
+           看 Source 不看焦点:弹层是另一个顶层窗口,这一页的 FocusManager 看不见它里面的焦点。 */
+        if (e.Source is TextBox) return;
         /* 数字键跳到百分之几。 事实标准(0=开头,5=一半)。
            **不进键位表**:十个键一个语义,拆成十条动作只会把设置页撑满,
            而它们又不该分开改。 */
@@ -1725,6 +1859,11 @@ public sealed class PlayerPage : UserControl
 
     private Button _dmBtn = null!;
     private bool _dmOn;
+    /// <summary>
+    /// 现在挂着的弹幕是哪个源的哪一集,写在「显示弹幕」那一行右边
+    /// (用户 2026-09-18:匹配到了之后显示拉取到的弹幕源)。空 = 没挂上。
+    /// </summary>
+    private string _dmSource = "";
 
     /// <summary>
     /// 弹幕搜索面板。<b>贴在画面右侧,不是另开一扇顶层窗口</b>。
@@ -1764,7 +1903,21 @@ public sealed class PlayerPage : UserControl
         Flyout? fly = null;
 
         var toggle = MenuRow("");
-        void PaintToggle() => toggle.Content = (_dmOn ? "● " : "○ ") + "显示弹幕";
+        void PaintToggle()
+        {
+            var src = new TextBlock
+            {
+                Text = _dmOn ? _dmSource : "", FontSize = 11.5, Opacity = 0.6,
+                VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin = new Thickness(14, 0, 0, 0), MaxWidth = 230,
+            };
+            ToolTip.SetTip(src, src.Text.Length > 0 ? src.Text : null);
+            var g = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+            g.Children.Add(new TextBlock { Text = (_dmOn ? "● " : "○ ") + "显示弹幕", VerticalAlignment = VerticalAlignment.Center });
+            Grid.SetColumn(src, 1);
+            g.Children.Add(src);
+            toggle.Content = g;
+        }
         PaintToggle();
         toggle.Click += async (_, _) =>
         {
@@ -1855,6 +2008,7 @@ public sealed class PlayerPage : UserControl
             input["bgm_id"] = bg.GetInt64();
 
         var items = await _core.DanmakuAutoLoad(new { input });
+        _dmSource = "";
         if (items.ValueKind != JsonValueKind.Array || items.GetArrayLength() == 0)
         {
             // ☠ 这一句以前不看 loud,于是每起播一集就弹一次「没匹配到」
@@ -1862,6 +2016,17 @@ public sealed class PlayerPage : UserControl
             return;
         }
         await _core.PlayerDanmakuSet(new { items });
+        try
+        {
+            var m = await _core.DanmakuLastMatch(new { });
+            if (m.ValueKind == JsonValueKind.Object)
+                _dmSource = string.Join(" · ", new[]
+                {
+                    Str(m, "source_name"), $"{Str(m, "anime_title")} {Str(m, "episode_title")}".Trim(),
+                }.Where(x => x.Length > 0));
+        }
+        catch { /* 只是一行说明,取不到不影响弹幕本身 */ }
+        Dispatcher.UIThread.Post(() => _dmRepaint?.Invoke());
         // 灌完必须重取排版 —— 不取的话画面上还是上一集那一份(或者空的)
         await RefreshDanmakuLayout();
         if (loud) Toast.Show($"挂上 {items.GetArrayLength()} 条弹幕");
@@ -2032,7 +2197,7 @@ public sealed class PlayerPage : UserControl
             catch (Exception e) { status.Text = LibraryPage.Advice(e); }
         }
 
-        async Task Expand(StackPanel host, string sourceId, string animeId, JsonElement anime)
+        async Task Expand(StackPanel host, string sourceId, string animeId, JsonElement anime, string srcName)
         {
             host.Children.Clear();
             var eps = anime.TryGetProperty("episodes", out var e) && e.ValueKind == JsonValueKind.Array
@@ -2054,7 +2219,9 @@ public sealed class PlayerPage : UserControl
                 var epId = Str(ep, "episode_id");
                 var label = Str(ep, "episode_title") is { Length: > 0 } t ? t : epId;
                 var row = MenuRow("    " + label);
-                row.Click += async (_, _) => await Attach(sourceId, epId, label);
+                var full = string.Join(" · ", new[] { srcName, $"{Str(anime, "anime_title")} {label}".Trim() }
+                    .Where(x => x.Length > 0));
+                row.Click += async (_, _) => { await Attach(sourceId, epId, label); _dmSource = full; };
                 host.Children.Add(row);
             }
         }
@@ -2101,7 +2268,7 @@ public sealed class PlayerPage : UserControl
                     {
                         opened = !opened;
                         if (!opened) { host.Children.Clear(); return; }
-                        await Expand(host, srcId, anId, an);
+                        await Expand(host, srcId, anId, an, Str(g, "source_name"));
                     };
                     results.Children.Add(row);
                     results.Children.Add(host);
@@ -2334,11 +2501,17 @@ public sealed class PlayerPage : UserControl
     /// Maximized —— 本窗口无边框,播放页又收了标题栏和侧栏,于是最大化和全屏
     /// 长得一模一样。修在外壳:播放页退全屏一律回 Normal。</para>
     /// </summary>
+    private void OnWindowProp(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == Window.WindowStateProperty) SyncFrame();
+    }
+
     private void ToggleFullscreen()
     {
         _full = !_full;
         // 侧栏已经在进页时收掉了(见构造函数),这里只管窗口状态
         Nav.Fullscreen?.Invoke(_full);
+        SyncFrame();
         // 图标要跟着换:全屏之后按钮还画着「进入全屏」,用户会以为没生效
         if (_fullBtn is not null)
         {
@@ -2354,6 +2527,17 @@ public sealed class PlayerPage : UserControl
     }
 
     private Button? _fullBtn;
+    private StackPanel _caption = null!;
+    private Border _frame = null!;
+    private MainWindow? Win => TopLevel.GetTopLevel(this) as MainWindow;
+
+    /// <summary>边框和窗口三颗键跟着「全屏 / 最大化」走。</summary>
+    private void SyncFrame()
+    {
+        var windowed = !_full && Win is { WindowState: WindowState.Normal };
+        _frame.BorderThickness = new Thickness(windowed ? 1 : 0);
+        _caption.IsVisible = !_full;
+    }
 
     private void Leave()
     {
@@ -4016,7 +4200,7 @@ public sealed class PlayerPage : UserControl
         var subs = new List<TrackOption> { new("no", "关闭字幕") };
         foreach (var t in tr.EnumerateArray())
         {
-            var opt = new TrackOption(Str(t, "id"), TrackLabel(t));
+            var opt = new TrackOption(Str(t, "id"), TrackLabel(t), TrackDetail(t));
             switch (Str(t, "kind"))
             {
                 case "audio": audio.Add(opt); break;
@@ -4083,15 +4267,43 @@ public sealed class PlayerPage : UserControl
                         t.TryGetProperty("selected", out var v) && v.ValueKind == JsonValueKind.True)
             .Select(t => Str(t, "id")).FirstOrDefault() ?? "";
 
-    private static string TrackLabel(JsonElement t)
+    /// <summary>
+    /// 第一行:轨道名称(用户:「第一行轨道名称 第二行字幕格式」)。
+    /// 压制组写的 title 最能说明这是哪条(「简日双语」「Signs & Songs」);没有才退到语言。
+    /// </summary>
+    private static string TrackLabel(JsonElement t) =>
+        Str(t, "title") is { Length: > 0 } title ? title
+        : Str(t, "lang") is { Length: > 0 } lang ? LangName(lang)
+        : $"轨道 {Str(t, "id")}";
+
+    /// <summary>第二行:格式 · 语言 · 外挂 / 默认。</summary>
+    private static string TrackDetail(JsonElement t)
     {
         var bits = new List<string>();
-        // 核心层的 Track 只有 id/kind/title/lang/default/selected/external —— 没有 codec
-        foreach (var k in new[] { "lang", "title" })
-            if (Str(t, k) != "") bits.Add(Str(t, k));
-        if (t.TryGetProperty("external", out var ex) && ex.ValueKind == JsonValueKind.True) bits.Add("外挂");
-        return bits.Count > 0 ? string.Join(" · ", bits) : $"轨道 {Str(t, "id")}";
+        if (Str(t, "codec") is { Length: > 0 } c) bits.Add(CodecName(c));
+        if (Str(t, "title").Length > 0 && Str(t, "lang") is { Length: > 0 } lang) bits.Add(LangName(lang));
+        if (Bool(t, "external")) bits.Add("外挂");
+        if (Bool(t, "default")) bits.Add("默认");
+        return string.Join(" · ", bits);
     }
+
+    /// <summary>mpv 报的是 ffmpeg 的解码器名,认得出的换成大家说的那个名字,认不出原样给。</summary>
+    private static string CodecName(string c) => c switch
+    {
+        "subrip" => "SRT", "ass" => "ASS", "ssa" => "SSA", "webvtt" => "WebVTT",
+        "hdmv_pgs_subtitle" => "PGS", "dvd_subtitle" => "VobSub", "dvb_subtitle" => "DVB",
+        "mov_text" => "TX3G", "eac3" => "E-AC3", "truehd" => "TrueHD", "dts" => "DTS",
+        _ => c.ToUpperInvariant(),
+    };
+
+    private static string LangName(string code) => code.ToLowerInvariant() switch
+    {
+        "chi" or "zho" or "zh" or "chs" or "cht" => "中文",
+        "jpn" or "ja" => "日语", "eng" or "en" => "英语", "kor" or "ko" => "韩语",
+        "fre" or "fra" or "fr" => "法语", "ger" or "deu" or "de" => "德语",
+        "spa" or "es" => "西班牙语", "rus" or "ru" => "俄语",
+        _ => code,
+    };
 
     private async Task SeekTo(double secs)
     {
@@ -4136,7 +4348,8 @@ public sealed class PlayerPage : UserControl
         e.ValueKind == JsonValueKind.Object && e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String
             ? v.GetString() ?? "" : "";
 
-    private sealed record TrackOption(string Id, string Label)
+    /// <summary>一条轨。<paramref name="Detail"/> 是弹层里的第二行(格式 · 语言 · 外挂)。</summary>
+    private sealed record TrackOption(string Id, string Label, string Detail = "")
     {
         public override string ToString() => Label;
     }

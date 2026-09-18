@@ -61,7 +61,11 @@ func TestRelaySkipsSearchForNextEpisode(t *testing.T) {
 		t.Fatal("第一集本来就该搜一轮,一次都没搜说明这个假上游没被打到")
 	}
 
-	items, ok := relayLoad(context.Background(), cfgs, &MatchInput{Title: "测试番", EpisodeNo: &ep2}, 0)
+	items, got, ok := relayLoad(context.Background(), cfgs, &MatchInput{Title: "测试番", EpisodeNo: &ep2}, 0)
+	// 播放页「显示弹幕」旁边写的就是这两个字段(danmaku.lastMatch)
+	if got.SourceName != "测试源" || got.AnimeTitle != "测试番" {
+		t.Fatalf("接力这一路要带回源名和作品名,实得 %+v", got)
+	}
 	if !ok {
 		t.Fatal("第二集该走接力(上一集的 id 加一),实得没走 —— 那等于每集都白搜一轮")
 	}

@@ -27,13 +27,14 @@ public static class CardActions
     /// 而其中被打开过的是 0 个。建好之后留住:菜单项里的「标记为已看 / 未看」
     /// 是有状态的,每次重建会把它抹掉。</para>
     /// </summary>
-    public static void Attach(Control host, CoreClient core, CardItem item, Action<string>? after = null)
+    public static void Attach(Control host, CoreClient core, CardItem item, Action<string>? after = null,
+        bool resumeRow = false)
     {
         after ??= DefaultAfter;
         host.ContextRequested += (_, e) =>
         {
             if (host.ContextMenu is not null) return; // 已经建过了,让它自己弹
-            host.ContextMenu = Build(core, item, after);
+            host.ContextMenu = Build(core, item, after, resumeRow);
             /* 这一次的右键要**自己补开一次**:ContextMenu 是在事件处理当中才挂上去的,
                挂之前那一下已经走过「有没有菜单」的判断了。不补的话第一次右键没反应,
                第二次才出来 —— 而用户只会认为右键坏了。 */
@@ -159,7 +160,7 @@ public static class CardActions
     /// 添加到播放列表 —— 不做,核心层根本没有播放列表,画一条点了没反应的更糟;
     /// 编辑元数据 / 删除 —— 用户点名不做。「从头播放」只在真看过一半时才画。</para>
     /// </summary>
-    private static ContextMenu Build(CoreClient core, CardItem item, Action<string>? after)
+    private static ContextMenu Build(CoreClient core, CardItem item, Action<string>? after, bool resumeRow)
     {
         var menu = new ContextMenu();
         Animate(menu);
@@ -249,6 +250,21 @@ public static class CardActions
             played.Icon = Icon(want ? G.Unplayed : G.Played);
         };
         items.Add(played);
+
+        /* 「取消观看记录」(用户 2026-09-18:「我不想看 我也不想标记为已观看」)。
+           只在继续观看那一条上画:别处的卡本来就不在那条里。
+           打的是 HideFromResume,进度和已看状态原样不动(见 core/emby HideResume)。 */
+        if (resumeRow)
+        {
+            var hide = new MenuItem { Header = "取消观看记录", Icon = Icon(G.Block) };
+            hide.Click += async (_, _) =>
+            {
+                var ok = await Run(core, "emby.hideResume", new { item_id = item.Id, hide = true },
+                    err => { if (err.Length == 0) HomePage.ForgetResume(item.Id); after?.Invoke(err); });
+                Toast.Result(ok, "已从继续观看中移除", "移除失败");
+            };
+            items.Add(hide);
+        }
 
         /* 收藏和屏蔽跟着 Features 走,而且 card.block 必须和 set.blocked
            **成对**开关 —— 留着屏蔽却没有解除列表,用户屏蔽掉的东西再也找不回来。

@@ -95,6 +95,7 @@
 | [x] | `emby.setBlocked` | `set_blocked` | `item_id: String, name: String, blocked: bool` | `()` | ✅ |
 | [x] | `emby.setFavorite` | `set_favorite` | `item_id: String, fav: bool` | `Result<(), String>` | ✅ |
 | [x] | `emby.setPlayed` | `set_played` | `item_id: String, played: bool` | `Result<(), String>` | ✅ |
+| [x] | `emby.hideResume` | `hide_resume` | `item_id: String, hide: bool` | `Result<(), String>` | ✅ |
 | [x] | `emby.similarItems` | `similar_items` | `item_id: String` | `Result<Vec<Item>, String>` | ✅ |
 | [x] | `emby.views` | `views` | `include_blocked: Option<bool>` | `Result<Vec<Item>, String>` | ✅ |
 | [x] | `emby.watchHistoryClear` | `watch_history_clear` | `—` | `()` | ✅ |
@@ -165,7 +166,7 @@
 | [x] | `player.setSecondarySub` | `set_secondary_sub` | `id: String` | `Result<(), String>` | ✅ |
 | [x] | `player.setSecondarySubOpts` | `set_secondary_sub_opts` | `delay: Option<f64>, position: Option<f64>, ass_override: Option<String>` | `Result<(), String>` | ✅ |
 | [x] | `player.setShaderLevel` | `set_shader_level` | `level: String` | `Result<ShaderApplied, String>` | ✅ |
-| [x] | `player.setSkipRange` | **新增** | `item_id: String, intro_start: f64, intro_end: f64, outro_start: f64, outro_end: f64` | `SkipRangeOf` | ✅ | <!-- 手动设片头片尾;四个值全 0 = 清掉。键由核心层按剧算 -->
+| [x] | `player.setSkipRange` | **新增** | `item_id: String, intro_start: f64, intro_end: f64, outro_start: f64, outro_end: f64, outro_len: f64` | `SkipRangeOf` | ✅ | <!-- 手动设片头片尾;全 0 = 清掉。outro_len = 每集最后几秒。键由核心层按剧算 -->
 | [x] | `player.setSpeed` | `set_speed` | `speed: f64` | `Result<(), String>` | ✅ |
 | [x] | `player.setSubDelay` | `set_sub_delay` | `secs: f64` | `Result<(), String>` | ✅ |
 | [x] | `player.setSubStyle` | `set_sub_style` | `font: Option<String>, scale: Option<f64>, position: Option<f64>, background: Option<bool>, blend_mode: Option<String>` | `Result<(), String>` | ✅ |
@@ -216,6 +217,7 @@
 | [x] | `danmaku.load` | `danmaku_load` | `episode_id: String, source_id: Option<String>, ch_convert: Option<i32>` | `Comment` | ✅ |
 | [x] | `danmaku.loadLocal` | `danmaku_load_local` | `path: String` | `Comment` | ✅ |
 | [x] | `danmaku.match` | `danmaku_match` | `input: danmaku::MatchInput` | `Result<Vec<danmaku::DanmakuMatchCandidate>, String>` | ✅ |
+| [x] | `danmaku.lastMatch` | **新增** | — | `Option<danmaku::MatchCandidate>` | ✅ | <!-- 上一次 autoLoad 挂上的源和集;没挂上为 null -->
 | [x] | `danmaku.minAutoScore` | `danmaku_min_auto_score` | `—` | `f64` | ✅ |
 | [x] | `danmaku.search` | `danmaku_search` | `keyword: String` | `SourceGroup` | ✅ |
 | [x] | `danmaku.setDanmakuConfig` | `set_danmaku_config` | `sources: Vec<DanmakuServer>` | `Result<(), String>` | ✅ |

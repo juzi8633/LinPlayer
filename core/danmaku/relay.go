@@ -118,21 +118,37 @@ func relayGuess(cfgs []SourceConfig, in *MatchInput) (MatchCandidate, bool) {
 }
 
 // relayLoad 走接力这条路取弹幕。取到空表 = 猜错了,返回 false 让调用方回去搜。
-func relayLoad(ctx context.Context, cfgs []SourceConfig, in *MatchInput, chConvert int) ([]Comment, bool) {
+func relayLoad(ctx context.Context, cfgs []SourceConfig, in *MatchInput, chConvert int) ([]Comment, MatchCandidate, bool) {
 	c, ok := relayGuess(cfgs, in)
 	if !ok {
-		return nil, false
+		return nil, c, false
 	}
 	cfg := findSourceIn(cfgs, c.SourceID)
 	if cfg == nil {
-		return nil, false
+		return nil, c, false
 	}
 	items, err := getCommentsCached(ctx, cfg, c.EpisodeID, chConvert)
 	if err != nil || len(items) == 0 {
-		return nil, false
+		return nil, c, false
 	}
 	relayRemember(in, &c)
-	return items, true
+	return items, c, true
+}
+
+var (
+	lastMu    sync.Mutex
+	lastMatch *MatchCandidate
+)
+
+func setLastMatch(c *MatchCandidate) {
+	lastMu.Lock()
+	defer lastMu.Unlock()
+	if c == nil {
+		lastMatch = nil
+		return
+	}
+	cp := *c
+	lastMatch = &cp
 }
 
 // relayReset 测试用:清空接力表。

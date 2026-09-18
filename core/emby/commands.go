@@ -218,6 +218,17 @@ func RegisterCommands(version string) {
 		return map[string]any{"item_id": itemID, "played": played}, nil
 	})
 
+	list("emby.hideResume", func(ctx context.Context, s *Session, a map[string]any) (any, error) {
+		hide, ok := a["hide"].(bool)
+		if !ok {
+			hide = true
+		}
+		if err := defaultClient.HideResume(ctx, s, str(a, "item_id"), hide); err != nil {
+			return nil, err
+		}
+		return map[string]any{"item_id": str(a, "item_id"), "hide": hide}, nil
+	})
+
 	// ---- 管理员动作 ----
 	list("emby.isAdmin", func(ctx context.Context, s *Session, a map[string]any) (any, error) {
 		return defaultClient.IsAdmin(ctx, s)

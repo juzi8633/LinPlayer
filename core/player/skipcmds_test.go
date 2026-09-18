@@ -228,3 +228,48 @@ func TestSetSkipRange倒着的区间要拒(t *testing.T) {
 		t.Fatal("结束早于开始还存下来了")
 	}
 }
+
+// 片尾按**时长**存(用户 2026-09-18:输入跳过的时长)。每集长短不一,
+// 存绝对时间的话第二集的片尾会落在正片里。这里 runtime 1400,片尾 120 → 1280~1400。
+func TestSetSkipRange片尾按时长跟着每集走(t *testing.T) {
+	paths.SetRoot(t.TempDir())
+	if _, err := config.Load(); err != nil {
+		t.Fatal(err)
+	}
+	emby := fakeEmby(t, nil)
+	setSkipPrefs(t, true, true, false, false)
+	r := call(t, 9008, "player.setSkipRange", map[string]any{
+		"server": emby.URL, "token": "tk", "user_id": "u1", "device_id": "d1",
+		"item_id": "e1", "intro_start": 0.0, "intro_end": 90.0, "outro_len": 120.0,
+	})
+	if !r.OK {
+		t.Fatalf("设不上: %s %s", r.Code, r.Msg)
+	}
+	got := chapterInfoOf(t, 9009, emby.URL)
+	v, ok := got["outro"].(map[string]any)
+	if !ok || v["start"] != 1280.0 || v["end"] != 1400.0 {
+		t.Fatalf("片尾该是本集最后 120 秒(1280~1400),实得 %+v", got["outro"])
+	}
+}
+
+// 手动填过的**不看开关**:设置页两个开关都关着,填过的这部剧照样出跳过键;
+// 没填过的剧仍然什么都不给(开关的原意不变)。
+func TestChapterInfo手动填过的不看开关(t *testing.T) {
+	paths.SetRoot(t.TempDir())
+	if _, err := config.Load(); err != nil {
+		t.Fatal(err)
+	}
+	emby := fakeEmby(t, nil)
+	setSkipPrefs(t, false, false, false, false)
+	r := call(t, 9010, "player.setSkipRange", map[string]any{
+		"server": emby.URL, "token": "tk", "user_id": "u1", "device_id": "d1",
+		"item_id": "e1", "intro_start": 0.0, "intro_end": 90.0,
+	})
+	if !r.OK {
+		t.Fatalf("设不上: %s %s", r.Code, r.Msg)
+	}
+	got := chapterInfoOf(t, 9011, emby.URL)
+	if a, b, ok := introOf(got); !ok || a != 0 || b != 90 {
+		t.Fatalf("开关关着时手动填的片头也该生效: %+v", got)
+	}
+}

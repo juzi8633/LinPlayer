@@ -817,7 +817,8 @@ public sealed class Hero : Border
     private static Control Pill(string text, bool warm) => new Border
     {
         Padding = new Thickness(10, 6),
-        CornerRadius = new CornerRadius(999),
+        // 6 不是胶囊:和详情页那排小片同一个形状(用户 2026-09-18「统一矩形吧」)
+        CornerRadius = new CornerRadius(6),
         Background = new SolidColorBrush(Color.Parse("#59000000")),
         BorderBrush = new SolidColorBrush(Color.Parse("#40ffffff")),
         BorderThickness = new Thickness(1),

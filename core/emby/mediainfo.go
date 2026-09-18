@@ -125,6 +125,28 @@ func IsDolbyVision(s StreamInfo) bool {
 	return strings.Contains(strings.ToLower(deref(s.Profile)), "dolby vision")
 }
 
+// rangeLabel 列表那行小字用的动态范围短名。SDR 回 nil(不写才是常态,写出来是噪音)。
+func rangeLabel(s rawMediaStream) *string {
+	label := ""
+	rt := strings.ToLower(deref(s.VideoRangeType))
+	switch {
+	case IsDolbyVision(StreamInfo{Type: "Video", Codec: deref(s.Codec), Profile: s.Profile, VideoRangeTyp: s.VideoRangeType}):
+		label = "DV"
+	case strings.Contains(rt, "hdr10plus"):
+		label = "HDR10+"
+	case strings.Contains(rt, "hdr10"):
+		label = "HDR10"
+	case strings.Contains(rt, "hlg"):
+		label = "HLG"
+	case strings.EqualFold(deref(s.VideoRange), "HDR"):
+		label = "HDR"
+	}
+	if label == "" {
+		return nil
+	}
+	return &label
+}
+
 // MediaVersions 取条目全部版本 + 流(走 PlaybackInfo,拿到的才是服务端真判定可播的源)。
 //
 // ★ versionRegex 只用来标 preferred,**不影响返回哪些版本** —— 它和真起播那条路

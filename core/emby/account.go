@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -157,6 +158,14 @@ func (c *Client) SetPlayed(ctx context.Context, s *Session, itemID string, playe
 		s.Server, url.PathEscape(s.UserID), url.PathEscape(itemID)), played)
 }
 
+// HideResume 从「继续观看」里拿掉 / 放回,**不动已看状态和进度**。
+// 用户要的是「不想看,也不想标成已看」:标已看会把进度和播放数一起改掉。
+// Emby 4.9.5 实测:POST 后 Items/Resume 立刻不再返回它,UserData 原样;Hide=false 能放回。
+func (c *Client) HideResume(ctx context.Context, s *Session, itemID string, hide bool) error {
+	return c.postPlain(ctx, s, fmt.Sprintf("%s/Users/%s/Items/%s/HideFromResume?Hide=%t",
+		s.Server, url.PathEscape(s.UserID), url.PathEscape(itemID), hide))
+}
+
 /* ---------------- 管理员(admin)动作 ----------------
    对标 Emby web。名字容易混,这里把每一项打的**真实端点**钉死:
 
@@ -247,6 +256,18 @@ func (c *Client) ScanAllLibraries(ctx context.Context, s *Session) error {
 }
 
 func (c *Client) postAdmin(ctx context.Context, s *Session, u string) error {
+	err := c.postPlain(ctx, s, u)
+	// 403 = 服务端说你不是管理员。菜单本不该出现,出现了就把真话说出来。
+	if errors.Is(err, errForbidden) {
+		return fmt.Errorf("服务器拒绝:当前账号没有管理员权限")
+	}
+	return err
+}
+
+var errForbidden = errors.New("服务器拒绝了这次操作(HTTP 403)")
+
+// postPlain 无 body 的 POST。
+func (c *Client) postPlain(ctx context.Context, s *Session, u string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, nil)
 	if err != nil {
 		return fmt.Errorf("请求构造失败: %w", err)
@@ -260,9 +281,8 @@ func (c *Client) postAdmin(ctx context.Context, s *Session, u string) error {
 		return fmt.Errorf("网络错误: %w", err)
 	}
 	defer resp.Body.Close()
-	// 403 = 服务端说你不是管理员。菜单本不该出现,出现了就把真话说出来。
 	if resp.StatusCode == 403 {
-		return fmt.Errorf("服务器拒绝:当前账号没有管理员权限")
+		return errForbidden
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("请求失败: HTTP %d", resp.StatusCode)

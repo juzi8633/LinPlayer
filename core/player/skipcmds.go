@@ -58,10 +58,20 @@ func skipKeyOf(ctx context.Context, s *emby.Session, itemID string, runtime floa
 }
 
 // fillSkip 按三层优先级把 info 的 Intro / Outro 填满,返回数据出处(给界面说明用)。
+//
+// ★ 开关归它一个人管,调用方不必再判:关着的那一段恒为 nil ——
+// **手动填过的除外**。用户为这部剧专门填了时长,下一集却因为设置页的开关没开
+// 而不出跳过键,那等于填了没用(用户 2026-09-18 把入口改成了「填时长」)。
 func fillSkip(ctx context.Context, s *emby.Session, itemID string,
 	runtime float64, info *emby.ChapterInfo, pf config.Prefs) string {
-	// 两个开关都关着就一层都不查 —— 尤其是第三层,那是一次外网请求
-	if !pf.SkipIntro && !pf.SkipOutro {
+	if !pf.SkipIntro {
+		info.Intro = nil
+	}
+	if !pf.SkipOutro {
+		info.Outro = nil
+	}
+	// 两个开关都关、也没有任何手动设定:一层都不查 —— 尤其是第三层,那是一次外网请求
+	if !pf.SkipIntro && !pf.SkipOutro && len(pf.SkipOverrides) == 0 {
 		return ""
 	}
 	from := ""
@@ -75,7 +85,10 @@ func fillSkip(ctx context.Context, s *emby.Session, itemID string,
 			info.Intro = &emby.Range{Start: ov.IntroStart, End: ov.IntroEnd}
 			from = "手动设定"
 		}
-		if ov.OutroEnd > ov.OutroStart {
+		if ov.OutroLen > 0 && runtime > ov.OutroLen {
+			info.Outro = &emby.Range{Start: runtime - ov.OutroLen, End: runtime}
+			from = "手动设定"
+		} else if ov.OutroEnd > ov.OutroStart {
 			info.Outro = &emby.Range{Start: ov.OutroStart, End: ov.OutroEnd}
 			from = "手动设定"
 		}
@@ -90,11 +103,11 @@ func fillSkip(ctx context.Context, s *emby.Session, itemID string,
 		return from
 	}
 	got := false
-	if info.Intro == nil && r.Intro != nil {
+	if pf.SkipIntro && info.Intro == nil && r.Intro != nil {
 		info.Intro = &emby.Range{Start: r.Intro.Start, End: r.Intro.End}
 		got = true
 	}
-	if info.Outro == nil && r.Outro != nil {
+	if pf.SkipOutro && info.Outro == nil && r.Outro != nil {
 		info.Outro = &emby.Range{Start: r.Outro.Start, End: r.Outro.End}
 		got = true
 	}
@@ -125,9 +138,10 @@ func registerSkip() {
 		r := config.SkipRange{
 			IntroStart: num("intro_start"), IntroEnd: num("intro_end"),
 			OutroStart: num("outro_start"), OutroEnd: num("outro_end"),
+			OutroLen: num("outro_len"),
 		}
 		// ★ 拒而不是夹:悄悄夹紧的话用户看到「已保存」,实际存的是另一个值
-		if r.IntroEnd < r.IntroStart || r.OutroEnd < r.OutroStart {
+		if r.IntroEnd < r.IntroStart || r.OutroEnd < r.OutroStart || r.OutroLen < 0 {
 			return nil, bus.NewErr(bus.EInvalid, "结束时间不能早于开始时间")
 		}
 		key, _ := skipKeyOf(ctx, sess, id, 0)

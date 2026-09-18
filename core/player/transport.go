@@ -379,6 +379,9 @@ type Track struct {
 	// 和容器流序号是两套编号,混用的表现是「选了第 2 条日语,放出来是英语」。
 	// ★ 外挂字幕没有 ff-index,mpv 给 -1;调用方按 -1 判「对不上号」。
 	FFIndex int64 `json:"ff_index"`
+	// Codec mpv 报的格式名(subrip / ass / hdmv_pgs_subtitle / aac…)。
+	// 字幕列表第二行写它(用户:「第一行轨道名称 第二行字幕格式」)。
+	Codec string `json:"codec"`
 }
 
 // parseTracks 解析 mpv 的 track-list。
@@ -399,6 +402,7 @@ func parseTracks(raw string) []Track {
 		Selected bool    `json:"selected"`
 		External bool    `json:"external"`
 		FFIndex  *int64  `json:"ff-index"`
+		Codec    *string `json:"codec"`
 	}
 	if err := json.Unmarshal([]byte(raw), &list); err != nil {
 		bus.Logf("warn", "track-list 解不动: %v", err)
@@ -415,7 +419,7 @@ func parseTracks(raw string) []Track {
 				ID: strconv.FormatInt(t.ID, 10), Kind: kind,
 				Title: strDeref(t.Title), Lang: strDeref(t.Lang),
 				Default: t.Default, Selected: t.Selected, External: t.External,
-				FFIndex: ff,
+				FFIndex: ff, Codec: strDeref(t.Codec),
 			})
 		}
 	}

@@ -21,7 +21,9 @@ public sealed record CardItem(
     long VideoHeight = 0, long Bitrate = 0, long SizeBytes = 0,
     // 分集所属的剧。右键「转到剧集」要它 —— 卡片上只有剧**名**是不够的,
     // 跳详情页要的是 id。列表命令一直在发这个字段,只是从来没人接。
-    string SeriesId = "")
+    string SeriesId = "",
+    // 动态范围短名(DV / HDR10 / HLG…),SDR 为空。播放页选集栏那行小字用
+    string VideoRange = "")
 {
     public static CardItem From(JsonElement e) => new(
         Str(e, "id"), Str(e, "name"), Str(e, "type_"), Str(e, "series_name"),
@@ -29,7 +31,7 @@ public sealed record CardItem(
         Dbl(e, "runtime_secs"), Dbl(e, "resume_secs"),
         (int)Num(e, "season_no"), (int)Num(e, "episode_no"),
         Num(e, "video_height"), Num(e, "bitrate"), Num(e, "size_bytes"),
-        Str(e, "series_id"));
+        Str(e, "series_id"), Str(e, "video_range"));
 
     /// <summary>
     /// 列表里显示的标题。
@@ -96,6 +98,28 @@ public sealed record CardItem(
     public string EpisodeSubtitle => MediaLabel is { Length: > 0 } m ? m : RuntimeLabel;
 
     /// <summary>
+    /// 播放页选集栏的第二行:<c>1080p / HDR10 / 8.2 Mbps / 1.4 GB</c>
+    /// (用户 2026-09-18 点名的顺序)。那一栏比卡片宽,写全称不写缩写。
+    /// </summary>
+    public string SpecLabel
+    {
+        get
+        {
+            var bits = new List<string>();
+            if (VideoHeight > 0) bits.Add(VideoHeight >= 2160 ? "4K" : $"{VideoHeight}p");
+            if (VideoRange != "") bits.Add(VideoRange);
+            if (Bitrate > 0) bits.Add($"{Bitrate / 1_000_000.0:0.#} Mbps");
+            if (SizeBytes > 0)
+            {
+                bits.Add(SizeBytes >= 1L << 30
+                    ? $"{SizeBytes / (double)(1L << 30):0.##} GB"
+                    : $"{SizeBytes / (double)(1L << 20):0} MB");
+            }
+            return bits.Count > 0 ? string.Join(" / ", bits) : RuntimeLabel;
+        }
+    }
+
+    /// <summary>
     /// 转回 JSON,给 <see cref="Core.MetaCache"/> 存。
     ///
     /// <para>字段名<b>必须和核心层的输出一模一样</b> —— 存进去的东西
@@ -112,6 +136,7 @@ public sealed record CardItem(
             runtime_secs = c.RuntimeSecs, resume_secs = c.ResumeSecs,
             season_no = c.SeasonNo, episode_no = c.EpisodeNo,
             video_height = c.VideoHeight, bitrate = c.Bitrate, size_bytes = c.SizeBytes,
+            series_id = c.SeriesId, video_range = c.VideoRange,
         }));
         return doc.RootElement.Clone();
     }
@@ -184,7 +209,8 @@ public sealed class Card : Button
     /// 否则副标题会被顶到第二行的下面,和标题之间空出一整行,看着像两个不相干的东西。</para>
     /// </param>
     public Card(CoreClient core, string server, CardItem item, bool wide, Action<CardItem>? onOpen = null,
-        double? width = null, string? subtitle = null, string? title = null, int titleLines = 2)
+        double? width = null, string? subtitle = null, string? title = null, int titleLines = 2,
+        bool resumeRow = false)
     {
         Made++;
         var w = width ?? (wide ? 256.0 : 158.0);
@@ -273,7 +299,7 @@ public sealed class Card : Button
         if (item.HasPrimary) StartArt(core, server, item, img, (int)(h * 2), skel, ph);
 
         // 右键动作:标记已看 / 收藏 / 屏蔽。**一处实现,所有卡片共用**(见 CardActions)
-        CardActions.Attach(this, core, item);
+        CardActions.Attach(this, core, item, resumeRow: resumeRow);
     }
 
     /// <summary>

@@ -200,12 +200,14 @@ func RegisterCommands() {
 		if err != nil {
 			return nil, err
 		}
+		setLastMatch(nil)
 		cfgs := allSources(AllowOfficialFor(in.Genres))
 		if len(cfgs) == 0 {
 			return nil, nil // 没源 = 没弹幕,不是错误
 		}
 		// ★ 连看下一集先走接力:上一集的 id 加一,一次上游请求解决(见 relay.go)
-		if items, ok := relayLoad(ctx, cfgs, in, chConvertOf(a)); ok {
+		if items, c, ok := relayLoad(ctx, cfgs, in, chConvertOf(a)); ok {
+			setLastMatch(&c)
 			return ApplyFilterAndDedup(items, filterOptionsOf(a)), nil
 		}
 		cands, err := MatchAll(ctx, cfgs, withBgmTitles(ctx, in))
@@ -229,8 +231,18 @@ func RegisterCommands() {
 		// 取到东西才记接力点 —— 记一个空集会让下一集跟着一路错下去
 		if len(items) > 0 {
 			relayRemember(in, &best)
+			setLastMatch(&best)
 		}
 		return ApplyFilterAndDedup(items, filterOptionsOf(a)), nil
+	})
+
+	// danmaku.lastMatch —— 上一次 autoLoad 挂上的是哪个源的哪一集。没挂上回 null。
+	// 播放页要把它写在「显示弹幕」旁边(用户 2026-09-18):匹配错了用户得知道是谁错的。
+	// 不塞进 autoLoad 的返回里:那是一个弹幕数组,三端都按数组在读。
+	bus.Register("danmaku.lastMatch", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
+		lastMu.Lock()
+		defer lastMu.Unlock()
+		return lastMatch, nil
 	})
 
 	// ---- 取弹幕 ----

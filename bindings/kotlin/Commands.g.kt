@@ -65,6 +65,7 @@ object LinPlayerCommandNames {
         "emby.setBlocked",
         "emby.setFavorite",
         "emby.setPlayed",
+        "emby.hideResume",
         "emby.similarItems",
         "emby.views",
         "emby.watchHistoryClear",
@@ -166,6 +167,7 @@ object LinPlayerCommandNames {
         "danmaku.load",
         "danmaku.loadLocal",
         "danmaku.match",
+        "danmaku.lastMatch",
         "danmaku.minAutoScore",
         "danmaku.search",
         "danmaku.setDanmakuConfig",
@@ -284,7 +286,7 @@ object LinPlayerCommandNames {
     )
 }
 
-// ---- Emby 浏览与详情 · emby.* (43 条) ----
+// ---- Emby 浏览与详情 · emby.* (44 条) ----
 suspend fun LinPlayerCommands.embyAggregateOverview(args: Map<String, Any?>? = null): JsonElement =
     call("emby.aggregateOverview", args)
 suspend fun LinPlayerCommands.embyAggregateSearch(args: Map<String, Any?>? = null): JsonElement =
@@ -357,6 +359,8 @@ suspend fun LinPlayerCommands.embySetFavorite(args: Map<String, Any?>? = null): 
     call("emby.setFavorite", args)
 suspend fun LinPlayerCommands.embySetPlayed(args: Map<String, Any?>? = null): JsonElement =
     call("emby.setPlayed", args)
+suspend fun LinPlayerCommands.embyHideResume(args: Map<String, Any?>? = null): JsonElement =
+    call("emby.hideResume", args)
 suspend fun LinPlayerCommands.embySimilarItems(args: Map<String, Any?>? = null): JsonElement =
     call("emby.similarItems", args)
 suspend fun LinPlayerCommands.embyViews(args: Map<String, Any?>? = null): JsonElement =
@@ -544,7 +548,7 @@ suspend fun LinPlayerCommands.sourceSearch(args: Map<String, Any?>? = null): Jso
 suspend fun LinPlayerCommands.sourceWatchdog(args: Map<String, Any?>? = null): JsonElement =
     call("source.watchdog", args)
 
-// ---- 弹幕 · danmaku.* (16 条) ----
+// ---- 弹幕 · danmaku.* (17 条) ----
 suspend fun LinPlayerCommands.danmakuAutoLoad(args: Map<String, Any?>? = null): JsonElement =
     call("danmaku.autoLoad", args)
 suspend fun LinPlayerCommands.danmakuCacheClear(args: Map<String, Any?>? = null): JsonElement =
@@ -567,6 +571,8 @@ suspend fun LinPlayerCommands.danmakuLoadLocal(args: Map<String, Any?>? = null):
     call("danmaku.loadLocal", args)
 suspend fun LinPlayerCommands.danmakuMatch(args: Map<String, Any?>? = null): JsonElement =
     call("danmaku.match", args)
+suspend fun LinPlayerCommands.danmakuLastMatch(args: Map<String, Any?>? = null): JsonElement =
+    call("danmaku.lastMatch", args)
 suspend fun LinPlayerCommands.danmakuMinAutoScore(args: Map<String, Any?>? = null): JsonElement =
     call("danmaku.minAutoScore", args)
 suspend fun LinPlayerCommands.danmakuSearch(args: Map<String, Any?>? = null): JsonElement =

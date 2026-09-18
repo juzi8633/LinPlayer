@@ -46,6 +46,9 @@ type Item struct {
 	VideoHeight *int64 `json:"video_height"`
 	Bitrate     *int64 `json:"bitrate"`
 	SizeBytes   *int64 `json:"size_bytes"`
+	// VideoRange 动态范围的短名:DV / HDR10 / HDR10+ / HLG / HDR。SDR 或没请求 Fields 时为 nil。
+	// 播放页选集栏那一行小字要它(用户 2026-09-18:「分辨率 / 标签(HDR/DV 那些)/ 码率 / 大小」)。
+	VideoRange *string `json:"video_range"`
 
 	Played bool `json:"played"`
 	// 未看子项数。played=true 时必为 0(全看完),前端据此:有勾优先、否则显数字。
@@ -218,12 +221,14 @@ func fromRaw(r rawItem) Item {
 		ms = &r.MediaSources[0]
 	}
 	var videoHeight, bitrate, sizeBytes *int64
+	var videoRange *string
 	if ms != nil {
 		bitrate, sizeBytes = ms.Bitrate, ms.Size
 		for i := range ms.MediaStreams {
 			s := ms.MediaStreams[i]
 			if s.Type != nil && *s.Type == "Video" {
 				videoHeight = s.Height
+				videoRange = rangeLabel(s)
 				break
 			}
 		}
@@ -298,6 +303,7 @@ func fromRaw(r rawItem) Item {
 		VideoHeight:           videoHeight,
 		Bitrate:               bitrate,
 		SizeBytes:             sizeBytes,
+		VideoRange:            videoRange,
 		Played:                played,
 		UnplayedItemCount:     unplayed,
 		Genres:                genres,

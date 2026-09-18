@@ -149,6 +149,20 @@ fun HomePage(nav: NavController) {
 
     val open: (Item) -> Unit = { nav.navigate(Route.Detail(it.id, it.type)) }
     val menu: (Item) -> List<CardAction> = { cardActions(app, scope, it) }
+    // 继续观看多一项「取消观看记录」(用户 2026-09-18:「我不想看 我也不想标记为已观看」)。
+    // 打 HideFromResume,进度和已看状态都不动;成功后只从这一条里摘掉,别的块不受影响。
+    val resumeMenu: (Item) -> List<CardAction> = { item ->
+        cardActions(app, scope, item) + CardAction("取消观看记录") {
+            scope.launch {
+                runCatching { app.call("emby.hideResume", args("item_id" to item.id, "hide" to true)) }
+                    .onSuccess {
+                        resume = resume.map { l -> l.filter { it.id != item.id } }
+                        app.toast("已从继续观看中移除", ToastKind.Ok)
+                    }
+                    .onFailure { app.report(it) }
+            }
+        }
+    }
 
     val switchServer: (Account) -> Unit = { a ->
         // 已经是这一台就什么都不做:再打一次 setActiveServer 会让整页白重拉
@@ -204,7 +218,7 @@ fun HomePage(nav: NavController) {
 
             // 顺序照 PC 端首页:Hero → 继续观看 → 接下来看 → 合集 → 各库最新
             item("resume") {
-                RowBlock("继续观看", resume, thumb = true, app = app, open = open, menu = menu)
+                RowBlock("继续观看", resume, thumb = true, app = app, open = open, menu = resumeMenu)
             }
             item("nextup") {
                 RowBlock("接下来看", nextUp, thumb = false, app = app, open = open, menu = menu)

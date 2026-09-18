@@ -57,10 +57,8 @@ internal static class Chips
         Margin = Gap, Padding = Pad,
         CornerRadius = new CornerRadius(6),
         Background = Tok.Of("PanelAlt"),
-        BorderBrush = Tok.Of("LineStrong"),
-        BorderThickness = new Thickness(1),
         IsVisible = text != "",
-        Child = new TextBlock { Text = text, FontSize = 12.5, Foreground = Tok.Of("Ink") },
+        Child = new TextBlock { Text = text, FontSize = 12.5, Foreground = Tok.Of("Ink2") },
     };
 
     /// <summary>
@@ -71,16 +69,11 @@ internal static class Chips
     /// </summary>
     internal static Control Clickable(string text, Action onClick)
     {
+        // 描边拿掉了:一排片里一半带亮框一半不带,比形状不一还扎眼。能点的靠强调色字 + 悬停变底区分
         var b = new Button
         {
-            Margin = Gap, Padding = Pad,
-            CornerRadius = new CornerRadius(6),
-            Background = Tok.Of("PanelAlt"),
-            BorderBrush = Tok.Of("Accent"),
-            BorderThickness = new Thickness(1),
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
-            Content = new TextBlock { Text = text, FontSize = 12.5, Foreground = Tok.Of("Ink") },
+            Classes = { "chip" }, Margin = Gap, Padding = Pad,
+            Content = new TextBlock { Text = text, FontSize = 12.5, Foreground = Tok.Of("Accent") },
         };
         ToolTip.SetTip(b, $"看看还有哪些「{text}」");
         b.Click += (_, _) => onClick();

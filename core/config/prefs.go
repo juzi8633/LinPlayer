@@ -360,6 +360,9 @@ type SkipRange struct {
 	IntroEnd   float64 `json:"intro_end"`
 	OutroStart float64 `json:"outro_start"`
 	OutroEnd   float64 `json:"outro_end"`
+	// OutroLen 片尾按「每集最后几秒」算。每集长短不一,存绝对时间的话
+	// 换一集片尾就落进正片里。非 0 时压过 OutroStart/OutroEnd。
+	OutroLen float64 `json:"outro_len,omitempty"`
 }
 
 func DefaultPrefs() Prefs {
