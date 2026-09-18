@@ -68,12 +68,15 @@ oauth-proxy/
 - **应用里发的**(崩溃后下次启动自动发、出错横条上点「反馈」、设置里「发送日志给开发者」):
   走 `POST /api/report`,客户端核心层先脱敏再发,这里转成一条消息 + 一个 `report.txt` 附件。
   同一 IP 一分钟一条。
-- **Sentry 收到的崩溃**(用 Internal Integration;Legacy WebHooks 官方已不推荐,测试按钮也不稳):
+- **Sentry 收到的崩溃**(Internal Integration + 订阅 issue 推送,**不走告警规则**):
   1. Settings → Developer Settings → Custom Integrations → Create New Integration → **Internal Integration**
-  2. Webhook URL 填 `https://<你的项目>.pages.dev/sentry/hook`;打开 **Alert Rule Action**;权限不用给;保存
+  2. Webhook URL 填 `https://<你的项目>.pages.dev/sentry/hook`;Permissions 里 **Issue & Event = Read**;
+     Webhooks 勾 **issue**;保存
   3. 把它的 **Client Secret** 配成 CF 环境变量 `SENTRY_CLIENT_SECRET`(校验 `Sentry-Hook-Signature`),重新部署
-  4. 告警规则(Monitors → Alerts):WHEN 选 A new issue is created / A resolved issue regresses,
-     THEN 选刚建的这个集成,点 Send Test Notification
+  4. 验证:`LP_SELFCHECK_CRASH=1` 起一次 CI 出的包,TG 应收到「🔥 Sentry 新崩溃」和「🧨 崩溃报告」两条
+  - ☠ 2026-09-18 实测:新版 Monitors 界面里告警规则选这个集成做动作,「Send Test Notification」显示成功,
+    但集成的 Request Log 一条都没有 —— 根本没推过来。issue 推送这条路一次就通。
+  - ☠ CF 里改了环境变量后,要对**最新那条**部署 Retry,或推一个新提交。对旧部署 Retry 会跑旧代码。
 
 ### 用 Wrangler CLI 部署（可选）
 

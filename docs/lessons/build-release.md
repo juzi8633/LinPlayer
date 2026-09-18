@@ -975,5 +975,11 @@ Sentry 那条另走 `/sentry/hook`。bot token 只在 CF 环境变量里 —— 
   - PowerShell 工具里 `Start-Process` 起的 exe,调用一结束就被连带关掉 —— 表现像「程序自己正常退出了」。
     要从 bash 用 `(./LinPlayer.exe &)` 脱离起。
   - Avalonia 的对话框在 UIA 树里是**主窗口的子节点**,不是顶层窗口。按顶层找永远找不到。
+- **Sentry → TG 走 Internal Integration 的 issue 推送,不走告警规则**。2026-09-18 实测:
+  - Legacy WebHooks 的测试按钮报「Failed to send test event」,而 curl 同一地址是 200 —— 原因不透明,官方也不推荐了;
+  - 新版 Monitors 界面里,告警规则选集成做动作、点测试显示「Notification fired!」,集成的 Request Log 却一条没有;
+  - 集成订阅 issue(权限 Issue & Event = Read)后,真崩一次两条消息都到。
+  - 推送类型用**黑名单**丢噪音:白名单遇到没见过的类型名回 200 `ignored`,Sentry 显示成功、TG 收不到,谁也看不出来。
+  - CF 改环境变量后对**旧部署** Retry 会跑旧代码 —— 当时线上还是第一版 hook.js,签名一律 401。
 - 本地端到端:Node 包一层真 `report.js` + `_middleware.js`,只把 `api.telegram.org` 打桩落盘;
   `LP_SYNC_PROXY_BASE` 指过去打包。`LP_SELFCHECK_CRASH=1` 后台线程真崩,`=ui` 界面线程抛(被兜住)。
