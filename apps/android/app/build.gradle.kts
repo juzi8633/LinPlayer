@@ -213,7 +213,8 @@ dependencies {
 // 其余自动注入全关:依赖上面自己写,不要字节码插桩,不给 Sentry 回传构建遥测
 sentry {
     includeProguardMapping.set(true)
-    autoUploadProguardMapping.set(System.getenv("SENTRY_AUTH_TOKEN") != null)
+    // CI 里 secret 删了变量仍在、值是空串 —— 判 null 会照样去传然后挂
+    autoUploadProguardMapping.set(!System.getenv("SENTRY_AUTH_TOKEN").isNullOrBlank())
     autoInstallation { enabled.set(false) }
     tracingInstrumentation { enabled.set(false) }
     includeDependenciesReport.set(false)
