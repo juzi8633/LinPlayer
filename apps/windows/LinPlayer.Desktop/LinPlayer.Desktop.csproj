@@ -59,10 +59,10 @@
   <ItemGroup>
     <AssemblyMetadata Include="SentryDsn" Value="$(SENTRY_DSN)" />
   </ItemGroup>
-  <!-- 有 token 才传符号(CI):不传的话线上堆栈只有方法名没有行号。
-       sentry-cli 自己读 SENTRY_AUTH_TOKEN / SENTRY_ORG / SENTRY_PROJECT。 -->
-  <PropertyGroup Condition="'$(SENTRY_AUTH_TOKEN)' != ''">
-    <SentryUploadSymbols>true</SentryUploadSymbols>
+  <!-- 调试信息编进 dll(不出 .pdb 文件):崩溃时 SDK 在本机就读得到行号,
+       不用往 Sentry 传符号,也就不用 token。代价是 dll 大一点。 -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugType>embedded</DebugType>
   </PropertyGroup>
 
   <ItemGroup>

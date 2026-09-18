@@ -72,14 +72,17 @@ internal static class Telemetry
             o.Transport = new Capture(sent);
         }))
         {
-            SentrySdk.CaptureException(new IOException($@"打不开 {home}\userdata\x.db ?api_key=SECRET123&x=1"));
+            // 真抛一次:要有堆栈帧,才验得到「行号在本机就解出来了」
+            try { throw new IOException($@"打不开 {home}\userdata\x.db ?api_key=SECRET123&x=1"); }
+            catch (IOException e) { SentrySdk.CaptureException(e); }
             SentrySdk.Flush();
         }
         // 信封是 JSON:反斜杠和 < 都被转义过,不先还原的话「不含主目录」这条永远成立
         var all = Regex.Unescape(string.Join("\n", sent));
         var ok = sent.Count > 0 && !all.Contains(home, StringComparison.OrdinalIgnoreCase)
-                 && !all.Contains("SECRET123") && all.Contains("api_key=<redacted>");
-        Console.WriteLine(ok ? "PROBE 崩溃上报 ✓ 出站事件里主目录和 token 都抹掉了"
+                 && !all.Contains("SECRET123") && all.Contains("api_key=<redacted>")
+                 && all.Contains("\"lineno\":");
+        Console.WriteLine(ok ? "PROBE 崩溃上报 ✓ 出站事件带行号,主目录和 token 都抹掉了"
             : $"PROBE 崩溃上报 ✗ 发出 {sent.Count} 条,抹得不对:{all}");
         return ok;
     }

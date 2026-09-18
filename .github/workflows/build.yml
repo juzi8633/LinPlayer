@@ -143,8 +143,7 @@ jobs:
           LP_AFDIAN_SPONSOR_URL: ${{ secrets.LP_AFDIAN_SPONSOR_URL }}
           LP_ICON_LIBRARY_SOURCES: ${{ secrets.LP_ICON_LIBRARY_SOURCES }}
           LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
-          # 崩溃上报:换 DSN + 传符号/混淆映射(scripts/sentry-dsn.sh)
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          # 崩溃上报地址(scripts/sentry-dsn.sh)
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: bash scripts/pack-win.sh "$GITHUB_WORKSPACE/release"
 
@@ -207,8 +206,7 @@ jobs:
           LP_AFDIAN_SPONSOR_URL: ${{ secrets.LP_AFDIAN_SPONSOR_URL }}
           LP_ICON_LIBRARY_SOURCES: ${{ secrets.LP_ICON_LIBRARY_SOURCES }}
           LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
-          # 崩溃上报:换 DSN + 传符号/混淆映射(scripts/sentry-dsn.sh)
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          # 崩溃上报地址(scripts/sentry-dsn.sh)
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: bash scripts/pack-linux.sh "$GITHUB_WORKSPACE/release"
 
@@ -356,8 +354,7 @@ jobs:
           LP_AFDIAN_SPONSOR_URL: ${{ secrets.LP_AFDIAN_SPONSOR_URL }}
           LP_ICON_LIBRARY_SOURCES: ${{ secrets.LP_ICON_LIBRARY_SOURCES }}
           LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
-          # 崩溃上报:换 DSN + 传符号/混淆映射(scripts/sentry-dsn.sh)
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          # 崩溃上报地址(scripts/sentry-dsn.sh)
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: bash scripts/pack-android.sh arm64-v8a
 
@@ -375,8 +372,7 @@ jobs:
           LP_AFDIAN_SPONSOR_URL: ${{ secrets.LP_AFDIAN_SPONSOR_URL }}
           LP_ICON_LIBRARY_SOURCES: ${{ secrets.LP_ICON_LIBRARY_SOURCES }}
           LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
-          # 崩溃上报:换 DSN + 传符号/混淆映射(scripts/sentry-dsn.sh)
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          # 崩溃上报地址(scripts/sentry-dsn.sh)
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: bash scripts/pack-android.sh tv
 

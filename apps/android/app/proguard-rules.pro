@@ -24,3 +24,10 @@
     *** Companion;
     kotlinx.serialization.KSerializer serializer(...);
 }
+
+# 崩溃上报要读得懂堆栈:R8 照常删代码、照常优化,只是不改名。
+# 改名的话线上堆栈全是 a.b.c,得往 Sentry 传映射(要 token)才解得开。
+# 行号不留:优化会把每个方法的行号重排成 1..n,留着反而是错的行号。
+# 也试过 -dontoptimize 保住真行号 —— APK 大 2MB 且没了内联,TV 盒子上的 Compose 吃不消。
+-dontobfuscate
+-keepattributes SourceFile

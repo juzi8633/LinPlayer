@@ -935,18 +935,23 @@ GL 崩在驱动自己家里,`catch` 接不住,表现正好是「一个字不留�
 (当天该仓库已连发 10 个 release、每个 3~5 个大资产)。
 下次撞上先看**隔一段时间还红不红**,别再往「改了 workflow」上归。
 
-## 崩溃上报重新接回 Go 栈:DSN 从 token 现查,探针差点假绿(2026-09-18)
+## 崩溃上报重新接回 Go 栈:DSN 走 secret,不要 token(2026-09-18)
 
 - **DSN 不入库**:Rust 栈那版把 DSN 写死在 `telemetry.rs` / `telemetry.ts` 里,违反提交红线。
-  现在由 `scripts/sentry-dsn.sh` 在出包时拿 `SENTRY_AUTH_TOKEN` 调
-  `GET /api/0/projects/<org>/<project>/keys/` 现查,经环境变量进 csproj 的
-  `AssemblyMetadata` / gradle 的 `buildConfigField`。**实测这个 token 在 keys 接口吃 403**(只有传符号的权限),
-  所以查不到时挂 `::warning::` 照出包,不卡发布;补 `project:read` 或另配 `SENTRY_DSN` secret(优先用它)才真启用。
-  本地没 token → DSN 空 → SDK 不启用(开发机崩溃不进线上)。
+  现在是 `SENTRY_DSN` secret → 环境变量 → csproj 的 `AssemblyMetadata` / gradle 的 `buildConfigField`。
+  没配 = SDK 不启用(本地开发机的崩溃不进线上),CI 里挂 `::warning::`。
+- **不用 `SENTRY_AUTH_TOKEN`**。试过拿它调 `GET /api/0/projects/<org>/<project>/keys/` 现查 DSN:
+  那个 token 只有传符号的权限,**403**。后来干脆不传符号,让堆栈在本机就可读:
+  - PC:`DebugType=embedded`,pdb 编进 dll(LinPlayer.dll 约 3MB)。SDK 在本机解出行号。
+    `LP_SENTRYPROBE` 断言出站事件带 `"lineno"`;用 `DebugType=none` 发布时它会红(只剩 `instruction_addr`)。
+  - 安卓:`-dontobfuscate`,R8 照常删代码和优化。**行号不留** —— 优化会把每个方法的行号重排成 1..n
+    (mapping 里 `1:4:void <init>():19:19`),留着就是错行号。`-dontoptimize` 能保住真行号,
+    但 APK 55.0MB → 57.1MB 且没了内联,不值。
+- **secret 删了,workflow 里的 `env:` 变量仍在,值是空串**。gradle 判 `getenv(...) != null` 会当成有,
+  照样去传映射然后 assembleRelease 失败。判空一律 `isNullOrBlank()` / `-n`。
 - **PC 端探针第一版是假绿**:截住出站信封后判「不含主目录」,而信封是 JSON ——
-  `C:\Users\x` 被写成 `C:\Users\x`,`<` 被写成 `\u003C`。「不含」恒成立。
+  `C:\Users\x` 被写成 `C:\\Users\\x`,`<` 被写成 `\u003C`。「不含」恒成立。
   修法:比对前 `Regex.Unescape`。凡是对**序列化产物**做「不含 X」断言的,先想转义。
-- **写脚本别用 Python 字符串拼 sed 反向引用**:`'\1'` 在 Python 里是 `\x01`,
-  DSN 变成一个不可见字符却显示「已启用」。用打桩 `curl()` 跑一遍才看出来;现在改用 `cut -d'"' -f4`。
+- **别在 Python 字符串字面量里写反斜杠内容**:`'\1'` 是 `\x01`,`"\U..."` 直接语法错。
+  改带反斜杠的代码用编辑工具,或先写文件再拼接。
 - 安卓用 `sentry-android-core` + `sentry-android-ndk`,**不用总包 `sentry-android`**(它会顺带拉录屏 replay)。
-  R8 映射靠 `io.sentry.android.gradle` 插件上传,只在有 token 时开。

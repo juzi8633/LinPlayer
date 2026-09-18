@@ -32,14 +32,12 @@ rm -f "$STAGE/liblpcore.h"
 
 echo "== 2/4 发布外壳(self-contained)=="
 dotnet publish "$APP" -c Release -r linux-x64 --self-contained true \
-  -p:PublishSingleFile=false -p:DebugType=portable -p:Version="$LP_VERSION" \
+  -p:PublishSingleFile=false -p:DebugType=embedded -p:Version="$LP_VERSION" \
   -o "$STAGE" --nologo -v q >/dev/null
 # 注了 DSN 却没进程序集 = 发行包静默不上报(csproj 那条 AssemblyMetadata 读的是环境变量)
 if [ -n "$SENTRY_DSN" ] && ! grep -qF "$SENTRY_DSN" "$STAGE/LinPlayer.dll"; then
   echo "SENTRY_DSN 没编进 LinPlayer.dll"; exit 1
 fi
-# pdb 只为传给 Sentry(构建时已传),不进发行包
-rm -f "$STAGE"/*.pdb
 # 丢了可执行位的表现是「解压了双击没反应」
 chmod 0755 "$STAGE/LinPlayer"
 
