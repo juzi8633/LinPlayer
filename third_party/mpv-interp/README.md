@@ -11,7 +11,7 @@
 | `apply-to-mpv.sh` | 装进一份 mpv 源码树(CI 用,见 `.github/workflows/libmpv-android.yml`) |
 | `bench/lpi_bench.c` | 基准 + 正确性:平移纹理,光流补帧 PSNR 必须明显高于直接混合 |
 | `bench/lpi_pair_test.c` | 帧对判据(切镜 / 按住的原画)的自检。纯逻辑,不依赖 mpv 和 OpenCL |
-| `bench/lpi_real.c` | **真实片源**对照:取第 0、2 帧算中间帧去对真的第 1 帧。合成纹理没有遮挡/形变/细线条,测不出鬼影 |
+| `bench/lpi_real.c` | **真实片源**对照:取第 0、2 帧算中间帧去对真的第 1 帧。合成纹理没有遮挡/形变/细线条,测不出鬼影。顺带跑光流分辨率的切档自检 |
 
 PC 上跑基准(zig 在 `.toolchain/`):
 
@@ -30,6 +30,7 @@ ffmpeg -ss 300 -i 番.mkv -vf "select='between(n,49,51)'" -fps_mode passthrough 
 ./lpi_real.exe tri.nv12 1920 1080          # 出 PSNR + 遮挡掩膜占比 + 五张对照图
 LPI_OCC=0 ./lpi_real.exe tri.nv12 1920 1080   # 关掉遮挡掩膜,单看光流质量
 LPI_RADIUS=16 LPI_MINWIN=8 ./lpi_real.exe …   # 手动指定档位(平时由滤镜按耗时自适应)
+LPI_SHIFT=1 ./lpi_real.exe …                  # 光流再降一半分辨率(跑不动时的最后一档)
 ```
 
 判据自检(改阈值前先跑):
@@ -39,6 +40,8 @@ LPI_RADIUS=16 LPI_MINWIN=8 ./lpi_real.exe …   # 手动指定档位(平时由�
 ```
 
 **PSNR 不是好尺子** —— 它奖励糊,而直接混合是「糊」的极致形态。看 `遮挡掩膜 %`:流场越可信它越低。
+
+改访存相关的东西时**拿核显量,别拿独显量**:两者差的是带宽不是算力,核显才代表手机。
 
 ## 许可
 

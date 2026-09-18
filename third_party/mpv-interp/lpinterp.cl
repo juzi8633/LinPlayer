@@ -13,15 +13,55 @@
 //   八轮累计最多只能挪 ±32 px,而 1080p 动画快动作的帧间位移常到 50~100 px —— 够不着。
 //   以前只能靠把 radius 从 5 堆到 16 来换范围,代价直接 3.2 倍。
 //   按窗口缩放之后,radius 还是 5,累计可达 ±256 px。粗层管远、细层管准,各司其职。
-int lvl_scale(int windowSize) { return clamp(windowSize / 4, 1, 16); }
+//
+// 步长下限钉在一个低分辨率格(1<<resShift 个全分辨率像素):搜索是在降采样平面上做的,
+// 比一格更细的位移那上面根本分辨不出来,试了也只是把同一对像素再比一遍。
+// 钉住之后所有矢量恒为整格倍数,降采样平面上的寻址才是精确的、不是截断的。
+int lvl_scale(int windowSize, int resShift) {
+    return clamp(windowSize / 4, min(1 << resShift, 16), 16);
+}
 
 int trial_adjust(int layer, int radius) {
     int a = (layer % radius) - (radius / 2);
     return a * a * (a > 0 ? 1 : -1);
 }
 
-int trial_at(int layer, int radius, int windowSize) {
-    return trial_adjust(layer, radius) * lvl_scale(windowSize);
+int trial_at(int layer, int radius, int windowSize, int resShift) {
+    return trial_adjust(layer, radius) * lvl_scale(windowSize, resShift);
+}
+
+// 把 NV12 降采样成搜索用的 (Y,U,V) 平面,一个低分辨率格一个 uchar4。
+//
+// ★ 这是移动端能不能跑得动的关键。原来每个采样点直接从全分辨率平面上抓 3 个字节,
+//   行距、列距都是 1<<resShift —— 一条 64 字节 cache line 只用得上 4 个字节,
+//   而全分辨率的 Y 平面(1080p 有 2MB)放不进移动 GPU 的 L2。实测 Intel 核显对 RTX 5060
+//   慢 11.4 倍,正好是两者的**带宽**比而不是算力比(25 倍),瓶颈在访存已经证实。
+//   降采样平面 1080p 只有 480×270×4 = 0.5MB,整块常驻 L2,且每个采样点只读一次对齐的 4 字节。
+// 顺带:盒式平均比原来的点取样抗噪,块匹配本来就该在带低通的图上做。
+__kernel void lpi_shrink(__global const uchar *src, __global uchar4 *dst, const int dimY,
+                         const int dimX, const int lowY, const int lowX, const int resShift) {
+    const int cx = get_global_id(0), cy = get_global_id(1);
+    if (cx >= lowX || cy >= lowY) return;
+    const int n = 1 << resShift;
+    const int sx = cx << resShift, sy = cy << resShift;
+    const int plane = dimY * dimX;
+    int y = 0, u = 0, v = 0;
+    for (int dy = 0; dy < n; dy++) {
+        const int py = min(sy + dy, dimY - 1);
+        for (int dx = 0; dx < n; dx++)
+            y += src[py * dimX + min(sx + dx, dimX - 1)];
+    }
+    // UV 交错存放:一行 UV 对应两行 Y,一对 UV 对应两列 Y
+    for (int dy = 0; dy < n / 2; dy++) {
+        const int py = min((sy >> 1) + dy, (dimY >> 1) - 1);
+        for (int dx = 0; dx < n / 2; dx++) {
+            const int px = min(sx + dx * 2, dimX - 2) & ~1;
+            u += src[plane + py * dimX + px];
+            v += src[plane + py * dimX + px + 1];
+        }
+    }
+    const int nc = max(n / 2 * (n / 2), 1);
+    dst[cy * lowX + cx] = (uchar4)((uchar)(y / (n * n)), (uchar)(u / nc), (uchar)(v / nc), 0);
 }
 
 int mirror_in(int pos, int dim) {
@@ -53,15 +93,14 @@ int med4(int a, int b, int c, int d) {
 //   那里任何矢量的 SAD 都差不多,全由惩罚项拍板。原来惩罚项只有 zbias·|v|(偏向零),
 //   于是身体判成不动、只有轮廓在动 —— 撕裂和果冻就是这么来的。
 //   改成偏向邻居后,平坦内部能从「边缘那圈 SAD 说了算的窗口」继承运动。
-__kernel void lpi_search(__global uchar *lowest, __global const uchar *f1, __global const uchar *f2,
-                         __global const short *offs, const int dimY, const int dimX, const int lowY,
-                         const int lowX, const int windowSize, const int radius, const int resShift,
-                         const int step) {
+__kernel void lpi_search(__global uchar *lowest, __global const uchar4 *s1, __global const uchar4 *s2,
+                         __global const short *offs, const int lowY, const int lowX,
+                         const int windowSize, const int radius, const int resShift, const int step) {
     const int wx = get_global_id(0) * windowSize, wy = get_global_id(1) * windowSize;
     if (wx >= lowX || wy >= lowY) return;
     const int ex = min(wx + windowSize, lowX), ey = min(wy + windowSize, lowY);
     const int stride = max(windowSize / 8, 1);
-    const int plane = dimY * dimX;
+    const int sh = 1 << resShift;
     const int comp = (step & 1) ? lowY * lowX : 0;  // 这一趟在调 x 还是 y
 
     // 窗口内 offs 是常数:每一轮的窗口都被上一轮更大的窗口整块覆盖,同一格里值一样。
@@ -85,23 +124,20 @@ __kernel void lpi_search(__global uchar *lowest, __global const uchar *f1, __glo
     for (int pass = 0; pass < 2; pass++) {
     for (int z = (pass ? 0 : z0); z < radius; z++) {
         if (pass && z == z0) continue;  // 第一趟已经算过
-        const int adj = trial_at(z, radius, windowSize);
+        const int adj = trial_at(z, radius, windowSize, resShift);
         const int vtry = ((step & 1) ? cur_y : cur_x) + adj;  // 这一层试探出来的分量值
+        // 窗口内 offs 恒定(见上),所以整个窗口共用一组偏移 —— 不必每个采样点重读一遍。
+        // 矢量恒为整格倍数(lvl_scale 钉了下限),除法在这里是精确的。
+        const int oxl = ((step & 1) ? cur_x : vtry) / sh;
+        const int oyl = ((step & 1) ? vtry : cur_y) / sh;
         uint sum = 0;
         int n = 0;
         for (int cy = wy; cy < ey; cy += stride) {
-            const int sy = min(cy << resShift, dimY - 1);
+            const int ny = clamp(mirror_in(cy + oyl, lowY), 0, lowY - 1);
             for (int cx = wx; cx < ex; cx += stride) {
-                const int idx = cy * lowX + cx;
-                int ox = offs[idx], oy = offs[lowY * lowX + idx];
-                if (step & 1) oy += adj; else ox += adj;
-                const int ny = clamp(mirror_in(sy + oy, dimY), 0, dimY - 1);
-                const int sx = min(cx << resShift, dimX - 1);
-                const int nx = clamp(mirror_in(sx + ox, dimX), 0, dimX - 1);
-                const int c1 = plane + (ny >> 1) * dimX + (nx & ~1);
-                const int c2 = plane + (sy >> 1) * dimX + (sx & ~1);
-                sum += (abs_diff(f1[ny * dimX + nx], f2[sy * dimX + sx]) + abs_diff(f1[c1], f2[c2]) +
-                        abs_diff(f1[c1 + 1], f2[c2 + 1])) << 2;
+                const int nx = clamp(mirror_in(cx + oxl, lowX), 0, lowX - 1);
+                const uchar4 p = s1[ny * lowX + nx], q = s2[cy * lowX + cx];
+                sum += (abs_diff(p.x, q.x) + abs_diff(p.y, q.y) + abs_diff(p.z, q.z)) << 2;
                 n++;
             }
         }
@@ -127,12 +163,13 @@ __kernel void lpi_search(__global uchar *lowest, __global const uchar *f1, __glo
 }
 
 __kernel void lpi_adjust(__global short *offs, __global const uchar *lowest, const int windowSize,
-                         const int radius, const int lowY, const int lowX, const int step) {
+                         const int radius, const int lowY, const int lowX, const int step,
+                         const int resShift) {
     const int cx = get_global_id(0), cy = get_global_id(1);
     if (cx >= lowX || cy >= lowY) return;
     const int wx = (cx / windowSize) * windowSize, wy = (cy / windowSize) * windowSize;
     offs[(step & 1) * lowY * lowX + cy * lowX + cx] +=
-        (short)trial_at(lowest[wy * lowX + wx], radius, windowSize);
+        (short)trial_at(lowest[wy * lowX + wx], radius, windowSize, resShift);
 }
 
 // 8×8 方框模糊,边界镜像。

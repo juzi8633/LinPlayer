@@ -51,6 +51,14 @@ bool lpi_is_duplicate(const struct lpi_pair *st);
 void lpi_set_min_win(struct lpi_ctx *c, int w);
 int lpi_min_win(struct lpi_ctx *c);
 
+// 光流的工作分辨率(降采样位移)。比窗口更粗的第三把旋钮:再降一半,
+// 搜索的格子数直接变四分之一。**这是最后一道闸** —— 过了它只能整个关掉补帧,
+// 所以宁可流场糙一点也要先走这一档。
+#define LPI_SHIFT_EXTRA_MAX 1
+void lpi_set_res_shift(struct lpi_ctx *c, int s);
+int lpi_res_shift(struct lpi_ctx *c);
+int lpi_shift_base(struct lpi_ctx *c);
+
 // 一帧光流的统计量。bench 拿它量算法好坏 —— occ_pct(被判成遮挡的格子占比)
 // 是比 PSNR 更好用的质量代理:流场越可信,它越低。
 struct lpi_stats {

@@ -115,6 +115,41 @@ int main(int argc, char **argv) {
     lpi_flow_stats(c, &st);
     printf("光流场 %d 格: 平均|v|=%.2f  最大|v|=%d  遮挡掩膜 %.1f%%\n",
            st.cells, st.mean_abs, st.max_abs, st.occ_pct);
+
+    // 切档自检:光流分辨率是运行时可调的,调档时**前一帧**的降采样版是按老档降的,
+    // 必须一起重降。漏了的话流场会悄悄错(不报错、不崩),所以在这儿钉一道。
+    // 来回切一趟再回到原档,结果必须和切之前逐字节一致。
+    // ☠ 必须照搬滤镜的真实时序:**切完档只推一帧**。一次推两帧会把两帧都重降,
+    //   刚好把 bug 盖住 —— 第一版自检就是这么假绿的。
+    {
+        const int base = lpi_shift_base(c);
+        struct lpi_stats a = st, b, cc;
+        // 切到粗档,只推一帧(此时 prev = f2,它的降采样版还是按细档降的)
+        lpi_set_res_shift(c, base + LPI_SHIFT_EXTRA_MAX);
+        int bad = lpi_push(c, f0, f0 + ys) || lpi_flow(c);
+        lpi_finish(c);
+        lpi_flow_stats(c, &b);
+        // 同一对帧、同一档,但两帧都是在这一档降的 —— 这是正确答案
+        bad |= lpi_push(c, f2, f2 + ys) || lpi_push(c, f0, f0 + ys) || lpi_flow(c);
+        lpi_finish(c);
+        lpi_flow_stats(c, &cc);
+        // 切回细档,顺带验证来回一趟不掉东西,也把状态还原给后面的 warp
+        lpi_set_res_shift(c, base);
+        bad |= lpi_push(c, f0, f0 + ys) || lpi_push(c, f2, f2 + ys) || lpi_flow(c);
+        lpi_finish(c);
+        lpi_flow_stats(c, &st);
+        if (bad) {
+            fprintf(stderr, "切档自检:重跑失败\n");
+            return 1;
+        }
+#define SAME(x, y) ((x).max_abs == (y).max_abs && fabs((x).mean_abs - (y).mean_abs) < 1e-9 && \
+                    fabs((x).occ_pct - (y).occ_pct) < 1e-9)
+        const bool ok = SAME(b, cc), back = SAME(st, a);
+        fprintf(stderr, "  切档自检 %s(切档后前一帧%s重降;回到 %d 档%s)\n",
+                ok && back ? "通过" : "★失败★", ok ? "已" : "★没★", base, back ? "复原" : "★没复原★");
+        if (!(ok && back))
+            return 1;
+    }
     unsigned char *oy = malloc(ys), *ouv = malloc(ys / 2);
     if (lpi_warp(c, t, oy, ouv)) {
         fprintf(stderr, "生成中间帧失败\n");

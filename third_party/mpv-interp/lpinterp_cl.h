@@ -31,6 +31,7 @@ typedef struct _cl_event *cl_event;
 
 #define CL_SUCCESS 0
 #define CL_TRUE 1
+#define CL_FALSE 0
 #define CL_DEVICE_TYPE_GPU (1 << 2)
 #define CL_DEVICE_NAME 0x102B
 #define CL_DEVICE_GLOBAL_MEM_SIZE 0x101F

@@ -44,6 +44,8 @@ struct priv {
     struct mp_frame pending;  // 冲刷完队列之后要写出去的信号帧(EOF 等)
     bool broken;              // 这台设备跑不了,之后原样放行
     int slow_runs;            // 连续超预算的源帧数
+    double cost;              // 每个源帧耗时的指数滑动平均(秒)
+    double t_push;            // 本帧开始上传的时刻 —— 预算要从上传算起,不是从光流算起
     uint8_t *tmp;             // 输出图 stride 和源不一致时的中转
     size_t tmp_size;
 };
@@ -121,30 +123,45 @@ static bool warp_into(struct priv *p, float t, struct mp_image *out)
     return true;
 }
 
-// 按上一个源帧的耗时调搜索半径;最小半径还连续超预算就放弃。
+// 按最近若干个源帧的**平均**耗时调档;到底了还超预算就放弃。
+//
+// ☠ 看单帧峰值是不对的:动画有 39% 的相邻帧是按住的原画,整个光流都跳过了(0 ms),
+//   但 adapt 原来只在真跑了光流的帧上调用,于是拿 100% 的贵帧去对 100% 的预算 ——
+//   实际负载只有 59%,却按峰值一路降到底、甚至直接关掉补帧。
+//   改成每个源帧都记一笔(跳过的记 0),用指数滑动平均。播放侧本来就有帧队列吸收抖动。
 static void adapt(struct mp_filter *f, double spent, double budget)
 {
     struct priv *p = f->priv;
+    p->cost += (spent - p->cost) * 0.12;  // ≈16 个源帧的窗口
     const int r = lpi_radius(p->ocl), w = lpi_min_win(p->ocl);
-    if (spent > budget * 0.8) {
-        // 降级顺序按实测的代价/质量曲线定:**先把窗口调粗,后砍搜索半径**。
+    const int s = lpi_res_shift(p->ocl), s0 = lpi_shift_base(p->ocl);
+    if (p->cost > budget * 0.8) {
+        // 降级顺序按实测的代价/质量曲线定:**窗口 → 半径 → 光流分辨率**。
         // R=8/W=16 只要 7.1ms,质量却全面压过 R=5/W=2 的 11.2ms(Intel UHD 1080p)——
         // 反过来先砍半径就是拿质量换了个更贵的档。
+        // 分辨率放最后:同样 3.6ms,「半分辨率 + 最好的窗口半径」的遮挡掩膜是 78/47/77%,
+        // 「全分辨率 + 最差的窗口半径」是 79/45/73% —— 打平甚至更好,而后者还便宜一截。
         if (w < LPI_MIN_WIN_WORST) {
             lpi_set_min_win(p->ocl, w * 2);
             p->slow_runs = 0;
         } else if (r > LPI_RADIUS_MIN) {
             lpi_set_radius(p->ocl, r - 1);
             p->slow_runs = 0;
+        } else if (s < s0 + LPI_SHIFT_EXTRA_MAX) {
+            lpi_set_res_shift(p->ocl, s + 1);
+            p->slow_runs = 0;
         } else if (++p->slow_runs >= 24) {
             char why[160];
-            snprintf(why, sizeof(why), "显卡算力不够(每个源帧要 %.0f ms,预算 %.0f ms)", spent * 1e3, budget * 1e3);
+            snprintf(why, sizeof(why), "显卡算力不够(每个源帧平均要 %.0f ms,预算 %.0f ms)",
+                     p->cost * 1e3, budget * 1e3);
             give_up(f, why);
         }
     } else {
         p->slow_runs = 0;
-        if (spent < budget * 0.5) {
-            if (r < LPI_RADIUS_MAX)
+        if (p->cost < budget * 0.5) {  // 回升门槛留出滞回,免得在两档之间来回跳
+            if (s > s0)
+                lpi_set_res_shift(p->ocl, s - 1);
+            else if (r < LPI_RADIUS_MAX)
                 lpi_set_radius(p->ocl, r + 1);
             else if (w > LPI_MIN_WIN_BEST)
                 lpi_set_min_win(p->ocl, w / 2);
@@ -169,6 +186,8 @@ static void interpolate(struct mp_filter *f, struct mp_image *cur)
     // 跳变(seek 后第一对、可变帧率里的长间隔)不补:光流会把两个不相干的画面硬拉在一起
     if (!(dt > 0 && dt < 2.5 / fps) || p->broken)
         return;
+    // 预算用标称帧距而不是 dt:可变帧率下 dt 会抖,而档位不该跟着单帧抖动跳
+    const double budget = 1.0 / fps;
 
     // 一次 CPU 扫描(9216 个取样点,微秒级)同时回答两个问题,两个都能省掉整个光流。
     struct lpi_pair st;
@@ -177,8 +196,10 @@ static void interpolate(struct mp_filter *f, struct mp_image *cur)
 
     // 切镜:上面那条 dt 判据只挡得住 seek 和可变帧率的长间隔,挡不住正常帧距的硬切。
     // 硬切的两帧内容毫不相干,光流会把它们拉成一团烂泥。
-    if (lpi_is_scene_cut(&st))
+    if (lpi_is_scene_cut(&st)) {
+        adapt(f, mp_time_sec() - p->t_push, budget);
         return;
+    }
 
     // 按住的同一张原画(动画的一拍二 / 一拍三)。中间帧就是 prev 本身 ——
     // 跑光流只会算出同一张图。这里只加引用计数,不拷像素。
@@ -191,10 +212,10 @@ static void interpolate(struct mp_filter *f, struct mp_image *cur)
             out->nominal_fps = fps * multi;
             p->queue[p->qn++] = out;
         }
+        adapt(f, mp_time_sec() - p->t_push, budget);
         return;
     }
 
-    double start = mp_time_sec();
     if (lpi_flow(p->ocl)) {
         give_up(f, "OpenCL 光流计算失败");
         return;
@@ -212,7 +233,7 @@ static void interpolate(struct mp_filter *f, struct mp_image *cur)
         }
         p->queue[p->qn++] = out;
     }
-    adapt(f, mp_time_sec() - start, dt);
+    adapt(f, mp_time_sec() - p->t_push, budget);
 }
 
 static void f_process(struct mp_filter *f)
@@ -254,7 +275,11 @@ static void f_process(struct mp_filter *f)
     struct mp_image *img = frame.type == MP_FRAME_VIDEO ? frame.data : NULL;
     bool fits = img && !p->broken && img->imgfmt == IMGFMT_NV12 && !(img->h & 1) &&
                 img->stride[1] == img->stride[0] && img->w <= 4096 && img->h <= 2176;
-    if (fits && (!ensure_ocl(f, img) || lpi_push(p->ocl, img->planes[0], img->planes[1]))) {
+    if (fits && !ensure_ocl(f, img))
+        fits = false;
+    // 计时从这里开始:ensure_ocl 头一次要编 kernel(几百毫秒),算进预算会当场把档位打到底
+    p->t_push = mp_time_sec();
+    if (fits && lpi_push(p->ocl, img->planes[0], img->planes[1])) {
         give_up(f, "OpenCL 上传画面失败");
         fits = false;
     }
