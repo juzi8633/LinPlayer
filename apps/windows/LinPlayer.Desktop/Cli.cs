@@ -40,6 +40,15 @@ internal static class Cli
                     例:LinPlayer call system.capabilities
                     退出码:0 成功,1 命令失败,2 用法错误,130 被中断
                     """);
+                /* 界面一打开就崩的人,手上只剩这条命令行 —— 自救开关写在发布说明里等于没写。
+                   Windows 不印:那边没有 X11,这个开关一点用没有(issue #65)。 */
+                if (!OperatingSystem.IsWindows())
+                    Console.WriteLine("""
+
+                        图形界面一打开就崩(SIGSEGV)时,先试:LP_RENDER=software LinPlayer
+                          绕开显卡驱动的 GL 上下文,整张界面交给 CPU 画。
+                          能起来 = 崩在显卡驱动那一侧,请把 coredumpctl info LinPlayer 的输出发给我们。
+                        """);
                 return args[0] == "call" ? 2 : 0;
         }
     }
