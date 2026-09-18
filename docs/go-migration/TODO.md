@@ -1991,6 +1991,12 @@ Ani-RSS 管理台(同 C24b)。
 - [ ] **L10** 单实例锁:**和数据根绑定**,不是和可执行文件绑定
   - 判据:两份不同目录的解压包可以同时跑;崩溃留下的陈旧锁能自愈
 - [ ] **L11** 至少两个发行版上的启动冒烟(一个定下限、一个验 soname)
+  - 2026-09-18:`scripts/smoke-linux-gui.sh` + CI job `smoke-linux-gui`(ubuntu-22.04 + Xvfb)。
+    判据是「撑满 20 秒还活着」,崩了自动用 gdb 取栈。**故意不挂在 build-linux 下**:
+    它红了不该连带卡住发版
+  - 起因:用户报 Ubuntu 26.04 上一打开就 SIGSEGV(issue #65)。在这之前 Linux 端
+    只有命令行冒烟,而命令行够不到 Avalonia / X11 / Skia 那一整段
+  - 判据:第二个发行版(验 soname 的那个)还没有
 
 ### 5.4 Apple(后置)
 

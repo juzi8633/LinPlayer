@@ -213,6 +213,26 @@ jobs:
           path: release/*.zip
           if-no-files-found: error
 
+  # TODO L11:开窗冒烟。**故意不放进 build-linux** —— 它红了只该说明「Linux 端起不来」,
+  # 不该连带把 create-prerelease 卡住(那个 job needs build-linux),Windows / 安卓的包还得发。
+  # 测的是解压后的 zip 而不是 stage 目录:可执行位丢了的表现就是这里「permission denied」。
+  smoke-linux-gui:
+    name: Smoke Linux GUI
+    needs: build-linux
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: LinPlayer-linux-x64
+          path: dl
+      - name: Install Xvfb
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb gdb
+      - name: Unzip
+        run: unzip -q dl/*.zip -d stage
+      - name: Open a window
+        run: bash scripts/smoke-linux-gui.sh stage/LinPlayer
+
   build-android:
     name: Build Android
     needs: version
