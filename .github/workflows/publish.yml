@@ -119,6 +119,9 @@ jobs:
           - Windows 端内置完整版 libmpv(支持 PGS/SUP 图形字幕)。
           - Linux 端不带 libmpv,用系统的:Debian/Ubuntu 装 \`libmpv2\`(22.04 是 \`libmpv1\`),Fedora 装 \`mpv-libs\`,Arch 装 \`mpv\`。
             也能在终端里调:\`./LinPlayer call <命令> '<JSON>'\`,\`./LinPlayer commands\` 列出全部命令。
+          - Linux 上打开就崩(SIGSEGV)的话,先试 \`LP_RENDER=software ./LinPlayer\` ——
+            那是绕开显卡驱动的 GL 上下文、整张界面交给 CPU 画。能起来就说明崩在驱动那一侧,
+            请把 \`coredumpctl info LinPlayer\` 的输出贴进 issue。
           - 绿色包的全部数据(账号/缓存/下载)都写在主程序同级的 \`userdata/\`,
             整个文件夹拷走即完成迁移;删掉文件夹即卸载干净。
           EOF

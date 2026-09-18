@@ -804,12 +804,21 @@ internal static class Program
             Avalonia.Input.MouseButton.Left));
     }
 
-    public static AppBuilder BuildAvaloniaApp() =>
-        AppBuilder.Configure<App>()
+    public static AppBuilder BuildAvaloniaApp()
+    {
+        var b = AppBuilder.Configure<App>()
             .UsePlatformDetect()
             .With(new Win32PlatformOptions { CompositionMode = CompositionModes() })
             .WithInterFont()
             .LogToTrace();
+        /* Linux 的退路:`LP_RENDER=software` 跳过 GLX,整张界面交给 CPU 画。
+           GL 上下文是显卡驱动那一侧建的 —— 它崩在自己家里,我们一句 catch 都接不住,
+           表现就是进程当场 SIGSEGV、一个字不留(用户 2026-09-18 报的 Ubuntu 26.04,issue #65)。
+           所以这条退路同时是诊断:换上它能起来 = 死在 GL,起不来 = 别处。 */
+        if (Environment.GetEnvironmentVariable("LP_RENDER") == "software")
+            b = b.With(new X11PlatformOptions { RenderingMode = [X11RenderingMode.Software] });
+        return b;
+    }
 
     /// <summary>
     /// 合成模式。<b>低延迟交换链排第一</b>:只有它按显示器 vblank 出帧。

@@ -22,13 +22,21 @@ fi
 X="-screen 0 1280x800x24"
 
 RC=0
-( cd "$STAGE" && xvfb-run -a -s "$X" timeout "$SECS" ./LinPlayer >"$LOG" 2>&1 ) || RC=$?
+# LP_PERF=1 让 Perf.Log 往 stdout 打里程碑。光判「还活着」会假绿:
+# 窗口起不来但进程挂在那儿不退,照样撑满 20 秒。
+( cd "$STAGE" && LP_PERF=1 xvfb-run -a -s "$X" timeout "$SECS" ./LinPlayer >"$LOG" 2>&1 ) || RC=$?
 
 # timeout 掐掉的退出码是 124 —— 它一直活着,这正是要的
 if [ "$RC" = 124 ]; then
-  echo "SMOKE 开窗 ✓ 撑满 ${SECS}s 没退"
+  if grep -q '框架初始化完成' "$LOG"; then
+    echo "SMOKE 开窗 ✓ 撑满 ${SECS}s,框架初始化走完了"
+    rm -f "$LOG"
+    exit 0
+  fi
+  echo "SMOKE 开窗 ✗ 活着但没走到「框架初始化完成」—— 卡在起窗口那一步"
+  tail -n 40 "$LOG" || true
   rm -f "$LOG"
-  exit 0
+  exit 1
 fi
 
 echo "SMOKE 开窗 ✗ 退出码 $RC(该是 124 = 活到被掐)"

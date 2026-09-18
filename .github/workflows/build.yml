@@ -232,6 +232,11 @@ jobs:
         run: unzip -q dl/*.zip -d stage
       - name: Open a window
         run: bash scripts/smoke-linux-gui.sh stage/LinPlayer
+      # 软件渲染是崩在显卡驱动时唯一的退路(issue #65)。没人验过的退路等于没有退路
+      - name: Open a window (software rendering)
+        env:
+          LP_RENDER: software
+        run: bash scripts/smoke-linux-gui.sh stage/LinPlayer
 
   build-android:
     name: Build Android
