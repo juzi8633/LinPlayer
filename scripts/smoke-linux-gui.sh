@@ -46,9 +46,11 @@ tail -n 40 "$LOG" || true
 # 只有栈说得出死在哪一层 —— 再跑一次,这次挂在 gdb 底下。
 if [ "$RC" -ge 128 ] && command -v gdb >/dev/null 2>&1; then
   echo "---- 信号杀的,取栈 ----"
+  # SIGPIPE 必须放过:核心层(Go)往断开的连接写时会收到它,正常情况下被忽略;
+  # 但 gdb 默认在它上面停,栈停在半路,真正的崩溃根本没走到(issue #65 用户贴的就是这个)
   ( cd "$STAGE" && xvfb-run -a -s "$X" \
-      timeout 120 gdb -batch -ex run -ex 'bt 40' -ex 'info sharedlibrary' \
-      --args ./LinPlayer ) 2>&1 | tail -n 80 || true
+      timeout 120 gdb -batch -ex 'handle SIGPIPE nostop noprint pass' -ex run -ex 'bt 40' \
+      -ex 'info sharedlibrary' --args ./LinPlayer ) 2>&1 | tail -n 80 || true
 fi
 rm -f "$LOG"
 exit 1

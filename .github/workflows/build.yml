@@ -242,6 +242,36 @@ jobs:
           LP_RENDER: software
         run: bash scripts/smoke-linux-gui.sh stage/LinPlayer
 
+  # issue #65:Ubuntu 26.04 一打开就 SIGSEGV,连软件渲染也崩 —— 显卡不是嫌疑。
+  # 用 26.04 的系统库再开一次窗。不在 create-prerelease 的 needs 里:它红了不挡发布,只报信
+  smoke-linux-gui-2604:
+    name: Smoke Linux GUI (Ubuntu 26.04)
+    needs: build-linux
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: LinPlayer-linux-x64
+          path: dl
+      # 容器是最小镜像:桌面上默认就有的 X11 / 字体 / GL 库都得自己装
+      - name: Install deps
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq xvfb xauth gdb unzip ca-certificates \
+            libx11-6 libice6 libsm6 libxext6 libxrender1 libxrandr2 libxi6 libxcursor1 \
+            libfontconfig1 fonts-noto-cjk libgl1 libegl1 libglx-mesa0 >/dev/null
+      - name: Unzip
+        run: unzip -q dl/*.zip -d stage
+      - name: Open a window
+        run: bash scripts/smoke-linux-gui.sh stage/LinPlayer
+      - name: Open a window (software rendering)
+        if: always()
+        env:
+          LP_RENDER: software
+        run: bash scripts/smoke-linux-gui.sh stage/LinPlayer
+
   build-android:
     name: Build Android
     needs: version
