@@ -23,7 +23,7 @@ internal static class Telemetry
 
     public static IDisposable? Init(string version)
     {
-        if (Dsn.Length == 0) return null;
+        if (Dsn.Length == 0 || Views.Report.Off) return null;
         return SentrySdk.Init(o => Configure(o, Dsn, version));
     }
 

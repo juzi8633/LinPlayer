@@ -20,6 +20,8 @@ fi
 # 色深必须钉 24。xvfb 默认给 8 位 visual,Skia 在那上面的死法和真机对不上,
 # 冒烟会变成「在测一个没人用的配置」。
 X="-screen 0 1280x800x24"
+# CI 出的包编进了上报地址:冒烟里被 timeout 掐掉、故意崩,都不能发到开发者的 TG / Sentry
+export LP_NO_REPORT=1
 
 RC=0
 # LP_PERF=1 让 Perf.Log 往 stdout 打里程碑。光判「还活着」会假绿:

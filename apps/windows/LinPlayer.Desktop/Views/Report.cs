@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.IO;
 using System.Text.Json;
 using Avalonia;
@@ -48,12 +49,24 @@ internal static class Report
             catch (IOException) { /* 进程已经在崩了,写不进就只剩「异常退出」这一条信息 */ }
         };
         // 正常关窗和 Environment.Exit(装更新)都走这里;崩溃和被强杀不走 —— 标记留下,下次就知道
-        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
-        {
-            try { File.Delete(Path.Combine(dir, $"running.{me}")); }
-            catch (IOException) { /* 删不掉下次会误报一次「异常退出」,用户点不发送即可 */ }
-        };
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => Disarm(dir, me);
+        // 关机 / 注销 / Ctrl+C / 关终端是「被请求退出」,不是崩。Linux 上不接的话,
+        // 开着程序关机下次就报一条假崩溃(CI 冒烟被 timeout 掐掉时当场撞上)。不取消信号,照常退出
+        foreach (var sig in new[] { PosixSignal.SIGTERM, PosixSignal.SIGINT, PosixSignal.SIGHUP })
+            Signals.Add(PosixSignalRegistration.Create(sig, _ => Disarm(dir, me)));
     }
+
+    // 注册对象被回收就等于注销,必须有人一直拿着
+    private static readonly List<PosixSignalRegistration> Signals = [];
+
+    private static void Disarm(string dir, int me)
+    {
+        try { File.Delete(Path.Combine(dir, $"running.{me}")); }
+        catch (IOException) { /* 删不掉下次会误报一次「异常退出」,只多一条报告 */ }
+    }
+
+    /// <summary>自检和 CI 冒烟设 <c>LP_NO_REPORT=1</c>:它们的「崩溃」是故意的,别发到开发者那儿。</summary>
+    public static bool Off => Environment.GetEnvironmentVariable("LP_NO_REPORT") == "1";
 
     private static bool Alive(int pid)
     {
@@ -67,7 +80,7 @@ internal static class Report
     /// </summary>
     public static async Task SendPendingCrash(CoreClient core)
     {
-        if (LastCrash is not { } crash) return;
+        if (LastCrash is not { } crash || Off) return;
         LastCrash = null;
         try
         {

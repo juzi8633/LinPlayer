@@ -271,6 +271,16 @@ jobs:
         env:
           LP_RENDER: software
         run: bash scripts/smoke-linux-gui.sh stage/LinPlayer
+      # 上面两步在干净的 26.04 容器里都过了 —— 用户那台和容器的差别才是嫌疑:
+      # 中文路径(~/下载/)、zh_CN 语言、系统装了 libmpv(容器里没有,核心层那段根本没走到)、输入法变量
+      - name: Open a window (like the reporter's machine)
+        if: always()
+        run: |
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libmpv2 locales >/dev/null
+          sed -i 's/^# *zh_CN.UTF-8/zh_CN.UTF-8/' /etc/locale.gen && locale-gen >/dev/null
+          mkdir -p "/root/下载" && cp -r stage/LinPlayer "/root/下载/LinPlayer"
+          LANG=zh_CN.UTF-8 LC_ALL=zh_CN.UTF-8 XMODIFIERS=@im=ibus GTK_IM_MODULE=ibus QT_IM_MODULE=ibus \
+            bash scripts/smoke-linux-gui.sh "/root/下载/LinPlayer"
 
   build-android:
     name: Build Android
