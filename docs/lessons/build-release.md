@@ -24,6 +24,8 @@
 - Bash 别用 PS heredoc — `bash-no-powershell-heredoc.md`
 - 删掉一整个技术栈:连带点清单 — 2026-09-04
 - Windows CI 的 Python 按 cp1252 输出 — 2026-09-04
+- Linux 端「起不起得来」以前一条门禁都没有 — 2026-09-18
+- 预发布 403 的既有归因对不上 — 2026-09-18
 
 ---
 
@@ -880,3 +882,55 @@ CreationFlags: CREATE_NO_WINDOW}`(`core/system/spawn_windows.go`,非 Windows 空
 **相关但别混**:`docs/lessons/ui-desktop.md` 那条「PowerShell 子进程会闪一个黑框」
 说的是探 ffmpeg/whisper 那种**短命**子进程,实测只加 `HideWindow` 就够。
 两者场景不同(一个几十毫秒、一个最长 120 秒),**没有互相验证过**,别拿一个的结论替另一个签字。
+
+## Linux 端「起不起得来」以前一条门禁都没有(2026-09-18)
+
+用户报 Ubuntu 26.04 上一打开就 `SIGSEGV`(issue #65)。查下来 Linux 端 GUI
+**从来没在真桌面上开过窗**(`docs/go-migration/TODO.md` B2.3「未验:真桌面开窗」)。
+
+CI 当时只有 `pack-linux.sh` 里那两条命令行冒烟:
+
+```bash
+"$STAGE/LinPlayer" version
+"$STAGE/LinPlayer" call system.capabilities
+```
+
+它们只证明**壳加载得起核心层** —— 死在 Avalonia / X11 / Skia 的一律照过。
+「能跑命令行」和「能开窗」之间隔着整个图形栈,那一段一行断言都没有。
+
+补的是 `scripts/smoke-linux-gui.sh` + CI job `smoke-linux-gui`,三个判据是实测逼出来的:
+
+- **色深钉 24**(`-screen 0 1280x800x24`)。xvfb 默认给 8 位 visual,
+  Skia 在那上面的死法和真机对不上 —— 那等于在测一个没人用的配置
+- **判「撑满 20 秒还活着」而不是「退出码 0」**。起不来的样子是秒退或秒崩,
+  `timeout` 掐掉时返回 124,**124 才是通过**
+- **还要判日志里有「框架初始化完成」**。只判活着会假绿:窗口起不来但进程挂着不退,
+  老判据照样绿。靠 `LP_PERF=1` 让 `Perf.Log` 把里程碑打到 stdout
+
+实测结果:**ubuntu-22.04 + Xvfb 上两条渲染路都过**。所以那次崩不是「每台 Linux 都起不来」,
+差别在 Xvfb 没有的那样东西 —— 真显卡驱动那一侧的 GL 上下文。
+GL 崩在驱动自己家里,`catch` 接不住,表现正好是「一个字不留地 SIGSEGV」。
+退路是 `LP_RENDER=software`(`Program.BuildAvaloniaApp`),它同时是诊断:
+换上能起来 = 死在 GL,起不来 = 死在别处。
+
+**失效条件**:Xvfb 走的是软件渲染,这道门禁**证明不了**真显卡上起得来。
+「两个发行版上的启动冒烟」(TODO L11)还欠一半。
+
+## 预发布 403 的既有归因对不上(2026-09-18)
+
+`create-prerelease` 报 `403 Resource not accessible by integration`。
+`build.yml` 里原先的归因是「这个提交改了 `.github/workflows/`,GITHUB_TOKEN 打不了 tag」,
+并据此加了一条跳过护栏。**这次证伪了**:
+
+- 失败的提交 `9af25e65` 只动了 `Program.cs` / `PlayerPage.cs` / `probes-win.sh`,
+  一个 `.github/` 文件都没碰 —— 护栏正确地没触发,然后照样 403
+- 重跑一次,同样 403(不是偶发)
+- 两次 run 的 token 权限一模一样:`Contents: write` / `Metadata: read`
+- 仓库 `/rulesets` 是 `[]`,`/tags/protection` 404,
+  `default_workflow_permissions` 是 `write`
+- 目标 tag 与 release **都不存在**(都是 404),所以不是「已存在」那类冲突
+- 16 分钟前的上一个提交 `26953f6e` 用同一套配置**成功创建了** `v1.1.0-build784-pre`
+
+**真因未确认。** 已排除上面这几条,没排除的:发 release 的二级速率限制
+(当天该仓库已连发 10 个 release、每个 3~5 个大资产)。
+下次撞上先看**隔一段时间还红不红**,别再往「改了 workflow」上归。

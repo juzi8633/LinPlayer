@@ -404,9 +404,11 @@ jobs:
           sha256sum ./*.zip ./*.apk > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
-      # ☠ GITHUB_TOKEN 没有 workflows 权限,**不能在一个改了 .github/workflows/ 的提交上打 tag**:
-      #   Create Pre-release 会 403「Resource not accessible by integration」(2026-09-18 在 70cc78b7 上连红两次,
-      #   三个包全编过了)。这种提交就不发预发布,下一个普通提交照常发 —— 那时 tag 打在不改 workflow 的提交上。
+      # 这条护栏是照「改了 .github/workflows/ 就 403」立的(70cc78b7 上连红两次)。
+      # ⚠ 2026-09-18 那条归因**证伪了**:9af25e65 一个 .github/ 文件没碰,护栏正确地没触发,
+      #   Create Pre-release 照样 403,重跑仍旧。真因未确认,排查过程见
+      #   docs/lessons/build-release.md「预发布 403 的既有归因对不上」。
+      #   护栏先留着(对 workflow 提交到底有没有用没验过),但**别再拿它当解释**。
       - name: Skip if this commit changes workflows
         id: wf
         run: |
