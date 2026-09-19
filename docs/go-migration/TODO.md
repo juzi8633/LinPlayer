@@ -90,7 +90,9 @@
 
 > 2026-09-19:排行榜(`emby.ranking*`)、付费追剧日历(`system.afdian*`)、字幕翻译(`translate.*` 9 条 +
 > `prefs.get/setTranslationSettings`)、Trakt / Bangumi 同步(`sync.*` 15 条)从宿主删除,
-> 以后做成官方插件(`docs/plugin-system/SPEC.md` 第 125、198 条)。命令表现为 200 条。
+> 以后做成官方插件(`docs/plugin-system/DECISIONS.md` D125 D198)。命令表现为 200 条。
+> 2026-09-20 更正:排行榜与付费追剧日历改回宿主(D361),插件系统第 ① 阶段从 `6b290d80^` 恢复;
+> 字幕翻译、Trakt/Bangumi 同步仍做官方插件(账号连接回宿主,D365)。
 
 ★ **在范围内的命令一条不缺。** 剩下那 51 条是 Ani-RSS 管理台,
 C24b 已决定不移植 —— 播放那半已经作为 `core/source/anirss` 落地了。

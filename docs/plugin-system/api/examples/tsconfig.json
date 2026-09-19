@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2017",
+    "lib": ["es2022", "dom"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react",
+    "jsxFactory": "h",
+    "jsxFragmentFactory": "Fragment",
+    "skipLibCheck": false,
+    "baseUrl": ".",
+    "paths": { "@linplayer/plugin-sdk": ["../plugin-sdk.d.ts"] }
+  },
+  "include": ["*/src/**/*.ts", "*/src/**/*.tsx", "../plugin-sdk.d.ts"]
+}

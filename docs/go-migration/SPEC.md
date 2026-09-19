@@ -1128,7 +1128,7 @@ Go 侧用 `encoding/xml` 标准库,零新依赖,但有两条硬要求:
 | 文件浏览(网盘 / SMB / WebDAV / FTP / 本地) | ✅ | ✅ | ✅ | TV 只有本机文件夹 / U 盘(`UI_TV.md` §7.14,【用户定 2026-09-14】) |
 | 影视目录(VOD 资源站) | ✅ | ✅ | ❌ | 与文件浏览是**两套页面**,不复用;VOD 只以插件形式出现,TV 不做插件 |
 | 下载 | ✅ | ✅ | ✅ | |
-| ~~排行榜 / 追剧日历~~ | — | — | — | 2026-09-19 从宿主删除,改做官方插件(`docs/plugin-system/SPEC.md` 第 125、198 条) |
+| 排行榜 / 追剧日历 | — | — | — | 2026-09-19 从宿主删除;2026-09-20 改回宿主(`docs/plugin-system/DECISIONS.md` D361),插件系统第 ① 阶段从 `6b290d80^` 恢复,见 `docs/plugin-system/spec/18-host-changes.md` |
 | Ani-RSS 管理 | ✅ | ✅ | ❌ | |
 | 设置 | ✅ | ✅ | ✅ | 桌面 4 组 12 项(见 `UI_PC.md` §7.15) |
 | 人物详情 | ✅ | ✅ | ❌ | |
@@ -2046,7 +2046,7 @@ Linux 靠 **fontconfig** 做字体回退,libmpv 直接用,**不需要我们指�
 
 > 老版本的下限被 WebKitGTK 钉在 Ubuntu 22.04 / Debian 12。
 > **新架构(Avalonia)不再需要 WebKitGTK 做主 UI**,下限有机会往下走 ——
-> 但新插件系统的 WebView 嗅探([`docs/plugin-system/SPEC.md`](../plugin-system/SPEC.md) D24)仍要一个 WebView。
+> 但新插件系统的 WebView 嗅探([`docs/plugin-system/DECISIONS.md`](../plugin-system/DECISIONS.md) D24)仍要一个 WebView。
 > **【待验证 + 决策】** 这个 WebView 能否做成**可选依赖**(用到才加载,
 > 没有就禁用依赖它的插件功能并说明原因)。能的话,基础发行包的下限会显著放宽。
 
@@ -2203,7 +2203,7 @@ is_writable(dir):
 | 暗道 | 现状 | 规定 |
 |---|---|---|
 | 进程临时目录 | 已按住:启动时把 `TEMP` / `TMP` / `TMPDIR` 指进数据根 | 保留 |
-| **WebView2 profile** | 已按住:显式给 `data_directory`。不给它就自己在 `%LOCALAPPDATA%` 下建,**实测 126 MB,而且含 localStorage** | 保留,见 §16.4。新架构下只有插件的 WebView 嗅探([`docs/plugin-system/SPEC.md`](../plugin-system/SPEC.md) D24)会用到它 |
+| **WebView2 profile** | 已按住:显式给 `data_directory`。不给它就自己在 `%LOCALAPPDATA%` 下建,**实测 126 MB,而且含 localStorage** | 保留,见 §16.4。新架构下只有插件的 WebView 嗅探([`docs/plugin-system/DECISIONS.md`](../plugin-system/DECISIONS.md) D24)会用到它 |
 | **libmpv 的 shader cache** | **旧栈已经踩过**:不显式给 `gpu-shader-cache-dir`,libmpv 自己找地方写 | 显式指到 `userdata/cache/shaders`。**换播放器内核 / 换 libmpv 构建时要重新确认** |
 | **libmpv 的 config-dir / watch-later** | mpv 默认往用户配置目录写 | 显式指到数据根。注意 `config=no` 只挡配置读取,**挡不住 watch-later 之类的写** |
 | **.NET 单文件解包目录** | 新栈引入 | single-file 发布默认解到 `%TEMP%`。要么**不用 single-file**,要么显式设 `DOTNET_BUNDLE_EXTRACT_BASE_DIR` 到数据根 |
@@ -2293,7 +2293,7 @@ is_writable(dir):
 **现状是致命依赖:** 主 UI 本身就跑在 WebView2 里,而**代码里没有任何运行时缺失检测**。
 用户机器上没有 WebView2 运行时 = 整个 App 起不来,而且不会有任何有用的提示。
 
-**新架构改变了这件事**:主 UI 是 Avalonia,WebView2 **只服务插件的 WebView 嗅探**([`docs/plugin-system/SPEC.md`](../plugin-system/SPEC.md) D24)。
+**新架构改变了这件事**:主 UI 是 Avalonia,WebView2 **只服务插件的 WebView 嗅探**([`docs/plugin-system/DECISIONS.md`](../plugin-system/DECISIONS.md) D24)。
 所以它从"必需"降成"可选",这是新架构白送的一个稳健性提升 —— **但必须显式做,不会自动发生**:
 
 | 规定 | 内容 |

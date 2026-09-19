@@ -839,7 +839,7 @@ keyboardHidden|density|uiMode`,不让系统重建 Activity。**
 
 ### 7.13 / 7.14 排行榜 · 追剧日历(已删)
 
-2026-09-19 从宿主删除,以后做成官方插件(`docs/plugin-system/SPEC.md` 第 125、198 条)。
+2026-09-19 从宿主删除;2026-09-20 改回宿主(`docs/plugin-system/DECISIONS.md` D361),插件系统第 ① 阶段从 `6b290d80^` 恢复本节。
 原来两节里仍然成立的接口实测与用户口径搬到了 `docs/lessons/plugins.md`。
 
 ### 7.15 设置(U1.15)

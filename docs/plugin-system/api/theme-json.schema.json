@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "linplayer-theme-json",
+  "title": "LinPlayer 手机/TV 主题 JSON(草稿 2026-09-20)",
+  "description": "Compose 端运行时解释的主题;桌面主题是 .axaml,不走本格式。SPEC 11.4。@see D215 D216 D21 D211~D213 D522 D70 D71",
+  "type": "object",
+  "required": ["schema", "modes", "tokens"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema": { "const": 1 },
+    "modes": { "type": "array", "minItems": 1, "items": { "enum": ["light", "dark"] }, "uniqueItems": true, "description": "只给一种时,系统切到另一种也保持 @see D70" },
+    "tokens": {
+      "type": "object",
+      "description": "每种明暗一套 token 值;token 名清单随 SDK 发布",
+      "properties": { "light": { "$ref": "#/$defs/tokenSet" }, "dark": { "$ref": "#/$defs/tokenSet" } },
+      "additionalProperties": false
+    },
+    "components": {
+      "type": "object",
+      "description": "官方组件 × 状态的样式属性 @see D21",
+      "additionalProperties": {
+        "type": "object",
+        "propertyNames": { "enum": ["default", "hovered", "pressed", "focused", "disabled", "selected"] },
+        "additionalProperties": { "$ref": "#/$defs/style" }
+      }
+    },
+    "layout": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "density": { "enum": ["compact", "comfortable", "spacious"] },
+        "fontScale": { "type": "number", "minimum": 0.5, "maximum": 2 },
+        "posterWidth": { "type": "number" },
+        "posterColumns": { "type": "object", "properties": { "compact": { "type": "integer" }, "medium": { "type": "integer" }, "expanded": { "type": "integer" } }, "additionalProperties": false },
+        "navPosition": { "enum": ["bottom", "side", "top"] }
+      },
+      "description": "@see D522"
+    },
+    "motion": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "pageTransition": { "type": "string", "description": "预置名或 keyframes 里的名字" },
+        "keyframes": { "type": "object", "additionalProperties": { "type": "array", "items": { "$ref": "#/$defs/style" } } },
+        "durations": { "type": "object", "additionalProperties": { "type": "number" } }
+      },
+      "description": "任意关键帧动画 @see D213 D522"
+    },
+    "icons": { "type": "object", "additionalProperties": { "type": "string" }, "description": "官方图标稳定名 → 包内 SVG @see D211" },
+    "fonts": { "type": "array", "items": { "type": "object", "required": ["family", "file"], "properties": { "family": { "type": "string" }, "file": { "type": "string" }, "weight": { "type": "integer" } }, "additionalProperties": false }, "description": "@see D71" },
+    "wallpaper": {
+      "type": "object", "additionalProperties": false,
+      "properties": { "image": { "type": "string" }, "video": { "type": "string" }, "blur": { "type": "number" }, "dim": { "type": "number", "minimum": 0, "maximum": 1 } },
+      "description": "主题自带壁纸,壁纸插件可覆盖 @see D212 D441"
+    }
+  },
+  "$defs": {
+    "tokenSet": { "type": "object", "additionalProperties": { "type": ["string", "number"] } },
+    "style": { "type": "object", "description": "与 plugin-sdk.d.ts 的 Style 同一套属性名" }
+  }
+}

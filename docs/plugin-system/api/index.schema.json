@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "linplayer-plugin-index",
+  "title": "LinPlayer 插件仓库 index.json(草稿 2026-09-20)",
+  "description": "任何静态托管都能放;官方市场是预装不可删的默认订阅,格式完全一样。SPEC 14.2。@see D28 D118 D119",
+  "type": "object",
+  "required": ["schema", "name", "updated", "plugins"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema": { "const": 1 },
+    "name": { "type": "string", "description": "仓库名,浏览页标来源用" },
+    "updated": { "type": "string", "format": "date-time" },
+    "plugins": { "type": "array", "items": { "$ref": "#/$defs/entry" } }
+  },
+  "$defs": {
+    "semver": { "type": "string", "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$" },
+    "version": {
+      "type": "object",
+      "required": ["version", "url", "size", "minAppVersion", "released"],
+      "additionalProperties": false,
+      "properties": {
+        "version": { "$ref": "#/$defs/semver", "description": "@see D180" },
+        "url": { "type": "string", "description": "官方市场指向官方仓库 Releases 的副本 @see D295" },
+        "size": { "type": "integer", "minimum": 0, "description": "@see D142" },
+        "minAppVersion": { "$ref": "#/$defs/semver", "description": "按版本取能兼容的最高版 @see D450" },
+        "platforms": { "type": "array", "items": { "enum": ["windows", "linux", "android", "android_tv"] } },
+        "released": { "type": "string", "format": "date-time" },
+        "changelog": { "type": "string", "description": "这一版的更新日志摘要,更新弹窗直接显示 @see D182" },
+        "contributesDiff": { "type": "array", "items": { "type": "string" }, "description": "相对上一版新增的贡献点(新接管位、lan…)@see D446" }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "required": ["id", "name", "description", "versions"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*/[a-z0-9]+(-[a-z0-9]+)*$" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "i18n": { "type": "object", "description": "@see D400" },
+        "author": { "type": "string" },
+        "repository": { "type": "string", "description": "@see D408 D483" },
+        "icon": { "type": "string" },
+        "iconMono": { "type": "string" },
+        "screenshots": { "type": "array", "items": { "type": "string" } },
+        "readme": { "type": "string", "description": "官方仓库 CI 生成的静态 README 地址 @see D481" },
+        "paid": { "type": "boolean", "description": "@see D409" },
+        "requires": { "type": "object" },
+        "lan": { "type": "boolean" },
+        "contributes": { "type": "array", "items": { "type": "string" }, "description": "贡献点摘要(键名 + 接管位),用于自动分类与贡献点清单 @see D79 D239" },
+        "categories": { "type": "array", "items": { "enum": ["dataSource", "theme", "player", "danmakuSubtitle", "metadata", "download", "live", "tool"] }, "description": "由 CI 按贡献点推出,作者不用填 @see D239" },
+        "stars": { "type": "integer", "minimum": 0, "description": "官方仓库 CI 抓取;第三方仓库没写就不显示 @see D240" },
+        "downloads": { "type": "integer", "minimum": 0, "description": "@see D79" },
+        "official": { "type": "boolean", "description": "仅官方市场可为 true;客户端还要核对安装来源 @see D205" },
+        "addedAt": { "type": "string", "format": "date-time", "description": "新上架排序用" },
+        "versions": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/version" }, "description": "全部历史版本,新到旧 @see D448" }
+      }
+    }
+  }
+}

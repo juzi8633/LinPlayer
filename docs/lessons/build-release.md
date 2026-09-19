@@ -396,7 +396,7 @@ CI(`cat VERSION`)、C#(`dotnet publish -p:Version=`)、Go(`-ldflags -X …system
 
 **How to apply:** 以后凡是决定资产托管在哪（图标、安装包、更新源、字体、CDN），先问，别默认"CF 更快"。
 静态资源能内联就内联，内联是唯一不受任何网络环境影响的方案。
-插件市场的新设计见 [`docs/plugin-system/SPEC.md`](../plugin-system/SPEC.md) D28(重做中)。
+插件市场的新设计见 [`docs/plugin-system/DECISIONS.md`](../plugin-system/DECISIONS.md) D28(重做中)。
 
 ---
 
