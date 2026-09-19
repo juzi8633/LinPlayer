@@ -238,14 +238,14 @@ public partial class MainWindow : Window
 
     private void SelfCheckJump() => SelfCheckJump(Environment.GetEnvironmentVariable("LP_SELFCHECK_PAGE"));
 
-    private async Task SelfCheckSource(string kw, bool play)
+    private async Task SelfCheckSource(string kw, bool play, string line)
     {
         try
         {
             var r = await _core!.SourceSearchItems(new { server_id = _pluginServer, keyword = kw });
             var id = r.GetProperty("items")[0].GetProperty("id").GetString()!;
             Console.WriteLine($"[自检 数据源] ✓ 搜到 {id}");
-            Nav.Push(new SourceDetailPage(_core, _pluginServer!, id, play ? new SourceDetailPage.AutoPlay("", "", 0, 1) : null));
+            Nav.Push(new SourceDetailPage(_core, _pluginServer!, id, play ? new SourceDetailPage.AutoPlay(line, "", 0, 1) : null));
         }
         catch (Exception e) { Console.WriteLine("[自检 数据源] ✗ " + e.Message); }
     }
@@ -331,7 +331,7 @@ public partial class MainWindow : Window
             // tvbox:<插件目录>|<订阅地址>|<之后落到哪页>:开发版加载 → 订阅 → 全部勾上 → 切到第一个源
             case "tvbox": _ = SelfCheckTvbox(arg.Split('|')); break;
             // srcdetail:<词> / srcplay:<词>:在当前数据源里搜,打开第一条(srcplay 顺带起播第 1 集)
-            case "srcdetail" or "srcplay": _ = SelfCheckSource(arg, want.StartsWith("srcplay")); break;
+            case "srcdetail" or "srcplay": _ = SelfCheckSource(arg.Split(':')[0], want.StartsWith("srcplay"), arg.Split(':').ElementAtOrDefault(1) ?? ""); break;
             case "settings": this.FindControl<RadioButton>("NavSettings")!.IsChecked = true; break;
             case "aggregate": this.FindControl<RadioButton>("NavAggregate")!.IsChecked = true; break;
             case "history": this.FindControl<RadioButton>("NavHistory")!.IsChecked = true; break;

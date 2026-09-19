@@ -142,8 +142,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/t4", count(s.t4))
 	mux.HandleFunc("/jx/", count(s.parser))
 	mux.HandleFunc("/page/", count(func(w http.ResponseWriter, r *http.Request) {
-		// 官源线路的「网页地址」:本身不是媒体,要走解析
-		fmt.Fprint(w, "<html><body>这是一个视频网页,需要解析</body></html>")
+		// 官源线路的「网页地址」:本身不是媒体,要走解析;网页里的播放器会去拉 m3u8(网页嗅探抓的就是这一下)
+		name := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/page/"), ".html")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, `<html><body>这是一个视频网页,需要解析<script>fetch("/media/sniff-%s.m3u8")</script></body></html>`, name)
 	}))
 	mux.HandleFunc("/media/", s.media)
 	mux.HandleFunc("/live.m3u", func(w http.ResponseWriter, r *http.Request) {
@@ -172,6 +174,13 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 		w.Write([]byte(s.Config()))
+	})
+	// 没有解析接口的配置:官源线路只能走网页嗅探(真机自检用,门禁里没有壳)
+	mux.HandleFunc("/config/sniff.json", func(w http.ResponseWriter, r *http.Request) {
+		var cfg map[string]any
+		_ = json.Unmarshal([]byte(s.Config()), &cfg)
+		delete(cfg, "parses")
+		_ = json.NewEncoder(w).Encode(cfg)
 	})
 	mux.HandleFunc("/config/jsck.json", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"sites":[{"key":"jsck","name":"带防护的站","type":1,"api":"%s/jsck/api.php/provide/vod/","searchable":1}]}`, s.Base)

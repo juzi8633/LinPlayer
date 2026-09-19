@@ -289,7 +289,7 @@ if [ -n "${LP_TVBOX:-}" ]; then
   rm -rf "$BIN/userdata/plugins"
   for _ in $(seq 30); do curl -s -o /dev/null "http://127.0.0.1:18097/config/plain.json" && break; sleep 0.2; done
   PLUGIN_DIR="$(cd "$ROOT/plugins/tvbox" && pwd -W)"
-  PAGE="tvbox:$PLUGIN_DIR|http://127.0.0.1:18097/config/plain.json|$PAGE"
+  PAGE="tvbox:$PLUGIN_DIR|http://127.0.0.1:18097/config/${LP_TVBOX_CFG:-plain.json}|$PAGE"
 fi
 
 echo "== 5/5 起 exe 截图 =="
