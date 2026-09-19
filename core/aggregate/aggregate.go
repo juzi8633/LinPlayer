@@ -93,8 +93,8 @@ func RegisterCommands(version string) {
 				// 空切片不是 nil:调用方直接 .map() 拿到 null 会抛错
 				Resume: []emby.Item{},
 			}
-			if acc.IsFileBrowse() {
-				continue // 浏览型源没有 counts / resume
+			if acc.IsFileBrowse() || !acc.AllowAggregate() {
+				continue // 浏览型源没有 counts / resume;关了「允许聚合」的服不进聚合视界(D235)
 			}
 			wg.Add(1)
 			go func(i int, acc config.Account) {

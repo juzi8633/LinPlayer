@@ -14,6 +14,7 @@ import (
 	"linplayer/core/bus"
 	"linplayer/core/config"
 	"linplayer/core/emby"
+	"linplayer/core/history"
 )
 
 // PlaySource 起播一条已经解析好的源地址。
@@ -28,6 +29,19 @@ import (
 // ★ 返回实际起播的续播位置,和 Emby 那条对齐。
 func PlaySource(url, title string, resumeSecs float64,
 	headers map[string]string, ua string, subs []emby.ExternalSub) (map[string]any, error) {
+	return PlaySourceRecorded(url, title, resumeSecs, headers, ua, subs, nil)
+}
+
+// SourceHistory 数据源播放进观看记录要的上下文(D20):scope = `开放键:`,候选条目由统一结构折出。
+type SourceHistory struct {
+	Scope     string
+	Candidate history.Candidate
+	Ref       []byte // 条目快照 + 线路 + 集,见 history.Record.SourceRef
+}
+
+// PlaySourceRecorded 同 PlaySource,另带观看记录上下文(nil = 不记录,网盘/本机源就是这样)。
+func PlaySourceRecorded(url, title string, resumeSecs float64,
+	headers map[string]string, ua string, subs []emby.ExternalSub, rec *SourceHistory) (map[string]any, error) {
 
 	if r := ensureMpv(); r != 0 {
 		return nil, bus.NewErr(bus.EInternal, mpvDownMsg)
@@ -50,6 +64,9 @@ func PlaySource(url, title string, resumeSecs float64,
 	current = nil
 	pendingSubs = nil
 	currentCtx = nil // 源播放不是 Emby,清掉观看记录上下文,别把网盘进度记到上一部 Emby 片上
+	if rec != nil {
+		currentCtx = &historyContext{scope: rec.Scope, candidate: rec.Candidate, sourceRef: rec.Ref}
+	}
 	for _, s := range subs {
 		pendingSubs = append(pendingSubs, s)
 	}

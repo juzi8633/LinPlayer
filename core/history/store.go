@@ -291,6 +291,8 @@ type CaptureOpts struct {
 	ForcePlayed *bool
 	// Force 跳过节流。停播时要用 —— 那一下必须落盘,否则最后几秒的进度丢了。
 	Force bool
+	// SourceRef 数据源播放带上的条目快照(见 Record.SourceRef);空则沿用既有记录的。
+	SourceRef json.RawMessage
 }
 
 // Capture 播放期落记录。返回落盘后的记录;非 Movie/Episode 返回 nil(不记录)。
@@ -379,6 +381,10 @@ func (s *Store) Capture(o CaptureOpts) *Record {
 		LastWriteSource:   o.Source,
 		PresentationKey:   o.Candidate.PresentationKey,
 		MediaPath:         o.Candidate.Path,
+		SourceRef:         o.SourceRef,
+	}
+	if rec.SourceRef == nil && existing != nil {
+		rec.SourceRef = existing.SourceRef
 	}
 
 	// ★ canonicalKey 变了 → 旧 id 的记录要删掉,不然一份内容两条

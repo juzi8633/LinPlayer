@@ -15,6 +15,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"linplayer/core/bus"
 	"linplayer/core/config"
@@ -41,6 +42,22 @@ type Info struct {
 	ActiveLine       int                 `json:"active_line"`
 	AllowInsecureTLS bool                `json:"allow_insecure_tls"`
 	Active           bool                `json:"active"`
+	// Aggregate「允许聚合」(D233 D235)。
+	Aggregate bool `json:"aggregate"`
+	// Plugin 插件数据源才有:分组、来源角标、灰显原因、上次访问失败(SPEC 8.7)。
+	Plugin *PluginInfo `json:"plugin,omitempty"`
+}
+
+// PluginInfo 服务器列表上插件源要显示的东西。配置本体(config)不给 UI。
+type PluginInfo struct {
+	PluginID     string `json:"plugin_id"`
+	SourceID     string `json:"source_id"`
+	Group        string `json:"group"`
+	GroupName    string `json:"group_name"`
+	ServerType   string `json:"server_type"`
+	Unavailable  string `json:"unavailable"`
+	LastFailed   bool   `json:"last_failed"`
+	HostOverride string `json:"host_override"`
 }
 
 func infoOf(a config.Account, active bool) Info {
@@ -54,13 +71,22 @@ func infoOf(a config.Account, active bool) Info {
 	if lines == nil {
 		lines = []config.ServerLine{} // 空切片不是 nil:前端 .map() 拿到 null 会抛错
 	}
-	return Info{
+	in := Info{
 		Server: a.Server, UserID: a.UserID, UserName: a.UserName,
 		Name: a.DisplayName(), Remark: str(a.Remark), IconURL: str(a.IconURL),
 		SourceKind: a.SourceKind(), LineURL: a.ActiveLineURL(),
 		Lines: lines, ActiveLine: a.ActiveLine,
 		AllowInsecureTLS: a.AllowInsecureTLS, Active: active,
+		Aggregate: a.AllowAggregate(),
 	}
+	if ps := a.PluginSource(); ps != nil {
+		in.Plugin = &PluginInfo{PluginID: ps.Plugin, SourceID: ps.ID, Group: ps.Group, GroupName: ps.GroupName,
+			ServerType: ps.ServerType, Unavailable: ps.Unavailable, LastFailed: ps.LastFailed, HostOverride: ps.HostOverride}
+		if in.IconURL == "" {
+			in.IconURL = ps.Icon
+		}
+	}
+	return in
 }
 
 func listOf(c *config.AppConfig) []Info {
@@ -106,7 +132,16 @@ func syncImageAllowlist(c *config.AppConfig) {
 	if s == nil {
 		return
 	}
+	extraMu.Lock()
+	extra := make(map[string]http.Header, len(extraOrigins))
+	for o, h := range extraOrigins {
+		extra[o] = h
+	}
+	extraMu.Unlock()
 	s.ReplaceAllowlist(func(add func(string, http.Header)) {
+		for o, h := range extra {
+			add(o, h)
+		}
 		for _, a := range c.AccountList {
 			h := http.Header{}
 			if a.Token != "" {
@@ -120,6 +155,22 @@ func syncImageAllowlist(c *config.AppConfig) {
 			}
 		}
 	})
+}
+
+var (
+	extraMu      sync.Mutex
+	extraOrigins = map[string]http.Header{}
+)
+
+// AllowImageOrigin 登记数据源条目里出现的图片 origin(可带请求头,D87)。
+//
+// ★ 必须经这里而不是直接 localserve.AllowDefault:账号表一改就整表重建白名单,
+// 单独登记的 origin 会被冲掉 ——「刚才还有海报,改了个备注全没了」。
+func AllowImageOrigin(origin string, headers http.Header) {
+	extraMu.Lock()
+	extraOrigins[origin] = headers
+	extraMu.Unlock()
+	localserve.AllowDefault(origin, headers)
 }
 
 var client *emby.Client

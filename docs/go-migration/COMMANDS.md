@@ -44,13 +44,14 @@
 | Emby 浏览与详情 | `emby.*` | 42 | 38 |
 | 账号与线路 | `account.*` | 21 | 21 |
 | 播放器 | `player.*` | 52 | 40 |
-| 媒体源(浏览型) | `source.*` | 7 | 7 |
+| 媒体源与数据源 | `source.*` | 30 | 30 |
 | 弹幕 | `danmaku.*` | 17 | 17 |
 | 下载 | `download.*` | 9 | 8 |
 | 设置与偏好 | `prefs.*` | 30 | 21 |
 | 系统 | `system.*` | 18 | 8 |
 | 手机扫码遥控(电视端) | `companion.*` | 4 | 0 |
-| **合计** | | **200** | **160** |
+| 插件 | `plugin.*` | 32 | 32 |
+| **合计** | | **255** | **215** |
 
 ### Emby 浏览与详情 · `emby.*` — 42 条
 
@@ -182,7 +183,7 @@
 | [x] | `player.windowClose` | `player_window_close` | `—` | `Result<(), String>` | ❌ |
 | [x] | `player.windowOpen` | `player_window_open` | `payload: serde_json::Value` | `Result<(), String>` | ❌ |
 
-### 媒体源(浏览型) · `source.*` — 7 条
+### 媒体源与数据源 · `source.*` — 30 条
 
 | 移植 | 新命令名 | 现有名 | 参数 | 返回 | 安卓已注册 |
 |:--:|---|---|---|---|:--:|
@@ -193,6 +194,29 @@
 | [x] | `source.play` | `source_play` | `entry_id: String, entry_name: String, resume_secs: f64, raw: Option<serde_json::Value>` | `Result<f64, String>` | ✅ |
 | [x] | `source.search` | `source_search` | `query: String` | `Entry` | ✅ |
 | [x] | `source.watchdog` | `source_watchdog` | `pos: f64` | `Result<bool, String>` | ✅ |
+| [x] | `source.caps` | **新增** | `server_id` | `{home,category,search,person}` | ✅ |
+| [x] | `source.home` | **新增** | `server_id` | `{categories, recommended}` | ✅ |
+| [x] | `source.category` | **新增** | `server_id, category_id, filters?, cursor?` | `Page<MediaItem>` | ✅ |
+| [x] | `source.searchItems` | **新增** | `server_id, keyword, cursor?` | `Page<MediaItem>` | ✅ |
+| [x] | `source.person` | **新增** | `server_id, name, id?, cursor?` | `Page<MediaItem>` | ✅ |
+| [x] | `source.detail` | **新增** | `server_id, item_id` | `MediaDetail` | ✅ |
+| [x] | `source.playItem` | **新增** | `server_id, item, line_id, episode_id, resume_secs?` | `{resume_secs, url, parser}` | ✅ |
+| [x] | `source.continueWatching` | **新增** | `server_id` | `[]ContinueEntry` | ✅ |
+| [x] | `source.createSources` | **新增** | `plugin_id, type_id, form, repos?` | `{sources, repos}` | ✅ |
+| [x] | `source.addSources` | **新增** | `plugin_id, type_id, sources` | `{added}` | ✅ |
+| [x] | `source.setAggregate` | **新增** | `server_id, allow` | `{aggregate}` | ✅ |
+| [x] | `source.setHost` | **新增** | `server_id, host` | `{host}` | ✅ |
+| [x] | `source.removeGroup` | **新增** | `group` | `{removed}` | ✅ |
+| [x] | `source.serverMenus` | **新增** | `plugin_id` | `[]GroupMenu` | ✅ |
+| [x] | `source.runCommand` | **新增** | `plugin_id, command, args?` | `Json` | ✅ |
+| [x] | `source.aggregateSearch` | **新增** | `query` | `[]SearchRow(逐行 partial)` | ✅ |
+| [x] | `source.switchCandidates` | **新增** | `server_id, title, year?, episode_index?, line_id?, item?, layer_order?` | `[]Candidate(逐源 partial)` | ✅ |
+| [x] | `source.checkAll` | **新增** | `group?` | `[]CheckResult(逐源 partial)` | ✅ |
+| [x] | `source.setFavorite` | **新增** | `server_id, item, favorite` | `{favorite}` | ✅ |
+| [x] | `source.isFavorite` | **新增** | `server_id, item_id` | `bool` | ✅ |
+| [x] | `source.favorites` | **新增** | `server_id?` | `[]FavGroup` | ✅ |
+| [x] | `source.history` | **新增** | `—` | `[]HistoryEntry` | ✅ |
+| [x] | `source.linkSwitch` | **新增** | `from_server, from_item, to_server, to_item` | `—` | ✅ |
 
 ### 弹幕 · `danmaku.*` — 17 条
 
@@ -296,4 +320,41 @@
 | [x] | `companion.status` | **新增** | `—` | `{enabled, running, url, port, error, ip_error, connected}` | — | <!-- url 拿不到 IP 时为空串;error 是起服失败原话;connected = 15 秒内收到过手机页请求 -->
 | [x] | `companion.setEnabled` | **新增** | `enabled: bool` | `{enabled, running, url, port, error, ip_error, connected}` | — | <!-- 持久化 companion_enabled;关=停监听,开=换新 token 起 -->
 | [x] | `companion.setNowPlaying` | **新增** | `title: String` | `{title}` | — | <!-- 播放页起播/离页时报片名,空串=清空。事件:companion.key{key} / companion.open{item_id,type,server_id} / companion.status / account.status{} -->
+
+### 插件 · `plugin.*` — 32 条
+
+| 移植 | 新命令名 | 现有名 | 参数 | 返回 | 安卓已注册 |
+|:--:|---|---|---|---|:--:|
+| [x] | `plugin.list` | **新增** | `with_updates?` | `{plugins, pending_restart, safe_mode, safe_banner, safe_suspect, disabled_all}` | ✅ |
+| [x] | `plugin.pendingRestart` | **新增** | `—` | `bool` | ✅ |
+| [x] | `plugin.inspect` | **新增** | `path` | `Inspection` | ✅ |
+| [x] | `plugin.installFile` | **新增** | `path` | `{id,name,version}` | ✅ |
+| [x] | `plugin.installFromRepo` | **新增** | `repo, id, version?` | `{id,name,version}` | ✅ |
+| [x] | `plugin.uninstall` | **新增** | `id, delete_data` | `—` | ✅ |
+| [x] | `plugin.cancelUninstall` | **新增** | `id` | `—` | ✅ |
+| [x] | `plugin.setEnabled` | **新增** | `id, enabled` | `—` | ✅ |
+| [x] | `plugin.disableAll` | **新增** | `—` | `—` | ✅ |
+| [x] | `plugin.restoreAll` | **新增** | `—` | `—` | ✅ |
+| [x] | `plugin.rollback` | **新增** | `id` | `—` | ✅ |
+| [x] | `plugin.setLocked` | **新增** | `id, locked` | `—` | ✅ |
+| [x] | `plugin.skipVersion` | **新增** | `id, version` | `—` | ✅ |
+| [x] | `plugin.detail` | **新增** | `id` | `{info, manifest, settings, values, usage, contributes}` | ✅ |
+| [x] | `plugin.setSetting` | **新增** | `id, key, value` | `—` | ✅ |
+| [x] | `plugin.clearData` | **新增** | `id, cache_only` | `—` | ✅ |
+| [x] | `plugin.errorDetail` | **新增** | `id` | `{logs, requests, version, issues}` | ✅ |
+| [x] | `plugin.market` | **新增** | `refresh?` | `Market` | ✅ |
+| [x] | `plugin.repos` | **新增** | `—` | `{repos, github_prefix, auto_update}` | ✅ |
+| [x] | `plugin.addRepo` | **新增** | `url` | `RepoInfo` | ✅ |
+| [x] | `plugin.removeRepo` | **新增** | `url` | `—` | ✅ |
+| [x] | `plugin.setGithubPrefix` | **新增** | `prefix` | `—` | ✅ |
+| [x] | `plugin.setAutoUpdate` | **新增** | `on` | `—` | ✅ |
+| [x] | `plugin.updates` | **新增** | `refresh?` | `{id: version}` | ✅ |
+| [x] | `plugin.updateAll` | **新增** | `ids?` | `{ok, failed}` | ✅ |
+| [x] | `plugin.takeovers` | **新增** | `—` | `[]Slot` | ✅ |
+| [x] | `plugin.setTakeover` | **新增** | `slot, plugin_id` | `—` | ✅ |
+| [x] | `plugin.devLoad` | **新增** | `dir` | `{id,name,version}` | ✅ |
+| [x] | `plugin.devUnload` | **新增** | `id` | `—` | ✅ |
+| [x] | `plugin.devList` | **新增** | `—` | `{id: dir}` | ✅ |
+| [x] | `plugin.setCapabilities` | **新增** | `webview, spider_jar, spider_py` | `—` | ✅ |
+| [x] | `plugin.shellResult` | **新增** | `id, ok, data?, error?` | `—` | ✅ |
 <!-- END GENERATED -->

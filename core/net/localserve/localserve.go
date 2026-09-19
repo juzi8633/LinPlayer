@@ -34,6 +34,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -107,6 +109,7 @@ func Start() (*Server, error) {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/img", s.handleImg)
+	mux.HandleFunc("/p/", s.handlePluginAsset)
 	s.http = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := s.http.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -182,6 +185,37 @@ func originOf(raw string) (string, bool) {
 		return "", false
 	}
 	return strings.ToLower(u.Scheme + "://" + u.Host), true
+}
+
+// PluginAssetDir 插件 id → 包解压目录;由插件宿主注入(本包不认识插件)。
+var PluginAssetDir func(pluginID string) string
+
+// PluginAssetURL 包内资源在数据通道上的地址(SPEC 4.1)。
+// token 放路径段:这个地址会交给 <Image>、mpv、WebView,它们没法统一带请求头。
+func (s *Server) PluginAssetURL(pluginID, p string) string {
+	return s.BaseURL() + "/p/" + s.Token + "/" + pluginID + "/" + strings.TrimPrefix(p, "/")
+}
+
+// handlePluginAsset GET /p/<token>/<作者>/<名字>/<路径>
+func (s *Server) handlePluginAsset(w http.ResponseWriter, r *http.Request) {
+	parts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/p/"), "/", 4)
+	if len(parts) < 4 || subtle.ConstantTimeCompare([]byte(parts[0]), []byte(s.Token)) != 1 || PluginAssetDir == nil {
+		http.NotFound(w, r)
+		return
+	}
+	root := PluginAssetDir(parts[1] + "/" + parts[2])
+	if root == "" {
+		http.NotFound(w, r)
+		return
+	}
+	// ServeFile 拒绝含 .. 的路径;再把请求钉在包目录里
+	clean := filepath.Join(root, filepath.FromSlash(path.Clean("/"+parts[3])))
+	if !strings.HasPrefix(clean, root+string(filepath.Separator)) {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	http.ServeFile(w, r, clean)
 }
 
 // authed 校验 token。
@@ -293,6 +327,10 @@ func withSize(src, w, h string) (string, error) {
 	u, err := url.Parse(src)
 	if err != nil {
 		return "", fmt.Errorf("src 不是合法 URL: %w", err)
+	}
+	if !allDigits(w) && !allDigits(h) {
+		// 不带尺寸就原样回源:重编码 query 会改坏数据源图床的签名地址
+		return src, nil
 	}
 	q := u.Query()
 	if allDigits(w) {

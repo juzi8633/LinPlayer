@@ -58,12 +58,15 @@ func (k Kind) IsPlugin() bool { return strings.HasPrefix(string(k), pluginPrefix
 func PluginKind(pluginID, srcID string) Kind { return Kind(pluginPrefix + pluginID + "/" + srcID) }
 
 // SplitPlugin 把插件源的 Kind 拆回 (插件id, 源id)。不是插件源就返回 false。
+//
+// 按**最后一个** `/` 切:插件 id 自带一个 `/`(`plugin:alice/tvbox/src1` → `alice/tvbox` + `src1`),
+// 源 id 规定不含 `/`(SPEC 8.1,D153)。
 func SplitPlugin(k Kind) (string, string, bool) {
 	rest, ok := strings.CutPrefix(string(k), pluginPrefix)
 	if !ok {
 		return "", "", false
 	}
-	i := strings.Index(rest, "/")
+	i := strings.LastIndex(rest, "/")
 	if i <= 0 || i == len(rest)-1 {
 		return "", "", false
 	}

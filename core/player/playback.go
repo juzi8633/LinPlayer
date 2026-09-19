@@ -323,6 +323,7 @@ type historyContext struct {
 	scope        string
 	candidate    history.Candidate
 	seriesTmdbID *string
+	sourceRef    []byte // 数据源播放才有
 }
 
 var currentCtx *historyContext
@@ -367,8 +368,17 @@ func captureHistory(posSecs float64, force bool) {
 	if c == nil {
 		return
 	}
+	if c.candidate.RunTimeTicks == nil && c.sourceRef != nil {
+		// 数据源多半不给片长:取 mpv 的,不然进度百分比与「看完」都判不了
+		if d := propF("duration"); d > 0 {
+			t := int64(d * float64(history.TicksPerSec))
+			currentMu.Lock()
+			c.candidate.RunTimeTicks = &t
+			currentMu.Unlock()
+		}
+	}
 	history.Shared().Capture(history.CaptureOpts{
-		ScopeKey: c.scope, Candidate: c.candidate, SeriesTmdbID: c.seriesTmdbID,
+		ScopeKey: c.scope, Candidate: c.candidate, SeriesTmdbID: c.seriesTmdbID, SourceRef: c.sourceRef,
 		PositionTicks: int64(posSecs * float64(history.TicksPerSec)),
 		Source:        history.SourceInternal,
 		// ★ 阈值由用户定(设置页「看完多少算已观看」)。

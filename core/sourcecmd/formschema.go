@@ -21,6 +21,8 @@ type FormField struct {
 	Type        string `json:"type"`
 	Placeholder string `json:"placeholder"`
 	Required    bool   `json:"required"`
+	// Multiline 多行输入(插件表单:贴 drpy 规则文本这类)。
+	Multiline bool `json:"multiline,omitempty"`
 }
 
 // SourceForm 一种源类型。
@@ -32,7 +34,15 @@ type SourceForm struct {
 	// CanTest 有没有「测试连接」按钮。本机目录没有可测的东西。
 	CanTest bool        `json:"can_test"`
 	Fields  []FormField `json:"fields"`
+	// PluginID / TypeID 插件提供的服务器类型(Kind = "plugin"):提交走 source.createSources(D131)。
+	PluginID   string `json:"plugin_id,omitempty"`
+	PluginName string `json:"plugin_name,omitempty"`
+	TypeID     string `json:"type_id,omitempty"`
 }
+
+// PluginForms 已启用插件提供的服务器类型,由 core/datasource 注入(避免导入环)。
+// 只有装了数据源插件时添加服务器页才出现对应选项(D423)。
+var PluginForms func() []SourceForm
 
 // forms 全部源类型。**这是唯一一份**。
 func forms() []SourceForm {
@@ -59,6 +69,10 @@ func forms() []SourceForm {
 
 func registerFormSchema() {
 	bus.Register("source.formSchema", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
-		return forms(), nil
+		out := forms()
+		if PluginForms != nil {
+			out = append(out, PluginForms()...)
+		}
+		return out, nil
 	})
 }

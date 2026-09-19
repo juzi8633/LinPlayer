@@ -16,6 +16,7 @@
 package history
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -142,6 +143,8 @@ type Record struct {
 	LastWriteSource WriteSource `json:"last_write_source"`
 	PresentationKey *string     `json:"presentation_unique_key"`
 	MediaPath       *string     `json:"media_path"`
+	// SourceRef 数据源记录才有:统一结构条目快照 + 线路 + 集(续播、来源已移除后触发换源要用,D333)。
+	SourceRef json.RawMessage `json:"source_ref,omitempty"`
 }
 
 // EffectiveFirstPlayedAt 首次观看时间,旧记录缺失时回退到 LastPlayedAt。

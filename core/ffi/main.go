@@ -16,6 +16,7 @@ package main
 import "C"
 
 import (
+	"context"
 	"encoding/json"
 	"runtime/debug"
 	"sync"
@@ -27,11 +28,13 @@ import (
 	"linplayer/core/bus"
 	"linplayer/core/commands"
 	"linplayer/core/config"
+	"linplayer/core/datasource"
 	"linplayer/core/download"
 	"linplayer/core/httpx"
 	"linplayer/core/net/localserve"
 	"linplayer/core/paths"
 	"linplayer/core/player"
+	"linplayer/core/plugin"
 	"linplayer/core/system"
 )
 
@@ -166,6 +169,14 @@ func lp_init(configJSON *C.char) (ret C.int32_t) {
 		//   不同步的话一张封面都没有,而命令全都正常(最难查的那种)。
 		account.SyncImageAllowlist()
 
+		/* ★ 插件宿主排在 config.Load 之后:数据源是账号表里的行,startup 插件一加载就可能读写它们。
+		   Wire 要在 Start 之前:startup 插件加载时就要拿到数据源回调。 */
+		ph := plugin.Default()
+		datasource.Wire(ph)
+		localserve.PluginAssetDir = ph.PkgDir
+		ph.Start(hostCfg.Platform, system.Version)
+		go ph.AutoUpdateOnStart(context.Background())
+
 		/* 快捷方式体检。**必须排在 config.Load 之后**:它要往配置里记一句
 		   「exe 现在在哪」,而 Load 之前 Current() 回的是空配置 ——
 		   在那儿保存等于把用户的账号清空(2026-09-12 自检当场撞到)。
@@ -250,6 +261,8 @@ func lp_shutdown() {
 	   没记进索引的长度上 —— 下次启动按文件实际大小恢复所以不会坏,但索引里的进度
 	   明显偏小,用户看到的是「上次明明下了一半,怎么回到 10% 了」。 */
 	download.Close()
+	// 插件 KV 在运行时内存里批量落盘,退出时不卸下运行时就丢最后半秒的写入
+	plugin.Default().Shutdown()
 	// ★ 停在 bus.Shutdown 之前:队列一发 EOF 消费者就走了,再有日志也没人收。
 	if localServer != nil {
 		_ = localServer.Close()

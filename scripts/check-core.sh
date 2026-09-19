@@ -18,6 +18,8 @@ source "$ROOT/scripts/env.sh"
 fail=0
 step() { echo; echo "===== $* ====="; }
 
+# TVBox 全链路测试要用插件内置的 drpy 引擎:缺了就拉(配了上游地址时),拉不到直接算这一关红
+bash "$ROOT/scripts/fetch-drpy.sh" || fail=$((fail + 1))
 step "1. go vet + go test"
 # ★ libmpv 要在 DLL 搜索路径上:core/player 是 cgo 包,它的测试二进制起不来就是
 #   0xc0000135(找不到 DLL),而那个错误看起来像「测试失败」而不是「环境不对」。

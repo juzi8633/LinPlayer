@@ -40,8 +40,8 @@ func searchAll(ctx context.Context, c *config.AppConfig, query string, includeEp
 	}
 	var all []*serverSearch
 	for _, acc := range c.AccountList {
-		if acc.IsFileBrowse() {
-			continue // 浏览型源没有 Emby 搜索接口
+		if acc.IsFileBrowse() || !acc.AllowAggregate() {
+			continue // 浏览型源没有 Emby 搜索接口;关了「允许聚合」的服不进聚合(D235)
 		}
 		all = append(all, &serverSearch{acc: acc, s: sessionOf(c, acc)})
 	}

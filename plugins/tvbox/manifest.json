@@ -1,0 +1,40 @@
+{
+  "$schema": "../../docs/plugin-system/api/manifest.schema.json",
+  "id": "linplayer/tvbox",
+  "name": "TVBox 兼容",
+  "version": "0.1.0",
+  "description": "导入 TVBox 配置订阅或 drpy 规则,把里面的站点变成可以浏览、搜索、播放的数据源。插件本身不带任何源,内容由用户自行订阅。",
+  "i18n": { "en": { "name": "TVBox compatibility", "description": "Import TVBox subscriptions or drpy rules as data sources." } },
+  "minAppVersion": "1.1.0",
+  "license": "AGPL-3.0",
+  "lan": true,
+  "requires": { "components": ["jar-runtime", "python"] },
+  "activation": { "load": "startup", "lifetime": "resident" },
+  "contributes": {
+    "dataSource": {
+      "serverTypes": [
+        { "id": "subscription", "name": "TVBox 订阅", "fields": [ { "key": "url", "type": "text", "title": "配置地址", "description": "支持加密配置、多仓地址;地址后可带 ;pk;密钥" } ] },
+        { "id": "drpy-rule", "name": "drpy 规则", "fields": [ { "key": "rule", "type": "text", "title": "规则文本或地址", "multiline": true } ] }
+      ]
+    },
+    "menus": [
+      { "target": "server", "title": "立即刷新订阅", "command": "refresh" },
+      { "target": "server", "title": "编辑订阅地址", "command": "editUrl" },
+      { "target": "server", "title": "重新勾选源", "command": "reselect" }
+    ],
+    "commands": [
+      { "id": "refresh", "title": "立即刷新订阅" },
+      { "id": "editUrl", "title": "编辑订阅地址" },
+      { "id": "reselect", "title": "重新勾选源" },
+      { "id": "parsers", "title": "解析列表" },
+      { "id": "setParserOrder", "title": "调整解析顺序" }
+    ],
+    "registry": { "channels": [ { "name": "live.channels", "recommendedReader": "linplayer/live" } ] },
+    "m3u8Filters": [ { "id": "ads", "title": "配置自带的去广告规则" } ],
+    "settings": [
+      { "key": "refreshHours", "type": "number", "title": "订阅刷新间隔(小时)", "default": 24, "min": 1, "max": 168 },
+      { "key": "sniffTimeout", "type": "number", "title": "嗅探超时(秒)", "description": "超时后打开可见网页让你手动点播放或过验证", "default": 15, "min": 5, "max": 60 },
+      { "key": "adRules", "type": "toggle", "title": "启用配置自带的去广告规则", "default": true }
+    ]
+  }
+}

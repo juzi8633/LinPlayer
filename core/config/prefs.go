@@ -63,8 +63,9 @@ const (
 	// DanmakuAreaMin 滚动弹幕最少占四分之一屏。
 	DanmakuAreaMin = 0.25
 
-	// SearchHistoryMax 搜索历史最多记几条。再多空态那一屏就摆不下了。
-	SearchHistoryMax = 12
+	// SearchHistoryMax 搜索历史最多记几条(D339:全局一份,Emby 与数据源共用,最多 50)。
+	// 空态那一屏摆不下的由 UI 截断显示,存的仍是 50 条。
+	SearchHistoryMax = 50
 )
 
 // Prefs 播放与全局偏好。
@@ -306,6 +307,10 @@ type Prefs struct {
 	// SearchHistory 搜过什么。搜索浮层的空态摆它(草稿 09 页第 34 条)——
 	// 空态写「暂无数据」等于白占一屏,而「上次搜的那个」是这里最可能的下一步。
 	SearchHistory []string `json:"search_history,omitempty"`
+
+	// SourceLines 数据源按剧记住的线路名(`开放键#条目id` → 线路名)。再次打开默认上次的线路,
+	// 线路没了退回第一条(D343)。记名字不记下标:换源、订阅刷新后线路顺序会变。
+	SourceLines map[string]string `json:"source_lines,omitempty"`
 
 	// LibraryView 媒体库网格用哪种版式:grid = 海报网格,list = 列表行
 	// (草稿 08 页第 9 条)。空 = grid。

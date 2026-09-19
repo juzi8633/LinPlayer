@@ -161,6 +161,29 @@ public static class LinPlayerCommandNames
         "source.play",
         "source.search",
         "source.watchdog",
+        "source.caps",
+        "source.home",
+        "source.category",
+        "source.searchItems",
+        "source.person",
+        "source.detail",
+        "source.playItem",
+        "source.continueWatching",
+        "source.createSources",
+        "source.addSources",
+        "source.setAggregate",
+        "source.setHost",
+        "source.removeGroup",
+        "source.serverMenus",
+        "source.runCommand",
+        "source.aggregateSearch",
+        "source.switchCandidates",
+        "source.checkAll",
+        "source.setFavorite",
+        "source.isFavorite",
+        "source.favorites",
+        "source.history",
+        "source.linkSwitch",
         "danmaku.autoLoad",
         "danmaku.cacheClear",
         "danmaku.cacheSize",
@@ -239,6 +262,38 @@ public static class LinPlayerCommandNames
         "companion.status",
         "companion.setEnabled",
         "companion.setNowPlaying",
+        "plugin.list",
+        "plugin.pendingRestart",
+        "plugin.inspect",
+        "plugin.installFile",
+        "plugin.installFromRepo",
+        "plugin.uninstall",
+        "plugin.cancelUninstall",
+        "plugin.setEnabled",
+        "plugin.disableAll",
+        "plugin.restoreAll",
+        "plugin.rollback",
+        "plugin.setLocked",
+        "plugin.skipVersion",
+        "plugin.detail",
+        "plugin.setSetting",
+        "plugin.clearData",
+        "plugin.errorDetail",
+        "plugin.market",
+        "plugin.repos",
+        "plugin.addRepo",
+        "plugin.removeRepo",
+        "plugin.setGithubPrefix",
+        "plugin.setAutoUpdate",
+        "plugin.updates",
+        "plugin.updateAll",
+        "plugin.takeovers",
+        "plugin.setTakeover",
+        "plugin.devLoad",
+        "plugin.devUnload",
+        "plugin.devList",
+        "plugin.setCapabilities",
+        "plugin.shellResult",
     ];
 }
 
@@ -480,7 +535,7 @@ public static class LinPlayerCommandsExtensions
     public static Task<JsonElement> PlayerWindowOpen(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("player.windowOpen", args, ct);
 
-    // ---- 媒体源(浏览型) · source.* (7 条) ----
+    // ---- 媒体源与数据源 · source.* (30 条) ----
     public static Task<JsonElement> SourceCurrentSource(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("source.currentSource", args, ct);
     public static Task<JsonElement> SourceListDir(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -495,6 +550,52 @@ public static class LinPlayerCommandsExtensions
         => c.CallAsync("source.search", args, ct);
     public static Task<JsonElement> SourceWatchdog(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("source.watchdog", args, ct);
+    public static Task<JsonElement> SourceCaps(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.caps", args, ct);
+    public static Task<JsonElement> SourceHome(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.home", args, ct);
+    public static Task<JsonElement> SourceCategory(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.category", args, ct);
+    public static Task<JsonElement> SourceSearchItems(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.searchItems", args, ct);
+    public static Task<JsonElement> SourcePerson(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.person", args, ct);
+    public static Task<JsonElement> SourceDetail(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.detail", args, ct);
+    public static Task<JsonElement> SourcePlayItem(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.playItem", args, ct);
+    public static Task<JsonElement> SourceContinueWatching(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.continueWatching", args, ct);
+    public static Task<JsonElement> SourceCreateSources(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.createSources", args, ct);
+    public static Task<JsonElement> SourceAddSources(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.addSources", args, ct);
+    public static Task<JsonElement> SourceSetAggregate(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.setAggregate", args, ct);
+    public static Task<JsonElement> SourceSetHost(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.setHost", args, ct);
+    public static Task<JsonElement> SourceRemoveGroup(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.removeGroup", args, ct);
+    public static Task<JsonElement> SourceServerMenus(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.serverMenus", args, ct);
+    public static Task<JsonElement> SourceRunCommand(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.runCommand", args, ct);
+    public static Task<JsonElement> SourceAggregateSearch(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.aggregateSearch", args, ct);
+    public static Task<JsonElement> SourceSwitchCandidates(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.switchCandidates", args, ct);
+    public static Task<JsonElement> SourceCheckAll(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.checkAll", args, ct);
+    public static Task<JsonElement> SourceSetFavorite(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.setFavorite", args, ct);
+    public static Task<JsonElement> SourceIsFavorite(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.isFavorite", args, ct);
+    public static Task<JsonElement> SourceFavorites(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.favorites", args, ct);
+    public static Task<JsonElement> SourceHistory(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.history", args, ct);
+    public static Task<JsonElement> SourceLinkSwitch(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("source.linkSwitch", args, ct);
 
     // ---- 弹幕 · danmaku.* (17 条) ----
     public static Task<JsonElement> DanmakuAutoLoad(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -661,4 +762,70 @@ public static class LinPlayerCommandsExtensions
         => c.CallAsync("companion.setEnabled", args, ct);
     public static Task<JsonElement> CompanionSetNowPlaying(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("companion.setNowPlaying", args, ct);
+
+    // ---- 插件 · plugin.* (32 条) ----
+    public static Task<JsonElement> PluginList(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.list", args, ct);
+    public static Task<JsonElement> PluginPendingRestart(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.pendingRestart", args, ct);
+    public static Task<JsonElement> PluginInspect(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.inspect", args, ct);
+    public static Task<JsonElement> PluginInstallFile(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.installFile", args, ct);
+    public static Task<JsonElement> PluginInstallFromRepo(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.installFromRepo", args, ct);
+    public static Task<JsonElement> PluginUninstall(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.uninstall", args, ct);
+    public static Task<JsonElement> PluginCancelUninstall(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.cancelUninstall", args, ct);
+    public static Task<JsonElement> PluginSetEnabled(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.setEnabled", args, ct);
+    public static Task<JsonElement> PluginDisableAll(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.disableAll", args, ct);
+    public static Task<JsonElement> PluginRestoreAll(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.restoreAll", args, ct);
+    public static Task<JsonElement> PluginRollback(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.rollback", args, ct);
+    public static Task<JsonElement> PluginSetLocked(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.setLocked", args, ct);
+    public static Task<JsonElement> PluginSkipVersion(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.skipVersion", args, ct);
+    public static Task<JsonElement> PluginDetail(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.detail", args, ct);
+    public static Task<JsonElement> PluginSetSetting(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.setSetting", args, ct);
+    public static Task<JsonElement> PluginClearData(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.clearData", args, ct);
+    public static Task<JsonElement> PluginErrorDetail(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.errorDetail", args, ct);
+    public static Task<JsonElement> PluginMarket(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.market", args, ct);
+    public static Task<JsonElement> PluginRepos(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.repos", args, ct);
+    public static Task<JsonElement> PluginAddRepo(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.addRepo", args, ct);
+    public static Task<JsonElement> PluginRemoveRepo(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.removeRepo", args, ct);
+    public static Task<JsonElement> PluginSetGithubPrefix(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.setGithubPrefix", args, ct);
+    public static Task<JsonElement> PluginSetAutoUpdate(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.setAutoUpdate", args, ct);
+    public static Task<JsonElement> PluginUpdates(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.updates", args, ct);
+    public static Task<JsonElement> PluginUpdateAll(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.updateAll", args, ct);
+    public static Task<JsonElement> PluginTakeovers(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.takeovers", args, ct);
+    public static Task<JsonElement> PluginSetTakeover(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.setTakeover", args, ct);
+    public static Task<JsonElement> PluginDevLoad(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.devLoad", args, ct);
+    public static Task<JsonElement> PluginDevUnload(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.devUnload", args, ct);
+    public static Task<JsonElement> PluginDevList(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.devList", args, ct);
+    public static Task<JsonElement> PluginSetCapabilities(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.setCapabilities", args, ct);
+    public static Task<JsonElement> PluginShellResult(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.shellResult", args, ct);
 }

@@ -151,6 +151,29 @@ object LinPlayerCommandNames {
         "source.play",
         "source.search",
         "source.watchdog",
+        "source.caps",
+        "source.home",
+        "source.category",
+        "source.searchItems",
+        "source.person",
+        "source.detail",
+        "source.playItem",
+        "source.continueWatching",
+        "source.createSources",
+        "source.addSources",
+        "source.setAggregate",
+        "source.setHost",
+        "source.removeGroup",
+        "source.serverMenus",
+        "source.runCommand",
+        "source.aggregateSearch",
+        "source.switchCandidates",
+        "source.checkAll",
+        "source.setFavorite",
+        "source.isFavorite",
+        "source.favorites",
+        "source.history",
+        "source.linkSwitch",
         "danmaku.autoLoad",
         "danmaku.cacheClear",
         "danmaku.cacheSize",
@@ -229,6 +252,38 @@ object LinPlayerCommandNames {
         "companion.status",
         "companion.setEnabled",
         "companion.setNowPlaying",
+        "plugin.list",
+        "plugin.pendingRestart",
+        "plugin.inspect",
+        "plugin.installFile",
+        "plugin.installFromRepo",
+        "plugin.uninstall",
+        "plugin.cancelUninstall",
+        "plugin.setEnabled",
+        "plugin.disableAll",
+        "plugin.restoreAll",
+        "plugin.rollback",
+        "plugin.setLocked",
+        "plugin.skipVersion",
+        "plugin.detail",
+        "plugin.setSetting",
+        "plugin.clearData",
+        "plugin.errorDetail",
+        "plugin.market",
+        "plugin.repos",
+        "plugin.addRepo",
+        "plugin.removeRepo",
+        "plugin.setGithubPrefix",
+        "plugin.setAutoUpdate",
+        "plugin.updates",
+        "plugin.updateAll",
+        "plugin.takeovers",
+        "plugin.setTakeover",
+        "plugin.devLoad",
+        "plugin.devUnload",
+        "plugin.devList",
+        "plugin.setCapabilities",
+        "plugin.shellResult",
     )
 }
 
@@ -468,7 +523,7 @@ suspend fun LinPlayerCommands.playerWindowClose(args: Map<String, Any?>? = null)
 suspend fun LinPlayerCommands.playerWindowOpen(args: Map<String, Any?>? = null): JsonElement =
     call("player.windowOpen", args)
 
-// ---- 媒体源(浏览型) · source.* (7 条) ----
+// ---- 媒体源与数据源 · source.* (30 条) ----
 suspend fun LinPlayerCommands.sourceCurrentSource(args: Map<String, Any?>? = null): JsonElement =
     call("source.currentSource", args)
 suspend fun LinPlayerCommands.sourceListDir(args: Map<String, Any?>? = null): JsonElement =
@@ -483,6 +538,52 @@ suspend fun LinPlayerCommands.sourceSearch(args: Map<String, Any?>? = null): Jso
     call("source.search", args)
 suspend fun LinPlayerCommands.sourceWatchdog(args: Map<String, Any?>? = null): JsonElement =
     call("source.watchdog", args)
+suspend fun LinPlayerCommands.sourceCaps(args: Map<String, Any?>? = null): JsonElement =
+    call("source.caps", args)
+suspend fun LinPlayerCommands.sourceHome(args: Map<String, Any?>? = null): JsonElement =
+    call("source.home", args)
+suspend fun LinPlayerCommands.sourceCategory(args: Map<String, Any?>? = null): JsonElement =
+    call("source.category", args)
+suspend fun LinPlayerCommands.sourceSearchItems(args: Map<String, Any?>? = null): JsonElement =
+    call("source.searchItems", args)
+suspend fun LinPlayerCommands.sourcePerson(args: Map<String, Any?>? = null): JsonElement =
+    call("source.person", args)
+suspend fun LinPlayerCommands.sourceDetail(args: Map<String, Any?>? = null): JsonElement =
+    call("source.detail", args)
+suspend fun LinPlayerCommands.sourcePlayItem(args: Map<String, Any?>? = null): JsonElement =
+    call("source.playItem", args)
+suspend fun LinPlayerCommands.sourceContinueWatching(args: Map<String, Any?>? = null): JsonElement =
+    call("source.continueWatching", args)
+suspend fun LinPlayerCommands.sourceCreateSources(args: Map<String, Any?>? = null): JsonElement =
+    call("source.createSources", args)
+suspend fun LinPlayerCommands.sourceAddSources(args: Map<String, Any?>? = null): JsonElement =
+    call("source.addSources", args)
+suspend fun LinPlayerCommands.sourceSetAggregate(args: Map<String, Any?>? = null): JsonElement =
+    call("source.setAggregate", args)
+suspend fun LinPlayerCommands.sourceSetHost(args: Map<String, Any?>? = null): JsonElement =
+    call("source.setHost", args)
+suspend fun LinPlayerCommands.sourceRemoveGroup(args: Map<String, Any?>? = null): JsonElement =
+    call("source.removeGroup", args)
+suspend fun LinPlayerCommands.sourceServerMenus(args: Map<String, Any?>? = null): JsonElement =
+    call("source.serverMenus", args)
+suspend fun LinPlayerCommands.sourceRunCommand(args: Map<String, Any?>? = null): JsonElement =
+    call("source.runCommand", args)
+suspend fun LinPlayerCommands.sourceAggregateSearch(args: Map<String, Any?>? = null): JsonElement =
+    call("source.aggregateSearch", args)
+suspend fun LinPlayerCommands.sourceSwitchCandidates(args: Map<String, Any?>? = null): JsonElement =
+    call("source.switchCandidates", args)
+suspend fun LinPlayerCommands.sourceCheckAll(args: Map<String, Any?>? = null): JsonElement =
+    call("source.checkAll", args)
+suspend fun LinPlayerCommands.sourceSetFavorite(args: Map<String, Any?>? = null): JsonElement =
+    call("source.setFavorite", args)
+suspend fun LinPlayerCommands.sourceIsFavorite(args: Map<String, Any?>? = null): JsonElement =
+    call("source.isFavorite", args)
+suspend fun LinPlayerCommands.sourceFavorites(args: Map<String, Any?>? = null): JsonElement =
+    call("source.favorites", args)
+suspend fun LinPlayerCommands.sourceHistory(args: Map<String, Any?>? = null): JsonElement =
+    call("source.history", args)
+suspend fun LinPlayerCommands.sourceLinkSwitch(args: Map<String, Any?>? = null): JsonElement =
+    call("source.linkSwitch", args)
 
 // ---- 弹幕 · danmaku.* (17 条) ----
 suspend fun LinPlayerCommands.danmakuAutoLoad(args: Map<String, Any?>? = null): JsonElement =
@@ -649,3 +750,69 @@ suspend fun LinPlayerCommands.companionSetEnabled(args: Map<String, Any?>? = nul
     call("companion.setEnabled", args)
 suspend fun LinPlayerCommands.companionSetNowPlaying(args: Map<String, Any?>? = null): JsonElement =
     call("companion.setNowPlaying", args)
+
+// ---- 插件 · plugin.* (32 条) ----
+suspend fun LinPlayerCommands.pluginList(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.list", args)
+suspend fun LinPlayerCommands.pluginPendingRestart(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.pendingRestart", args)
+suspend fun LinPlayerCommands.pluginInspect(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.inspect", args)
+suspend fun LinPlayerCommands.pluginInstallFile(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.installFile", args)
+suspend fun LinPlayerCommands.pluginInstallFromRepo(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.installFromRepo", args)
+suspend fun LinPlayerCommands.pluginUninstall(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.uninstall", args)
+suspend fun LinPlayerCommands.pluginCancelUninstall(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.cancelUninstall", args)
+suspend fun LinPlayerCommands.pluginSetEnabled(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.setEnabled", args)
+suspend fun LinPlayerCommands.pluginDisableAll(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.disableAll", args)
+suspend fun LinPlayerCommands.pluginRestoreAll(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.restoreAll", args)
+suspend fun LinPlayerCommands.pluginRollback(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.rollback", args)
+suspend fun LinPlayerCommands.pluginSetLocked(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.setLocked", args)
+suspend fun LinPlayerCommands.pluginSkipVersion(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.skipVersion", args)
+suspend fun LinPlayerCommands.pluginDetail(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.detail", args)
+suspend fun LinPlayerCommands.pluginSetSetting(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.setSetting", args)
+suspend fun LinPlayerCommands.pluginClearData(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.clearData", args)
+suspend fun LinPlayerCommands.pluginErrorDetail(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.errorDetail", args)
+suspend fun LinPlayerCommands.pluginMarket(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.market", args)
+suspend fun LinPlayerCommands.pluginRepos(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.repos", args)
+suspend fun LinPlayerCommands.pluginAddRepo(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.addRepo", args)
+suspend fun LinPlayerCommands.pluginRemoveRepo(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.removeRepo", args)
+suspend fun LinPlayerCommands.pluginSetGithubPrefix(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.setGithubPrefix", args)
+suspend fun LinPlayerCommands.pluginSetAutoUpdate(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.setAutoUpdate", args)
+suspend fun LinPlayerCommands.pluginUpdates(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.updates", args)
+suspend fun LinPlayerCommands.pluginUpdateAll(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.updateAll", args)
+suspend fun LinPlayerCommands.pluginTakeovers(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.takeovers", args)
+suspend fun LinPlayerCommands.pluginSetTakeover(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.setTakeover", args)
+suspend fun LinPlayerCommands.pluginDevLoad(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.devLoad", args)
+suspend fun LinPlayerCommands.pluginDevUnload(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.devUnload", args)
+suspend fun LinPlayerCommands.pluginDevList(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.devList", args)
+suspend fun LinPlayerCommands.pluginSetCapabilities(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.setCapabilities", args)
+suspend fun LinPlayerCommands.pluginShellResult(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.shellResult", args)

@@ -153,7 +153,8 @@ export interface CallContext {
   readonly signal: AbortSignal
 }
 
-export type CommandHandler = (args: Record<string, Json>, ctx: CallContext) => void | Promise<void>
+/** 返回值给宿主界面用(如「重新勾选源」把候选列表交给宿主的勾选框);没有就不返回。 */
+export type CommandHandler = (args: Record<string, Json>, ctx: CallContext) => void | Json | Promise<void | Json>
 
 // ════════════════════════════════════════════════════════════════════
 // 3. app —— 版本、平台、能力、应用设置 @see D179 D93 D427 D428
@@ -718,6 +719,8 @@ export interface SourceDraft {
   name: string
   config: Json
   group?: string
+  /** 分组显示名(一个订阅一组,服务器列表按它折叠)。@see D123 D346 */
+  groupName?: string
   /** 「允许聚合」默认值;TVBox 跟随 searchable。@see D235 */
   aggregateDefault?: boolean
   /** 本设备不可用时灰显并写原因。@see D351 */
@@ -730,7 +733,8 @@ export interface SourceDraft {
 export interface DataSourceProvider {
   /**
    * 用户在「添加服务器」提交某服务器类型的表单 → 返回一个或多个源(多个时宿主让用户勾选)。@see D131 D45
-   * 多仓配置可返回 `repos`,宿主先让用户勾仓(每个仓一个订阅/分组)再回调。@see D346
+   * 多仓配置可返回 `repos`,宿主先让用户勾仓(每个仓一个订阅/分组)再回调;
+   * 回调时 `form.$repos` 是用户勾选的仓 id 数组。@see D346
    */
   createSources?(serverType: string, form: Record<string, Json>, ctx: CallContext): Promise<{ sources: SourceDraft[]; repos?: { id: string; name: string }[] }>
   /** 必需。@see D260 */

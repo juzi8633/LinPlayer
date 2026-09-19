@@ -73,8 +73,8 @@ func registerVersionCommands() {
 		var wg sync.WaitGroup
 		for i := range c.AccountList {
 			acc := c.AccountList[i]
-			if acc.IsFileBrowse() {
-				continue // 浏览型源没有 Emby 的版本表
+			if acc.IsFileBrowse() || (acc.Server != base.Server && !acc.AllowAggregate()) {
+				continue // 浏览型源没有 Emby 的版本表;关了「允许聚合」的服不进换源(D235)
 			}
 			wg.Add(1)
 			go func(i int, acc config.Account) {

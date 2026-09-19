@@ -18,10 +18,12 @@ import (
 	"linplayer/core/aggregate"
 	"linplayer/core/companion"
 	"linplayer/core/danmaku"
+	"linplayer/core/datasource"
 	"linplayer/core/download"
 	"linplayer/core/emby"
 	"linplayer/core/history"
 	"linplayer/core/player"
+	"linplayer/core/plugin"
 	"linplayer/core/prefs"
 	"linplayer/core/sourcecmd"
 	"linplayer/core/system"
@@ -43,4 +45,6 @@ func RegisterAll(version string) {
 	download.RegisterCommands()
 	danmaku.RegisterCommands()
 	companion.RegisterCommands()
+	plugin.RegisterCommands()
+	datasource.RegisterCommands(version)
 }
