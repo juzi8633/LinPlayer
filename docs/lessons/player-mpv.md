@@ -2176,18 +2176,30 @@ RIFE v4.26 引擎每秒推理次数:1080 档 46 次、720 档 106 次;24 帧片�
 - 弹幕「显示弹幕」右边写挂上的源和集:自动匹配走 `danmaku.lastMatch`(autoLoad 的返回是弹幕数组,
   三端都按数组读,不能改形状),手动搜索挂的直接用选中那一行。**没在真源上验过**:本地构建不带弹弹凭据。
 
-## Linux 双显卡一开就 SIGSEGV:libmpv 预加载 CUDA 互通(issue #65,2026-09-18,**推断,待用户确认**)
+## Linux 随机 SIGSEGV:Go 给 CoreCLR 的 GC 暂停信号打上了 SA_ONSTACK(issue #65,2026-09-19)
 
-现象:Ubuntu 26.04 / GNOME 50 Wayland / 英特尔核显 + RTX 3070,打开即 SIGSEGV;`LP_RENDER=software` 也崩。
+现象:Ubuntu 26.04 / Wayland / 核显 + RTX 3070。「有时一打开就崩,有时浏览一会才崩」;软件渲染也崩;
+能播几分钟再崩。三份自动报告的「死前最后几步」:两次停在「首屏加载完」(空闲二三十秒后崩),
+一次停在播放页 `lp_gl_init 返回 0` 之后。**崩的时间点跟 GC 走,不跟任何一步操作走。**
 
-- **已排除**:26.04 系统库、中文路径、zh_CN、系统 libmpv、ibus 变量 —— CI 里 `ubuntu:26.04` 容器三次开窗全过。
-  软件渲染也崩 → 界面的 GL 不是嫌疑。
-- **线索**:用户 `info sharedlibrary` 的**最后一项是 `libcuda.so.1`**。它不在任何库的 DT_NEEDED 里,只可能被 dlopen ——
-  ffmpeg 的 CUDA 硬件上下文。libmpv 建渲染上下文时默认**预加载全部**显存互通,CUDA 那个要把 GL 绑到 N 卡,
-  而界面 GL 在核显(XWayland/Mesa)上。CI 容器没有 N 卡驱动,这段永远走不到。
-- **修法**:Linux 上 `gpu-hwdec-interop=vaapi`(`core/player/mpvhint_linux.go`)。核显 / A 卡照样零拷贝,N 卡落到 `*-copy`。
-- **兜底**:桌面端 `Report.Trail` 记「死前最后几步」(进哪页、`lp_gl_init` 前后、GL 厂商/渲染器),崩了下次启动随报告自动发来。
-  **不对的话,下一份自动报告会直接说死在哪一步** —— 不再找用户要 gdb。
+- **根因**:Go 以 c-shared 加载时,给进程里**已有的每个**信号处理函数都加上 `SA_ONSTACK`(os/signal 文档
+  「Non-Go programs that call Go code」一节写明了)。CoreCLR 的 GC 暂停信号 `SIGRTMIN`(34)的处理函数
+  本来跑在线程自己的栈上,被加上之后改跑在 CoreCLR 给每个线程挂的 **16KB** 备用栈上 —— 处理函数一开头
+  探栈就冲出去。GC 一暂停线程就可能崩,所以时间随机;Windows 没有信号,所以只有 Linux。
+- **CI 实测(`LP_SIGPROBE`,16 个线程池线程反复进 Go + 分配)**:不修一秒内 SIGSEGV(退出码 139)。
+  gdb 栈:`<signal handler called>` 之上两帧都在 libcoreclr,停在 `call __tls_get_addr`,
+  fault 地址 = rsp − 8 —— 处理函数把栈探穿了。
+- **修法**:`Core/GcSignal.cs`。`lp_abi_version` 返回后(Go 运行时此时已初始化完、刚改过信号表)
+  把 `SIGRTMIN` 的 `SA_ONSTACK` 摘回去。CoreCLR 只向正在跑托管代码的线程发这个信号,那时线程在自己的栈上。
+  **不能早于第一次导出调用**:Go 运行时的初始化在 dlopen 后异步跑,早了会被它再打回去。
+- **门禁**:`scripts/sigprobe-linux.sh`(CI「Signal stack probe」):`LP_NO_SIGFIX=1` 必须崩,修复必须活过 15 秒。
+- **弯路一**:按 `info sharedlibrary` 最后一项是 `libcuda.so.1` 推成「CUDA 显存互通绑错显卡」,
+  上了 `gpu-hwdec-interop=vaapi`,已撤掉。库列表最后一项只说明最后加载的是它,不说明谁崩了。
+  「软件渲染也崩」+「时间点随机」那时就该把显卡整个排除。
+- **弯路二**:照公开复现(gist egonelbre/18432be81e1a4e18887e1590ead6f496,「Go 在进过 cgo 的线程上装 32KB 备用栈」)
+  在进 Go 前给线程挂 1MB 备用栈 —— **从没生效**:探针打出来每个线程早就有 CoreCLR 的 16KB 备用栈,
+  Go 看到已有就沿用,我的代码看到已有就跳过。先打现场再下药,这一轮本可以省掉。
+- **CI 开窗冒烟为什么一直绿**:没账号、没图片,20 秒里几乎不分配,GC 基本不跑。
 
 ### 找用户要 gdb 栈时的两个坑(都栽了)
 - **gdb 默认停在 SIGPIPE**。Go 往断开的 socket 写会收到它(正常被忽略),gdb 却在那儿停下,栈停在半路,
