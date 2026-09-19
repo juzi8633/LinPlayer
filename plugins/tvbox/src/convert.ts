@@ -82,6 +82,7 @@ export function toLines(v: Vod): Line[] {
         const url = k >= 0 ? seg.slice(k + 1) : seg
         return { id: url, name: name || `第${j + 1}集` }
       })
+      .filter((e) => e.id) // 「第1集$」这种没有地址的集点了也播不了,不列出来
     if (eps.length) lines.push({ id: from || `线路${i + 1}`, name: from || `线路${i + 1}`, episodes: eps })
   })
   return lines

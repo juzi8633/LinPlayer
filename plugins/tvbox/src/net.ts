@@ -38,9 +38,16 @@ export async function fetchResp(url: string, o: ReqOpts = {}): Promise<Response>
   return res
 }
 
+// 「JS 写一个校验 cookie 再刷新」的防护页:不用真跑脚本,抠出那句赋值带上重试一次即可(影视仓同款做法)
+const JS_COOKIE = /document\.cookie\s*=\s*["']([^"';=\s]+=[^"';]+)/
+
 export async function fetchText(url: string, o: ReqOpts = {}): Promise<string> {
   const res = await fetchResp(url, o)
-  const text = await res.text()
+  let text = await res.text()
+  const jsCookie = text.length < 4000 ? JS_COOKIE.exec(text) : null
+  if (jsCookie && !o.headers?.Cookie) {
+    text = await (await fetchResp(url, { ...o, headers: { ...(o.headers ?? {}), Cookie: jsCookie[1] } })).text()
+  }
   if (/cf-browser-verification|challenge-platform|人机验证|安全验证/.test(text.slice(0, 4000))) {
     throw new PluginError({ kind: 'needVerify', message: '站点需要验证', verifyUrl: url })
   }

@@ -28,6 +28,8 @@
 - 付费解锁(爱发电订单号):用户口径与架构
 - 排行榜数据源:弹弹 trending 与 TMDB
 - 字幕翻译与 Whisper 转写:引擎与链路实测
+- TVBox 兼容:真实配置实测
+- 安卓壳:WebView 与 jar spider
 
 ---
 
@@ -407,6 +409,39 @@ UHD(<UHD 求片站>)**测试账号**(用户提供,服主已授权测试,可直�
 - 语言码:未知码**原样喂给模型**,归一码剥掉的地区后缀对模型可能有意义。
 - 设置写回要**在当前设置之上反序列化**:从零值开始的话,前端只传了一个目标语言,其它字段全被清空;
   老配置缺新键要逐个补默认,不能整份回默认。
+
+### TVBox 兼容:真实配置实测(2026-09-20,插件 0.1.0)
+
+跑法:`go test -tags realsites -run Real -v ./datasource/`(`core/datasource/tvbox_real_test.go`)。
+地址只从被忽略的 `docs/plugin-system/tvbox-test-sites.local` 读,日志里抹成 `<地址>`;
+`REAL_DEBUG=1` 打插件最近日志,`REAL_DUMP=<文件>` 把失败请求的原始地址写进本机文件再拿 curl 对照。
+
+- **拉配置要用 okhttp 的 UA**:多仓样本里两个仓托管在按 UA 分流的中转上,浏览器 UA 拿到的是下载页 HTML,
+  `okhttp/3.12.13` 才拿到藏着配置的图片。症状是「配置不是 TVBox 格式」+ detail 里 `invalid character '<'`。
+  站点请求(资源站接口、drpy 抓页)仍用手机浏览器 UA,两处不要合并。
+- **`2423` 开头的 AES-CBC 配置要先 trim**:格式按定长从尾部截 26 个 hex 当 iv,文件末尾多一个换行就错一位,
+  报 `encoding/hex: odd length hex string`。
+- **「JS 写一个校验 cookie 再刷新」的防护页**:不用真跑脚本,抠出 `document.cookie="k=v"` 带上重试一次即可;
+  CF 的「Just a moment」挑战页照旧报 `needVerify`,交给界面的[去验证](整页 WebView)。
+- **多仓里一个仓挂了只跳过它**(`ui.toast` 说出来),全挂才报错。实测 14 个仓里 3 个是真挂(连不上 / 403 / 404)。
+- **「第1集$」这种没有地址的集要滤掉**,不然起播报「缺少 episode_id」。
+- 资源站的「主域名」通常**不是接口域名**(实测两个都在 `/api.php/provide/vod/` 下 404,首页是 CF / JS 防护),
+  要拿站点公布的采集接口地址测苹果CMS 那条路。
+- 抽样 25 个源的失败分布:站点本身不可达(Go 报 `Get ...: EOF`,curl 同样 000)占大头;
+  `{"parse":1}` 需要 WebView 嗅探、测试里没有壳,真机上走 WebView2 / Android WebView。
+  **失效条件**:站点和配置天天在变,这些比例只代表 2026-09-20 这一份样本。
+
+### 安卓壳:WebView 与 jar spider(2026-09-20)
+
+- jar 跑在 `:spider` 独立进程(D354);`Application.onCreate` 要按进程名判断,**子进程不起核心层**
+  (一个数据目录只能有一个核心层实例)。
+- **Android 14 起 DexClassLoader 只加载只读文件**:jar 落盘后 `setReadOnly()`,否则直接拒绝加载。
+- spider 句柄由**主进程**分配并记住 load 参数:子进程崩了重启,旧句柄在那边不认识,主进程自动重新 load 再调,
+  插件手里的句柄一直有效。
+- jar 反射调用宿主的 `com.github.catvod.crawler.Spider`、也常直接用宿主的 OkHttp:R8 必须 keep
+  `com.github.catvod.**` / `okhttp3.**` / `okio.**`,否则发行包里 jar 加载即 `NoClassDefFoundError`。
+- 插件用的 WebView 全挂在 MainActivity 顶层一个 FrameLayout 里,平时 `translationX` 平移到屏幕外 ——
+  alpha=0 会挡触摸,INVISIBLE 可能暂停渲染;要用户动手时挪回来,同一个 WebView,页面状态不丢。
 
 ## 跨域交叉引用
 

@@ -122,6 +122,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/a/api.php/provide/vod/", count(func(w http.ResponseWriter, r *http.Request) { s.cmsJSON(w, r, s.sites["a"]) }))
 	mux.HandleFunc("/b/api.php/provide/vod/", count(func(w http.ResponseWriter, r *http.Request) { s.cmsJSON(w, r, s.sites["b"]) }))
 	mux.HandleFunc("/xml/api.php/provide/vod/", count(func(w http.ResponseWriter, r *http.Request) { s.cmsXML(w, r, s.sites["a"]) }))
+	// 「JS 写一个校验 cookie 再刷新」的防护:没带 cookie 回防护页,带了才给 JSON(真实资源站常见)
+	mux.HandleFunc("/jsck/api.php/provide/vod/", count(func(w http.ResponseWriter, r *http.Request) {
+		if c, err := r.Cookie("ge_js_validator_1"); err != nil || c.Value != "ok" {
+			fmt.Fprint(w, `<html><head><script>document.cookie = "ge_js_validator_1=ok; path=/; max-age=3600;"; location.reload();</script></head></html>`)
+			return
+		}
+		s.cmsJSON(w, r, s.sites["a"])
+	}))
 	mux.HandleFunc("/drpy/", count(s.drpySite))
 	mux.HandleFunc("/rules/fake.js", count(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, DrpyRule(s.Base)) }))
 	mux.HandleFunc("/libs/drpy2.min.js", count(func(w http.ResponseWriter, r *http.Request) {
@@ -151,12 +159,23 @@ func (s *Server) Handler() http.Handler {
 		w.Write(append(fakeJPEG(), []byte(Base64Wrap(s.Config()))...))
 	}))
 	mux.HandleFunc("/config/cbc.txt", count(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(CBCWrap(s.Config(), "fakekey", "fakeiv")))
+		w.Write([]byte(CBCWrap(s.Config(), "fakekey", "fakeiv") + "\n")) // 真实文件末尾常带换行
 	}))
 	mux.HandleFunc("/config/ecb.txt", count(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(ECBWrap(s.Config(), "pk-secret"))) }))
 	mux.HandleFunc("/config/multi.json", count(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"urls":[{"name":"仓一","url":"%[1]s/config/plain.json"},{"name":"仓二","url":"%[1]s/config/json5.json"}]}`, s.Base)
 	}))
+	// 配置托管在「浏览器 UA 回网页、okhttp 才回文件」的中转上(真实多仓样本就有)
+	mux.HandleFunc("/config/okhttp.json", func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.UserAgent(), "okhttp") {
+			fmt.Fprint(w, "<!DOCTYPE html><html><body>下载页</body></html>")
+			return
+		}
+		w.Write([]byte(s.Config()))
+	})
+	mux.HandleFunc("/config/jsck.json", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"sites":[{"key":"jsck","name":"带防护的站","type":1,"api":"%s/jsck/api.php/provide/vod/","searchable":1}]}`, s.Base)
+	})
 	mux.HandleFunc("/config/bad.txt", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("这不是配置")) })
 	return mux
 }

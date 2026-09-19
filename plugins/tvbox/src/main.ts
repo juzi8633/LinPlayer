@@ -199,8 +199,20 @@ export default definePlugin({
       }
       const targets = repos ? repos.filter((r) => chosen!.includes(r.id)) : [{ id: shortHash(url), name: '', url }]
       const all: SourceDraft[] = []
+      // 多仓里一个仓挂了(403 / 地址失效 / 格式认不出)只跳过它,别的仓照常加;全挂才报错
+      const failed: string[] = []
+      let firstErr: unknown = null
       for (const t of targets) {
-        const c = repos ? (await loadConfig(t.url)).cfg : cfg
+        let c = cfg
+        if (repos) {
+          try {
+            c = (await loadConfig(t.url)).cfg
+          } catch (e) {
+            failed.push(t.name || t.id)
+            firstErr ??= e
+            continue
+          }
+        }
         const name = t.name || (() => { try { return new URL(t.url.split(';pk;')[0]).hostname } catch { return 'TVBox 订阅' } })()
         const sub = subInfoOf(c, 'tv' + shortHash(t.url), name, t.url)
         if (repos) sub.repoUrl = url
@@ -210,6 +222,8 @@ export default definePlugin({
         publishLives(c, sub)
         all.push(...drafts)
       }
+      if (failed.length === targets.length && firstErr) throw firstErr
+      if (failed.length > 0) ui.toast(`这些仓读不到,已跳过:${failed.join('、')}`, { tone: 'warn' })
       return { sources: all }
     },
 

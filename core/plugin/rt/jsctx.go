@@ -537,7 +537,11 @@ func (s *subRuntime) syncReq(u string, opt goja.Value) map[string]any {
 	defer cancel()
 	res, err := r.doFetch(ctx, q)
 	if err != nil {
-		r.logs.add(LogEntry{TS: nowMS(), Level: "warn", Msg: "req 失败: " + u + ": " + err.Error()})
+		msg := "req 失败: " + u + ": " + err.Error()
+		if pe, ok := err.(*Error); ok && pe.Detail != "" {
+			msg += "(" + pe.Detail + ")" // 「网络请求失败」分不清是超时、证书还是被拦,要带底层原因
+		}
+		r.logs.add(LogEntry{TS: nowMS(), Level: "warn", Msg: msg})
 		return map[string]any{"content": "", "headers": map[string]any{}, "code": 0}
 	}
 	defer res.Body.Close()

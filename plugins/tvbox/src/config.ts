@@ -140,6 +140,8 @@ export function decodeConfigText(raw: string, url: string, pk?: string): string 
     }
     if (isJson(text)) return fixRelative(url, text)
   }
+  // 加密格式按定长截取,首尾的空白(文件末尾的换行)会让截取错位
+  text = text.trim()
   if (text.startsWith('2423')) {
     try {
       const idxKey = text.indexOf('2324') + 4
@@ -169,7 +171,8 @@ export function parseConfig(text: string): TvConfig {
 /** 拉并解码一份配置。地址可带 ;pk;密钥。 */
 export async function loadConfig(input: string): Promise<{ cfg: TvConfig; url: string }> {
   const [url, pk] = input.trim().split(';pk;')
-  const raw = await fetchText(url, { timeout: 30000 })
+  // 拉配置用 okhttp 的 UA(TVBox 系客户端都这样):不少中转按 UA 分流,浏览器 UA 拿到的是下载页
+  const raw = await fetchText(url, { timeout: 30000, headers: { 'User-Agent': 'okhttp/3.12.13' } })
   const cfg = parseConfig(decodeConfigText(raw, url, pk))
   if (!cfg || typeof cfg !== 'object') throw new PluginError({ kind: 'parseFailed', message: '配置内容为空' })
   return { cfg, url }

@@ -466,3 +466,21 @@ func TestDrpyRuleAsSource(t *testing.T) {
 	key := "plugin:linplayer/tvbox/" + cs.Sources[0]["id"].(string)
 	e.browse(t, key)
 }
+
+// 资源站套了「JS 写 cookie 再刷新」的防护:插件抠出 cookie 带上重试一次,不当成「不是 JSON」。
+func TestTVBoxJSCookieGuard(t *testing.T) {
+	e := newEnv(t)
+	ds := e.subscribe(e.base + "/config/jsck.json")
+	if len(ds) != 1 {
+		t.Fatalf("配置里就一个站: %+v", ds)
+	}
+	e.browse(t, "plugin:linplayer/tvbox/"+ds[0].ID)
+}
+
+// 配置托管在按 UA 分流的中转上:拉配置要用 okhttp 的 UA(TVBox 系客户端都这样),不然拿到的是网页。
+func TestTVBoxConfigOkhttpUA(t *testing.T) {
+	e := newEnv(t)
+	if ds := e.subscribe(e.base + "/config/okhttp.json"); len(ds) == 0 {
+		t.Fatal("配置没读出源")
+	}
+}
