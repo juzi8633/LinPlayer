@@ -27,6 +27,7 @@ public partial class MainWindow : Window
     {
         using var _ = Perf.Measure("MainWindow 构造");
         InitializeComponent();
+        Program.MainWindowRef = this;
 
         /* 窗口图标 —— 用户 2026-09-03:「软件没有图标,以前有的,用回以前那个就行」。
            <c>ApplicationIcon</c>(csproj)只管 exe 文件在资源管理器里的样子;
@@ -74,8 +75,17 @@ public partial class MainWindow : Window
         this.FindControl<RadioButton>("NavBrowse")!.Checked += (_, _) =>
             Nav.Root(new BrowsePage(_core!, _sourceName), () => new BrowsePage(_core!, _sourceName));
         this.FindControl<RadioButton>("NavLibrary")!.Checked += (_, _) => Emby("媒体库", () => new LibraryPage(_core!));
-        this.FindControl<RadioButton>("NavSearch")!.Checked += (_, _) => Emby("搜索", () => new SearchPage(_core!));
-        this.FindControl<RadioButton>("NavFavorites")!.Checked += (_, _) => Emby("收藏", () => new FavoritesPage(_core!));
+        // 插件数据源没有 Emby 会话:搜索只走聚合,收藏看全部数据源的
+        this.FindControl<RadioButton>("NavSearch")!.Checked += (_, _) =>
+        {
+            if (_pluginServer is not null) Nav.Root(new SearchPage(_core!), () => new SearchPage(_core!));
+            else Emby("搜索", () => new SearchPage(_core!));
+        };
+        this.FindControl<RadioButton>("NavFavorites")!.Checked += (_, _) =>
+        {
+            if (_pluginServer is not null) Nav.Root(new SourceFavoritesPage(_core!), () => new SourceFavoritesPage(_core!));
+            else Emby("收藏", () => new FavoritesPage(_core!));
+        };
         // 聚合视界和观看历史**不需要**当前会话:前者自己遍历账号表,后者读的是本地库
         this.FindControl<RadioButton>("NavAggregate")!.Checked += (_, _) => Nav.Root(new AggregatePage(_core!), () => new AggregatePage(_core!));
         this.FindControl<RadioButton>("NavHistory")!.Checked += (_, _) => Nav.Root(new HistoryPage(_core!), () => new HistoryPage(_core!));
@@ -86,6 +96,10 @@ public partial class MainWindow : Window
             Nav.Root(dl, () => new DownloadPage(_core!));
             dl.SelfCheck();          // LP_DL=1 才做事,平时是一句 return
         };
+        // 排行榜 / 追剧日历**不要套 Emby()**:它们打的是弹弹Play / TMDB / Bangumi / Trakt,
+        // 套上之后非 Emby 用户会被挡在「请先登录服务器」上,和实际前提不符
+        this.FindControl<RadioButton>("NavRanking")!.Checked += (_, _) => Nav.Root(new RankingPage(_core!), () => new RankingPage(_core!));
+        this.FindControl<RadioButton>("NavCalendar")!.Checked += (_, _) => Nav.Root(new CalendarPage(_core!), () => new CalendarPage(_core!));
         this.FindControl<RadioButton>("NavSettings")!.Checked += (_, _) =>
         {
             /* 闸口下**压栈**不是换根。换根会清掉返回栈,而闸口那一页正是用户
@@ -199,7 +213,7 @@ public partial class MainWindow : Window
     [
         ("NavFavorites", "nav.favorites"), ("NavAggregate", "nav.aggregate"),
         ("NavHistory", "nav.history"), ("NavDownload", "nav.download"),
-        ("NavBrowse", "nav.browse"),
+        ("NavBrowse", "nav.browse"), ("NavRanking", "nav.ranking"), ("NavCalendar", "nav.calendar"),
     ];
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
@@ -223,6 +237,36 @@ public partial class MainWindow : Window
     }
 
     private void SelfCheckJump() => SelfCheckJump(Environment.GetEnvironmentVariable("LP_SELFCHECK_PAGE"));
+
+    private async Task SelfCheckSource(string kw, bool play)
+    {
+        try
+        {
+            var r = await _core!.SourceSearchItems(new { server_id = _pluginServer, keyword = kw });
+            var id = r.GetProperty("items")[0].GetProperty("id").GetString()!;
+            Console.WriteLine($"[自检 数据源] ✓ 搜到 {id}");
+            Nav.Push(new SourceDetailPage(_core, _pluginServer!, id, play ? new SourceDetailPage.AutoPlay("", "", 0, 1) : null));
+        }
+        catch (Exception e) { Console.WriteLine("[自检 数据源] ✗ " + e.Message); }
+    }
+
+    private async Task SelfCheckTvbox(string[] a)
+    {
+        try
+        {
+            await _core!.PluginDevLoad(new { dir = a[0] });
+            var r = await _core.SourceCreateSources(new { plugin_id = "linplayer/tvbox", type_id = "subscription", form = new { url = a[1] } });
+            var drafts = r.GetProperty("sources").EnumerateArray().ToArray();
+            await _core.SourceAddSources(new { plugin_id = "linplayer/tvbox", type_id = "subscription", sources = drafts });
+            Console.WriteLine($"[自检 tvbox] ✓ 加了 {drafts.Length} 个源");
+            var first = drafts.First(d => d.GetProperty("name").GetString() == "假站JSON");
+            await _core.AccountSetActiveServer(new { server_id = "plugin:linplayer/tvbox/" + first.GetProperty("id").GetString() });
+            await OnServerSwitched();
+            GoDefaultPage();
+            if (a.Length > 2 && a[2].Length > 0) SelfCheckJump(a[2]);
+        }
+        catch (Exception e) { Console.WriteLine("[自检 tvbox] ✗ " + e.Message); }
+    }
 
     private void SelfCheckJump(string? want)
     {
@@ -283,10 +327,17 @@ public partial class MainWindow : Window
                 if (arg.Length > 0) (Nav.Current as SearchPage)?.SelfCheckQuery(arg);
                 break;
             case "favorites": this.FindControl<RadioButton>("NavFavorites")!.IsChecked = true; break;
+            case "plugins": Nav.Push(new PluginPage(_core, int.TryParse(arg, out var tab) ? tab : 0)); break;
+            // tvbox:<插件目录>|<订阅地址>|<之后落到哪页>:开发版加载 → 订阅 → 全部勾上 → 切到第一个源
+            case "tvbox": _ = SelfCheckTvbox(arg.Split('|')); break;
+            // srcdetail:<词> / srcplay:<词>:在当前数据源里搜,打开第一条(srcplay 顺带起播第 1 集)
+            case "srcdetail" or "srcplay": _ = SelfCheckSource(arg, want.StartsWith("srcplay")); break;
             case "settings": this.FindControl<RadioButton>("NavSettings")!.IsChecked = true; break;
             case "aggregate": this.FindControl<RadioButton>("NavAggregate")!.IsChecked = true; break;
             case "history": this.FindControl<RadioButton>("NavHistory")!.IsChecked = true; break;
             case "download": this.FindControl<RadioButton>("NavDownload")!.IsChecked = true; break;
+            case "ranking": this.FindControl<RadioButton>("NavRanking")!.IsChecked = true; break;
+            case "calendar": this.FindControl<RadioButton>("NavCalendar")!.IsChecked = true; break;
             case "browse":
                 this.FindControl<RadioButton>("NavBrowse")!.IsChecked = true;
                 // 带参数(browse:空文件夹)时再点进那个子目录 —— 「空目录说空目录」要验得到
@@ -770,7 +821,7 @@ public partial class MainWindow : Window
             ("侧栏 服务器", ""), ("侧栏 收起", ""), ("侧栏 展开", ""),
             ("侧栏 首页", ""), ("侧栏 文件浏览", ""),
             ("侧栏 媒体库", ""), ("侧栏 搜索", ""), ("侧栏 收藏", ""),
-            ("侧栏 聚合视界", ""), ("侧栏 观看历史", ""), ("侧栏 下载", ""),
+            ("侧栏 聚合视界", ""), ("侧栏 观看历史", ""), ("侧栏 下载", ""), ("侧栏 排行榜", ""), ("侧栏 追剧日历", ""),
             ("侧栏 设置", ""),
             // 服务器右键菜单 / 侧栏服务器行(2026-09-03 新增)。
             // 加了新图标**必须**往这里加一行 —— 字体里没有那个码位时
@@ -1244,7 +1295,8 @@ public partial class MainWindow : Window
 
         // 服务器区:标题和每行的名字在折叠态下收掉,只留图标
         this.FindControl<TextBlock>("ServerSectionTitle")!.IsVisible = !_collapsed;
-        foreach (var row in this.FindControl<StackPanel>("ServerList")!.Children.OfType<Button>())
+        foreach (var row in this.FindControl<StackPanel>("ServerList")!.Children.OfType<Button>()
+                     .Concat(this.FindControl<StackPanel>("SourceGroups")!.Children.OfType<Button>()))
             if (row.Content is StackPanel sp)
             {
                 sp.Spacing = _collapsed ? 0 : 10;
@@ -1389,7 +1441,7 @@ public partial class MainWindow : Window
         if (_core is null) return;
         foreach (var n in new[] { "NavHome", "NavLibrary", "NavSearch", "NavFavorites",
                                   "NavAggregate", "NavHistory", "NavBrowse",
-                                  "NavDownload", "NavSettings" })
+                                  "NavDownload", "NavRanking", "NavCalendar", "NavSettings" })
             if (this.FindControl<RadioButton>(n) is { } rb) rb.IsChecked = false;
         Nav.Push(new AddServerPage(_core, () => _ = AfterServerChange()));
     }
@@ -1411,7 +1463,7 @@ public partial class MainWindow : Window
         {
             foreach (var n in new[] { "NavHome", "NavLibrary", "NavSearch", "NavFavorites",
                                       "NavAggregate", "NavBrowse", "NavHistory",
-                                      "NavDownload", "NavSettings" })
+                                      "NavDownload", "NavRanking", "NavCalendar", "NavSettings" })
             {
                 // 别拿 Tag 做「挂过了」的标记 —— 那一格装的是这一项的图标字形。
                 if (this.FindControl<RadioButton>(n) is not { } rb || !wired.Add(rb)) continue;
@@ -1465,7 +1517,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>首页。点卡片进详情 —— 库卡进网格,条目卡进详情(判断在 OpenDetail 一处)。</summary>
-    private Control Home() =>
+    private Control Home() => _pluginServer is { } ps ? new SourceHomePage(_core!, ps, _sourceName) :
         new HomePage(_core, Nav.Session is null ? null
             : LibraryPage.OpenDetail(_core!, Nav.Session.server),
             _sourceName == "" ? "首页" : _sourceName);
@@ -1480,6 +1532,9 @@ public partial class MainWindow : Window
             Show(new FatalPage(Program.CoreError ?? "核心层没起来,原因未知"));
             return;
         }
+        // 插件宿主要知道壳能做什么(WebView / jar);开播提醒和插件事件挂在这里
+        PluginShell.ReportCapabilities(_core);
+        AppJobs.Start(_core);
 
         try
         {
@@ -1599,6 +1654,8 @@ public partial class MainWindow : Window
 
     /// <summary>当前账号是浏览型源(本地文件夹)吗。见 <see cref="UpdateServerChip"/>。</summary>
     private bool _isBrowseAccount;
+    /// <summary>当前服务器是插件数据源时是它的开放键,否则 null。</summary>
+    private string? _pluginServer;
 
     /// <summary>
     /// 首登闸口开着吗 —— 一台服务器都还没加,这一屏只能有添加服务器这一页。
@@ -1641,7 +1698,9 @@ public partial class MainWindow : Window
             没有这个键 = 老配置 = Emby(这个键是后加的)。 */
         var kind = active.TryGetProperty("source_kind", out var sk) && sk.ValueKind == JsonValueKind.String
             ? sk.GetString() ?? "emby" : "emby";
-        var isBrowse = kind.Length > 0 && kind != "emby";
+        var isPlugin = active.TryGetProperty("plugin", out var pl) && pl.ValueKind == JsonValueKind.Object;
+        _pluginServer = isPlugin ? Str(active, "server") : null;
+        var isBrowse = !isPlugin && kind.Length > 0 && kind != "emby";
         _isBrowseAccount = isBrowse;
         _sourceName = active.TryGetProperty("name", out var sn) ? sn.GetString() ?? "" : "";
 
@@ -1662,9 +1721,9 @@ public partial class MainWindow : Window
                「下载」同理:本机文件夹里的片子不需要再下载到本机。
                用户 2026-09-06:「本地播放没那么多东西,显示出来文件夹的视频就行了」。 */
             Gate("NavHome", "nav.home", !isBrowse);
-            Gate("NavDownload", "nav.download", !isBrowse);
+            Gate("NavDownload", "nav.download", !isBrowse && !isPlugin);
             Gate("NavBrowse", "nav.browse", isBrowse);
-            Gate("NavLibrary", "nav.library", !isBrowse);
+            Gate("NavLibrary", "nav.library", !isBrowse && !isPlugin);
             Gate("NavSearch", "nav.search", !isBrowse);
             Gate("NavFavorites", "nav.favorites", !isBrowse);
 
@@ -1696,9 +1755,17 @@ public partial class MainWindow : Window
         _addRow = add;
         _activeRow = null;   // 这一列整个重建了,上一轮那个引用已经不在树上
         list.Children.Add(add);
+        _rowAccount.Clear();
+        var groups = this.FindControl<StackPanel>("SourceGroups")!;
+        groups.Children.Clear();
+        var plugins = new List<JsonElement>();
 
-        foreach (var a in rows)
+        for (var ai = 0; ai < rows.Count; ai++)
         {
+            var a = rows[ai];
+            // 插件数据源不进这一列,按订阅分组画在下面(SPEC 8.7);这一列只剩 Emby / 本地
+            if (a.TryGetProperty("plugin", out var pl) && pl.ValueKind == JsonValueKind.Object) { plugins.Add(a); continue; }
+            _rowAccount.Add(ai);
             var server = Str(a, "server");
             var name = Str(a, "name") is { Length: > 0 } n ? n : server;
             var on = a.TryGetProperty("active", out var v) && v.ValueKind == JsonValueKind.True;
@@ -1742,12 +1809,13 @@ public partial class MainWindow : Window
                 }
                 catch (Exception e) { Console.WriteLine("[切服务器] " + e.Message); }
             };
-            row.ContextMenu = ServerMenu(server, name);
+            row.ContextMenu = ServerMenu(server, name, AggregateItem(server, a));
             WireHold(row, list);
             if (on) _activeRow = row;
             list.Children.Add(row);
             _ = FillServerIcon(row, server);
         }
+        BuildSourceGroups(groups, plugins);
         // 重建这一列时当前页可能就是添加页(比如刚添加完一台),选中态得跟着补回来
         SyncServerSelection(Nav.Current);
         SyncCollapsed();
@@ -1834,7 +1902,8 @@ public partial class MainWindow : Window
             _dragRow = null;
             row.Opacity = 1;
             e.Handled = true;
-            if (to != _dragFrom) _ = SaveOrder(_dragFrom - 1, to - 1);
+            // 列表里只有非插件的行,换算回账号表里的真实下标
+            if (to != _dragFrom) _ = SaveOrder(_rowAccount[_dragFrom - 1], _rowAccount[to - 1]);
         }, RoutingStrategies.Tunnel);
     }
 
@@ -1867,7 +1936,7 @@ public partial class MainWindow : Window
     /// <para>删除单独列在分隔线下面,并且**弹窗再确认一次** ——
     /// 设置页整体是「零二次确认」的,但删账号不可逆,这一条是例外。</para>
     /// </summary>
-    private ContextMenu ServerMenu(string server, string name)
+    private ContextMenu ServerMenu(string server, string name, params Control[] extra)
     {
         MenuItem Item(string header, string glyph, Action go)
         {
@@ -1909,8 +1978,8 @@ public partial class MainWindow : Window
                之后每一次右键都贴着行弹,不再跟手。写死在这里的代价是零,
                而「菜单不跟着鼠标出来」这种事光看代码是看不出来的。 */
             Placement = PlacementMode.Pointer,
-            ItemsSource = new List<Control>
-            {
+            ItemsSource = (List<Control>)
+            [
                 new MenuItem { Header = name, IsEnabled = false },
                 new Separator(),
                 Item("编辑信息", "\uE70F", () => GoServers(server, "edit")),
@@ -1920,14 +1989,176 @@ public partial class MainWindow : Window
                 new Separator(),
                 Item("测线路", "\uE9D9", () => GoServers(server, "probe")),
                 new Separator(),
+                ..extra,
                 del,
-            },
+            ],
         };
         /* 入场动效和卡片右键菜单共用一套(90ms 淡入 + 下移 6px)。
            两处各写一套的下场是「有一个菜单是硬跳出来的」——
            用户 2026-09-04 就是这么报的:「右键菜单没有动效,没有小图标,看着生硬」。 */
         CardActions.AnimateMenu(menu);
         return menu;
+    }
+
+    /// <summary>ServerList 里第 i 行(去掉「添加服务器」)对应账号表的下标。</summary>
+    private readonly List<int> _rowAccount = [];
+
+    /// <summary>展开着的订阅分组。订阅组默认折叠(D383),只记本次运行。</summary>
+    private readonly HashSet<string> _openGroups = [];
+
+    /// <summary>「允许聚合」开关(D233),Emby 与数据源通用;勾号表示当前开着。</summary>
+    private MenuItem AggregateItem(string server, JsonElement a)
+    {
+        var on = a.TryGetProperty("aggregate", out var v) && v.ValueKind == JsonValueKind.True;
+        var mi = new MenuItem { Header = on ? "✓ 允许聚合" : "允许聚合" };
+        ToolTip.SetTip(mi, "聚合搜索、换源时包括它");
+        mi.Click += async (_, _) =>
+        {
+            try { await _core!.SourceSetAggregate(new { server_id = server, allow = !on }); await AfterServerChange(); }
+            catch (Exception e) { Toast.Error(LibraryPage.Advice(e)); }
+        };
+        return mi;
+    }
+
+    /// <summary>插件数据源:一个订阅一组(可折叠);上次访问失败标红、本设备不可用灰显(D384 D351)。</summary>
+    private void BuildSourceGroups(StackPanel host, List<JsonElement> rows)
+    {
+        foreach (var g in rows.GroupBy(r => Str(r.GetProperty("plugin"), "group")))
+        {
+            var first = g.First().GetProperty("plugin");
+            var gname = Str(first, "group_name") is { Length: > 0 } gn ? gn : Str(first, "plugin_id");
+            var pluginId = Str(first, "plugin_id");
+            // 当前在用的源所在的组总是展开,不然侧栏上找不到「使用中」那一行
+            var open = _openGroups.Contains(g.Key) || g.Any(r => r.TryGetProperty("active", out var v) && v.ValueKind == JsonValueKind.True);
+            var head = NavRow(open ? "" : "", $"{gname}({g.Count()})", null);
+            ToolTip.SetTip(head, $"{gname} · 来自插件 {pluginId}");
+            head.Click += (_, _) =>
+            {
+                if (!_openGroups.Remove(g.Key)) _openGroups.Add(g.Key);
+                _ = AfterServerChange();
+            };
+            head.ContextMenu = GroupMenu(g.Key, gname, pluginId);
+            host.Children.Add(head);
+            if (!open) continue;
+            foreach (var a in g) host.Children.Add(SourceRow(a, gname));
+        }
+    }
+
+    private Button SourceRow(JsonElement a, string gname)
+    {
+        var server = Str(a, "server");
+        var p = a.GetProperty("plugin");
+        var name = Str(a, "name") is { Length: > 0 } n ? n : server;
+        var on = a.TryGetProperty("active", out var v) && v.ValueKind == JsonValueKind.True;
+        var row = NavRow("", name, on ? "on" : null);
+        row.Margin = new Thickness(14, 0, 0, 0);
+        var why = Str(p, "unavailable");
+        if (why.Length > 0) row.Opacity = 0.45;
+        if (p.TryGetProperty("last_failed", out var lf) && lf.ValueKind == JsonValueKind.True) row.Foreground = Tok.Of("Danger");
+        ToolTip.SetTip(row, why.Length > 0 ? $"{name}:{why}" : $"{name} · {gname}");
+        row.Click += async (_, _) =>
+        {
+            if (why.Length > 0) { Toast.Show(why); return; }
+            if (on) { GoDefaultPage(); return; }
+            try
+            {
+                await _core!.AccountSetActiveServer(new { server_id = server });
+                await OnServerSwitched();
+                GoDefaultPage();
+            }
+            catch (Exception e) { Toast.Error(LibraryPage.Advice(e)); }
+        };
+        var editHost = new MenuItem { Header = "修改地址(host)" };
+        editHost.Click += async (_, _) => await EditHost(server, Str(p, "host_override"));
+        var del = new MenuItem { Header = "删除这个源", Classes = { "danger" } };
+        del.Click += async (_, _) =>
+        {
+            if (!await Dialogs.Confirm(this, $"删除「{name}」?", "收藏和观看记录会保留。", "删除")) return;
+            try { await _core!.AccountRemoveAccount(new { server_id = server }); await AfterServerChange(); }
+            catch (Exception e) { Toast.Error(LibraryPage.Advice(e)); }
+        };
+        var menu = new ContextMenu
+        {
+            Placement = PlacementMode.Pointer,
+            ItemsSource = new List<Control>
+            {
+                new MenuItem { Header = name, IsEnabled = false }, new Separator(),
+                AggregateItem(server, a), editHost, new Separator(), del,
+            },
+        };
+        CardActions.AnimateMenu(menu);
+        row.ContextMenu = menu;
+        if (on) _activeRow = row;
+        return row;
+    }
+
+    private ContextMenu GroupMenu(string group, string gname, string pluginId)
+    {
+        var check = new MenuItem { Header = "检测这一组的源" };
+        check.Click += async (_, _) =>
+        {
+            Toast.Show("正在检测…");
+            try
+            {
+                var r = await _core!.SourceCheckAll(new { group });
+                var all = r.ValueKind == JsonValueKind.Array ? r.EnumerateArray().ToList() : [];
+                var bad = all.Count(x => !(x.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.True));
+                Toast.Show(bad == 0 ? $"{all.Count} 个源都能用" : $"{all.Count} 个源里 {bad} 个打不开,已标红");
+                await AfterServerChange();
+            }
+            catch (Exception e) { Toast.Error(LibraryPage.Advice(e)); }
+        };
+        var del = new MenuItem { Header = "删除整个订阅", Classes = { "danger" } };
+        del.Click += async (_, _) =>
+        {
+            if (!await Dialogs.Confirm(this, $"删除「{gname}」?", "这一组的源都会移除,收藏和观看记录保留。", "删除")) return;
+            try { await _core!.SourceRemoveGroup(new { group }); await AfterServerChange(); }
+            catch (Exception e) { Toast.Error(LibraryPage.Advice(e)); }
+        };
+        var items = new List<Control> { new MenuItem { Header = gname, IsEnabled = false }, new Separator(), check, new Separator(), del };
+        var menu = new ContextMenu { Placement = PlacementMode.Pointer, ItemsSource = items };
+        // 插件声明的分组菜单(刷新订阅 / 重新选源……)要问过插件才知道,第一次打开时补进来
+        var asked = false;
+        menu.Opening += async (_, _) =>
+        {
+            if (asked) return;
+            asked = true;
+            try
+            {
+                var ms = await _core!.SourceServerMenus(new { plugin_id = pluginId });
+                var at = 3;
+                foreach (var m in ms.EnumerateArray())
+                {
+                    var cmd = Str(m, "command");
+                    var mi = new MenuItem { Header = Str(m, "title") };
+                    mi.Click += async (_, _) =>
+                    {
+                        try
+                        {
+                            await _core!.SourceRunCommand(new { plugin_id = pluginId, command = cmd, args = new { group } });
+                            Toast.Show("完成");
+                            await AfterServerChange();
+                        }
+                        catch (Exception e) { Toast.Error(LibraryPage.Advice(e)); }
+                    };
+                    items.Insert(at++, mi);
+                }
+                menu.ItemsSource = null;
+                menu.ItemsSource = items;
+            }
+            catch (CoreException e) { Log.W("服务器菜单", "取插件菜单失败:" + e.Message); } // 固定的几项照常能用
+        };
+        CardActions.AnimateMenu(menu);
+        return menu;
+    }
+
+    private async Task EditHost(string server, string current)
+    {
+        var box = new TextBox { Text = current, Watermark = "留空 = 用配置里的地址", Width = 360 };
+        var body = new StackPanel { Spacing = 10, Children = { new TextBlock { Text = "站点换了域名时填新地址,插件请求会改用它。" }, box } };
+        if (!await Dialogs.Show(this, "修改地址", body, "保存", "取消")) return;
+        try { await _core!.SourceSetHost(new { server_id = server, host = box.Text?.Trim() ?? "" }); Toast.Show("已保存"); }
+        catch (Exception e) { Toast.Error(LibraryPage.Advice(e)); }
     }
 
     /// <summary>侧栏里一行(图标 + 文字)。和导航项同一套版式,但它不是单选项。</summary>

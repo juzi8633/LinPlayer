@@ -128,6 +128,7 @@ public sealed class HistoryPage : PageBase
         var list = new StackPanel { Spacing = 10 };
         var status = Dim("加载中…");
         var scanHint = Dim("");
+        var sources = new ContentControl();
 
         /* 扫描恢复:换服 / 重装之后把本地记录推回服务器。
             报告里的 errors 必须显示出来。这条链路最危险的 bug 是
@@ -167,9 +168,15 @@ public sealed class HistoryPage : PageBase
                     Orientation = Orientation.Horizontal, Spacing = 10,
                     Children = { only, scan },
                 },
-                scanHint, status, list,
+                scanHint, sources, status, list,
             },
         });
+        _ = LoadSources();
+        async Task LoadSources()
+        {
+            try { if (await SourceNav.HistorySection(core) is { } c) sources.Content = c; }
+            catch (Exception e) { sources.Content = Dim("数据源的观看记录读不到:" + LibraryPage.Advice(e)); }
+        }
 
         async Task Load()
         {

@@ -31,6 +31,8 @@ object LinPlayerCommandNames {
     val ALL: List<String> = listOf(
         "emby.aggregateOverview",
         "emby.aggregateSearch",
+        "emby.rankingCategories",
+        "emby.rankingFetch",
         "emby.aggregateVersions",
         "emby.blockedList",
         "emby.counts",
@@ -248,10 +250,26 @@ object LinPlayerCommandNames {
         "system.pickLocalFolder",
         "system.ping",
         "system.updateProgress",
+        "system.afdianSponsorUrl",
+        "system.afdianVerify",
         "companion.start",
         "companion.status",
         "companion.setEnabled",
         "companion.setNowPlaying",
+        "sync.traktAccount",
+        "sync.traktDeviceCode",
+        "sync.traktPoll",
+        "sync.traktLogout",
+        "sync.traktCalendar",
+        "sync.bangumiAccount",
+        "sync.bangumiAuthorizeUrl",
+        "sync.bangumiExchange",
+        "sync.bangumiLoginToken",
+        "sync.bangumiLogout",
+        "sync.bangumiSummary",
+        "sync.bangumiCalendar",
+        "sync.calendarLibrary",
+        "sync.calendarDue",
         "plugin.list",
         "plugin.pendingRestart",
         "plugin.inspect",
@@ -284,14 +302,19 @@ object LinPlayerCommandNames {
         "plugin.devList",
         "plugin.setCapabilities",
         "plugin.shellResult",
+        "plugin.setCookies",
     )
 }
 
-// ---- Emby 浏览与详情 · emby.* (42 条) ----
+// ---- Emby 浏览与详情 · emby.* (44 条) ----
 suspend fun LinPlayerCommands.embyAggregateOverview(args: Map<String, Any?>? = null): JsonElement =
     call("emby.aggregateOverview", args)
 suspend fun LinPlayerCommands.embyAggregateSearch(args: Map<String, Any?>? = null): JsonElement =
     call("emby.aggregateSearch", args)
+suspend fun LinPlayerCommands.embyRankingCategories(args: Map<String, Any?>? = null): JsonElement =
+    call("emby.rankingCategories", args)
+suspend fun LinPlayerCommands.embyRankingFetch(args: Map<String, Any?>? = null): JsonElement =
+    call("emby.rankingFetch", args)
 suspend fun LinPlayerCommands.embyAggregateVersions(args: Map<String, Any?>? = null): JsonElement =
     call("emby.aggregateVersions", args)
 suspend fun LinPlayerCommands.embyBlockedList(args: Map<String, Any?>? = null): JsonElement =
@@ -703,7 +726,7 @@ suspend fun LinPlayerCommands.prefsSetUpdateSettings(args: Map<String, Any?>? = 
 suspend fun LinPlayerCommands.prefsSetWritebackSettings(args: Map<String, Any?>? = null): JsonElement =
     call("prefs.setWritebackSettings", args)
 
-// ---- 系统 · system.* (18 条) ----
+// ---- 系统 · system.* (20 条) ----
 suspend fun LinPlayerCommands.systemCacheSize(args: Map<String, Any?>? = null): JsonElement =
     call("system.cacheSize", args)
 suspend fun LinPlayerCommands.systemCancelUpdate(args: Map<String, Any?>? = null): JsonElement =
@@ -740,6 +763,10 @@ suspend fun LinPlayerCommands.systemPing(args: Map<String, Any?>? = null): JsonE
     call("system.ping", args)
 suspend fun LinPlayerCommands.systemUpdateProgress(args: Map<String, Any?>? = null): JsonElement =
     call("system.updateProgress", args)
+suspend fun LinPlayerCommands.systemAfdianSponsorUrl(args: Map<String, Any?>? = null): JsonElement =
+    call("system.afdianSponsorUrl", args)
+suspend fun LinPlayerCommands.systemAfdianVerify(args: Map<String, Any?>? = null): JsonElement =
+    call("system.afdianVerify", args)
 
 // ---- 手机扫码遥控(电视端) · companion.* (4 条) ----
 suspend fun LinPlayerCommands.companionStart(args: Map<String, Any?>? = null): JsonElement =
@@ -751,7 +778,37 @@ suspend fun LinPlayerCommands.companionSetEnabled(args: Map<String, Any?>? = nul
 suspend fun LinPlayerCommands.companionSetNowPlaying(args: Map<String, Any?>? = null): JsonElement =
     call("companion.setNowPlaying", args)
 
-// ---- 插件 · plugin.* (32 条) ----
+// ---- 同步账号与追剧日历 · sync.* (14 条) ----
+suspend fun LinPlayerCommands.syncTraktAccount(args: Map<String, Any?>? = null): JsonElement =
+    call("sync.traktAccount", args)
+suspend fun LinPlayerCommands.syncTraktDeviceCode(args: Map<String, Any?>? = null): JsonElement =
+    call("sync.traktDeviceCode", args)
+suspend fun LinPlayerCommands.syncTraktPoll(args: Map<String, Any?>? = null): JsonElement =
+    call("sync.traktPoll", args)
+suspend fun LinPlayerCommands.syncTraktLogout(args: Map<String, Any?>? = null): JsonElement =
+    call("sync.traktLogout", args)
+suspend fun LinPlayerCommands.syncTraktCalendar(args: Map<String, Any?>? = null): JsonElement =
+    call("sync.traktCalendar", args)
+suspend fun LinPlayerCommands.syncBangumiAccount(args: Map<String, Any?>? = null): JsonElement =
+    call("sync.bangumiAccount", args)
+suspend fun LinPlayerCommands.syncBangumiAuthorizeUrl(args: Map<String, Any?>? = null): JsonElement =
+    call("sync.bangumiAuthorizeUrl", args)
+suspend fun LinPlayerCommands.syncBangumiExchange(args: Map<String, Any?>? = null): JsonElement =
+    call("sync.bangumiExchange", args)
+suspend fun LinPlayerCommands.syncBangumiLoginToken(args: Map<String, Any?>? = null): JsonElement =
+    call("sync.bangumiLoginToken", args)
+suspend fun LinPlayerCommands.syncBangumiLogout(args: Map<String, Any?>? = null): JsonElement =
+    call("sync.bangumiLogout", args)
+suspend fun LinPlayerCommands.syncBangumiSummary(args: Map<String, Any?>? = null): JsonElement =
+    call("sync.bangumiSummary", args)
+suspend fun LinPlayerCommands.syncBangumiCalendar(args: Map<String, Any?>? = null): JsonElement =
+    call("sync.bangumiCalendar", args)
+suspend fun LinPlayerCommands.syncCalendarLibrary(args: Map<String, Any?>? = null): JsonElement =
+    call("sync.calendarLibrary", args)
+suspend fun LinPlayerCommands.syncCalendarDue(args: Map<String, Any?>? = null): JsonElement =
+    call("sync.calendarDue", args)
+
+// ---- 插件 · plugin.* (33 条) ----
 suspend fun LinPlayerCommands.pluginList(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.list", args)
 suspend fun LinPlayerCommands.pluginPendingRestart(args: Map<String, Any?>? = null): JsonElement =
@@ -816,3 +873,5 @@ suspend fun LinPlayerCommands.pluginSetCapabilities(args: Map<String, Any?>? = n
     call("plugin.setCapabilities", args)
 suspend fun LinPlayerCommands.pluginShellResult(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.shellResult", args)
+suspend fun LinPlayerCommands.pluginSetCookies(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.setCookies", args)

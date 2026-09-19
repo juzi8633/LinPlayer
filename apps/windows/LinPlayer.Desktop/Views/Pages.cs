@@ -182,11 +182,15 @@ public sealed class AddServerPage : PageBase
              前端没接」正是本仓最常见的一类静默缺口。
             新增一种源只改这张表一处:分散在各处的话,漏掉的那处就是
              「某个入口加不了这种源」。 */
-        var kinds = new[]
+        var kinds = new List<(string, string, string)>
         {
             ("Emby", "emby", "填服务器地址和账号即可。先点「测试连接」可以确认地址对不对。"),
             ("本地文件夹", "local", "选一个本机目录当作源。没有地址也没有账号密码。"),
         };
+        // 插件提供的服务器类型(D131 D423):只有装了数据源插件才出现,字段按 source.formSchema 渲染
+        var pluginForms = new Dictionary<int, JsonElement>();
+        var pluginFields = new Dictionary<string, TextBox>();
+        var pluginRow = new StackPanel { Spacing = 10, IsVisible = false };
         /* 本地文件夹**不跟着 nav.browse 走**。它曾被那个开关一起滤掉,
            于是芯片只剩一条、整条选择器不画,界面上根本选不到「本地」——
            而 AGENTS.md §0 写的是「本机文件夹播放是播放器的基础能力,不算网盘」。
@@ -197,7 +201,7 @@ public sealed class AddServerPage : PageBase
            一个只有一个选项的选择器是纯噪音 —— 用户会盯着它想「还能选什么」,
            而答案是没有。(同一条规矩用在详情页的季选择条上。)
            2026-09-02 砍功能之后这里就只剩 Emby 了,芯片却还孤零零摆着。 */
-        var kindBar = new WrapPanel { IsVisible = kinds.Length > 1 };
+        var kindBar = new WrapPanel { IsVisible = kinds.Count > 1 };
         var kindDesc = Dim(kinds[0].Item3);
         var kindIndex = 0;
         var serverRow = new StackPanel { Spacing = 10, Children = { Label("服务器地址"), server } };
@@ -217,7 +221,27 @@ public sealed class AddServerPage : PageBase
             kindDesc.Text = kinds[kindIndex].Item3;
             // 本地源的表单**只有一个「选择文件夹」按钮** —— 没有地址框也没有账号密码。
             var isLocal = k == "local";
-            serverRow.IsVisible = userRow.IsVisible = passRow.IsVisible = !isLocal;
+            var isPlugin = pluginForms.TryGetValue(kindIndex, out var pf);
+            serverRow.IsVisible = userRow.IsVisible = passRow.IsVisible = !isLocal && !isPlugin;
+            pluginRow.IsVisible = isPlugin;
+            login.Content = isPlugin ? "添加" : "登录";
+            pluginRow.Children.Clear();
+            pluginFields.Clear();
+            if (isPlugin)
+                foreach (var f in Mi.Arr(pf, "fields"))
+                {
+                    var multi = PluginPage.B(f, "multiline");
+                    var tb = new TextBox
+                    {
+                        Classes = { "field" }, Watermark = Get(f, "placeholder"),
+                        PasswordChar = Get(f, "type") == "password" ? '●' : ' ',
+                        AcceptsReturn = multi, TextWrapping = multi ? TextWrapping.Wrap : TextWrapping.NoWrap,
+                        MinHeight = multi ? 90 : 0, MaxHeight = multi ? 240 : double.PositiveInfinity,
+                    };
+                    pluginFields[Get(f, "key")] = tb;
+                    pluginRow.Children.Add(Label(Get(f, "label")));
+                    pluginRow.Children.Add(tb);
+                }
             dirRow.IsVisible = isLocal;
             test.IsVisible = k == "emby";
             server.Watermark = "https://你的服务器地址";
@@ -225,17 +249,34 @@ public sealed class AddServerPage : PageBase
                 ((Button)kindBar.Children[i]).Classes.Set("primary", i == kindIndex);
         }
 
-        for (var i = 0; i < kinds.Length; i++)
+        void AddChip(int idx)
         {
-            var idx = i;
             var chip = new Button
             {
-                Classes = { "ghost" }, Content = kinds[i].Item1,
+                Classes = { "ghost" }, Content = kinds[idx].Item1,
                 Margin = new Thickness(0, 0, 10, 10),
             };
             chip.Click += (_, _) => { kindIndex = idx; ApplyKind(); };
             kindBar.Children.Add(chip);
         }
+        for (var i = 0; i < kinds.Count; i++) AddChip(i);
+        _ = Task.Run(async () =>
+        {
+            JsonElement schema;
+            try { schema = await core.SourceFormSchema(new { }); }
+            catch (CoreException e) { Log.W("添加服务器", "取插件服务器类型失败:" + e.Message); return; } // Emby / 本地照常能加
+            Dispatcher.UIThread.Post(() =>
+            {
+                foreach (var f in schema.EnumerateArray().Where(f => Get(f, "kind") == "plugin"))
+                {
+                    pluginForms[kinds.Count] = f.Clone();
+                    kinds.Add((Get(f, "label"), "plugin", $"由插件「{Get(f, "plugin_name")}」提供。"));
+                    AddChip(kinds.Count - 1);
+                }
+                kindBar.IsVisible = kinds.Count > 1;
+                ApplyKind();
+            });
+        });
 
         pickDir.Click += async (_, _) =>
         {
@@ -255,7 +296,7 @@ public sealed class AddServerPage : PageBase
             {
                 H1("连接到你的媒体服务器"),
                 kindBar, kindDesc,
-                serverRow, userRow, passRow, dirRow,
+                serverRow, userRow, passRow, dirRow, pluginRow,
                 new StackPanel
                 {
                     Orientation = Orientation.Horizontal, Spacing = 10,
@@ -273,7 +314,12 @@ public sealed class AddServerPage : PageBase
             try
             {
                 var kind = kinds[kindIndex].Item2;
-                if (kind == "emby")
+                if (pluginForms.TryGetValue(kindIndex, out var pf))
+                {
+                    var values = pluginFields.ToDictionary(kv => kv.Key, kv => (kv.Value.Text ?? "").Trim());
+                    if (!await PluginSources.Add(core, this, Get(pf, "plugin_id"), Get(pf, "type_id"), values)) { Busy(false, ""); return; }
+                }
+                else if (kind == "emby")
                 {
                     await core.EmbyLogin(new
                     {
@@ -308,7 +354,7 @@ public sealed class AddServerPage : PageBase
         // 用来验「本地源只有一个选择文件夹按钮」这类**只有真渲染才看得见**的判据。
         if (Environment.GetEnvironmentVariable("LP_SELFCHECK_SOURCE") is { Length: > 0 } wantKind)
         {
-            var at = Array.FindIndex(kinds, k => k.Item2 == wantKind);
+            var at = kinds.FindIndex(k => k.Item2 == wantKind);
             if (at >= 0) { kindIndex = at; ApplyKind(); }
         }
 

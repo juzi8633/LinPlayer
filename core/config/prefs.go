@@ -312,6 +312,12 @@ type Prefs struct {
 	// 线路没了退回第一条(D343)。记名字不记下标:换源、订阅刷新后线路顺序会变。
 	SourceLines map[string]string `json:"source_lines,omitempty"`
 
+	// CalendarNotify 追剧日历开播提醒:追的剧有新集发系统通知(D366)。默认开。
+	CalendarNotify bool `json:"calendar_notify"`
+
+	// EpisodeDesc 选集倒序显示的剧(D332):键 = 服务器#剧 id。只影响显示,连播仍按正序。
+	EpisodeDesc map[string]bool `json:"episode_desc,omitempty"`
+
 	// LibraryView 媒体库网格用哪种版式:grid = 海报网格,list = 列表行
 	// (草稿 08 页第 9 条)。空 = grid。
 	//
@@ -373,6 +379,7 @@ type SkipRange struct {
 func DefaultPrefs() Prefs {
 	return Prefs{
 		SubEnabled:                   true,
+		CalendarNotify:               true,
 		DanmakuEnabled:               false,
 		DanmakuArea:                  1.0,
 		DanmakuScale:                 1.0,

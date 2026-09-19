@@ -41,6 +41,8 @@ public static class LinPlayerCommandNames
     [
         "emby.aggregateOverview",
         "emby.aggregateSearch",
+        "emby.rankingCategories",
+        "emby.rankingFetch",
         "emby.aggregateVersions",
         "emby.blockedList",
         "emby.counts",
@@ -258,10 +260,26 @@ public static class LinPlayerCommandNames
         "system.pickLocalFolder",
         "system.ping",
         "system.updateProgress",
+        "system.afdianSponsorUrl",
+        "system.afdianVerify",
         "companion.start",
         "companion.status",
         "companion.setEnabled",
         "companion.setNowPlaying",
+        "sync.traktAccount",
+        "sync.traktDeviceCode",
+        "sync.traktPoll",
+        "sync.traktLogout",
+        "sync.traktCalendar",
+        "sync.bangumiAccount",
+        "sync.bangumiAuthorizeUrl",
+        "sync.bangumiExchange",
+        "sync.bangumiLoginToken",
+        "sync.bangumiLogout",
+        "sync.bangumiSummary",
+        "sync.bangumiCalendar",
+        "sync.calendarLibrary",
+        "sync.calendarDue",
         "plugin.list",
         "plugin.pendingRestart",
         "plugin.inspect",
@@ -294,16 +312,21 @@ public static class LinPlayerCommandNames
         "plugin.devList",
         "plugin.setCapabilities",
         "plugin.shellResult",
+        "plugin.setCookies",
     ];
 }
 
 public static class LinPlayerCommandsExtensions
 {
-    // ---- Emby 浏览与详情 · emby.* (42 条) ----
+    // ---- Emby 浏览与详情 · emby.* (44 条) ----
     public static Task<JsonElement> EmbyAggregateOverview(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("emby.aggregateOverview", args, ct);
     public static Task<JsonElement> EmbyAggregateSearch(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("emby.aggregateSearch", args, ct);
+    public static Task<JsonElement> EmbyRankingCategories(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("emby.rankingCategories", args, ct);
+    public static Task<JsonElement> EmbyRankingFetch(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("emby.rankingFetch", args, ct);
     public static Task<JsonElement> EmbyAggregateVersions(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("emby.aggregateVersions", args, ct);
     public static Task<JsonElement> EmbyBlockedList(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -715,7 +738,7 @@ public static class LinPlayerCommandsExtensions
     public static Task<JsonElement> PrefsSetWritebackSettings(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("prefs.setWritebackSettings", args, ct);
 
-    // ---- 系统 · system.* (18 条) ----
+    // ---- 系统 · system.* (20 条) ----
     public static Task<JsonElement> SystemCacheSize(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("system.cacheSize", args, ct);
     public static Task<JsonElement> SystemCancelUpdate(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -752,6 +775,10 @@ public static class LinPlayerCommandsExtensions
         => c.CallAsync("system.ping", args, ct);
     public static Task<JsonElement> SystemUpdateProgress(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("system.updateProgress", args, ct);
+    public static Task<JsonElement> SystemAfdianSponsorUrl(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("system.afdianSponsorUrl", args, ct);
+    public static Task<JsonElement> SystemAfdianVerify(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("system.afdianVerify", args, ct);
 
     // ---- 手机扫码遥控(电视端) · companion.* (4 条) ----
     public static Task<JsonElement> CompanionStart(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -763,7 +790,37 @@ public static class LinPlayerCommandsExtensions
     public static Task<JsonElement> CompanionSetNowPlaying(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("companion.setNowPlaying", args, ct);
 
-    // ---- 插件 · plugin.* (32 条) ----
+    // ---- 同步账号与追剧日历 · sync.* (14 条) ----
+    public static Task<JsonElement> SyncTraktAccount(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("sync.traktAccount", args, ct);
+    public static Task<JsonElement> SyncTraktDeviceCode(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("sync.traktDeviceCode", args, ct);
+    public static Task<JsonElement> SyncTraktPoll(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("sync.traktPoll", args, ct);
+    public static Task<JsonElement> SyncTraktLogout(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("sync.traktLogout", args, ct);
+    public static Task<JsonElement> SyncTraktCalendar(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("sync.traktCalendar", args, ct);
+    public static Task<JsonElement> SyncBangumiAccount(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("sync.bangumiAccount", args, ct);
+    public static Task<JsonElement> SyncBangumiAuthorizeUrl(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("sync.bangumiAuthorizeUrl", args, ct);
+    public static Task<JsonElement> SyncBangumiExchange(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("sync.bangumiExchange", args, ct);
+    public static Task<JsonElement> SyncBangumiLoginToken(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("sync.bangumiLoginToken", args, ct);
+    public static Task<JsonElement> SyncBangumiLogout(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("sync.bangumiLogout", args, ct);
+    public static Task<JsonElement> SyncBangumiSummary(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("sync.bangumiSummary", args, ct);
+    public static Task<JsonElement> SyncBangumiCalendar(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("sync.bangumiCalendar", args, ct);
+    public static Task<JsonElement> SyncCalendarLibrary(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("sync.calendarLibrary", args, ct);
+    public static Task<JsonElement> SyncCalendarDue(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("sync.calendarDue", args, ct);
+
+    // ---- 插件 · plugin.* (33 条) ----
     public static Task<JsonElement> PluginList(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("plugin.list", args, ct);
     public static Task<JsonElement> PluginPendingRestart(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -828,4 +885,6 @@ public static class LinPlayerCommandsExtensions
         => c.CallAsync("plugin.setCapabilities", args, ct);
     public static Task<JsonElement> PluginShellResult(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("plugin.shellResult", args, ct);
+    public static Task<JsonElement> PluginSetCookies(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.setCookies", args, ct);
 }

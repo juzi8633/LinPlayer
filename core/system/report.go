@@ -28,6 +28,11 @@ var (
 	proxyKey  string
 )
 
+// ProxyBase / ProxyKey 给 core/sync(Trakt/Bangumi 换 token、爱发电校验)用同一份注入值,
+// 不再往两个包各注一份 —— 两份就会有一份漏配。
+func ProxyBase() string { return strings.TrimRight(strings.TrimSpace(proxyBase), "/") }
+func ProxyKey() string  { return proxyKey }
+
 // postProxy 往自建代理 POST 一段 JSON,原样交回状态码和响应体。
 func postProxy(ctx context.Context, path string, body any) (int, []byte, error) {
 	base := strings.TrimRight(strings.TrimSpace(proxyBase), "/")

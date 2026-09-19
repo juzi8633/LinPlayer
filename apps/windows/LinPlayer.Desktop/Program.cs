@@ -15,6 +15,12 @@ internal static class Program
     /// <summary>进程级的核心层句柄。UI 的一切数据都从它来。</summary>
     public static CoreClient? Core { get; private set; }
 
+    /// <summary>数据根(userdata)。WebView2 的用户数据目录放在它下面。</summary>
+    public static string DataDir { get; private set; } = "";
+
+    /// <summary>主窗口:插件的可见 WebView 要居中到它上面。</summary>
+    public static Avalonia.Controls.Window? MainWindowRef { get; set; }
+
     /// <summary>核心层起不来时的原因(启动页要如实显示,不能白屏)。</summary>
     public static string? CoreError { get; private set; }
 
@@ -198,6 +204,7 @@ internal static class Program
            用户明确要求过「不喜欢到处拉屎」—— 不要往 AppData 里写。
            这里只把根传给核心层,**路径的唯一出口在 core/paths**,UI 侧不自己拼。 */
         var dataDir = Path.Combine(exeDir, "userdata");
+        DataDir = dataDir;
         var dll = Path.Combine(exeDir, OperatingSystem.IsWindows() ? "lpcore.dll" : "liblpcore.so");
         if (Environment.GetEnvironmentVariable("LP_SIGPROBE") is { Length: > 0 })
         {

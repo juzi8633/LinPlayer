@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -434,6 +435,21 @@ func (r *Runtime) Logs() []LogEntry { return r.logs.list() }
 
 // Requests 最近 200 条网络请求摘要(D456)。
 func (r *Runtime) Requests() []RequestEntry { return r.reqs.list() }
+
+// SetCookies 壳里整页 WebView 过完验证后,把拿到的 Cookie 写进这个罐子(D60 D323)。
+func (r *Runtime) SetCookies(jar, rawURL string, cookies map[string]string) error {
+	u, err := parseHTTPURL(rawURL)
+	if err != nil {
+		return err
+	}
+	var cs []*http.Cookie
+	for k, v := range cookies {
+		cs = append(cs, &http.Cookie{Name: k, Value: v, Path: "/"})
+	}
+	r.jars.get(jar).SetCookies(u, cs)
+	r.jars.persist(jar)
+	return nil
+}
 
 // Storage 给宿主读写 KV(备份、调试面板)。
 func (r *Runtime) Storage() *kvStore { return r.kv }

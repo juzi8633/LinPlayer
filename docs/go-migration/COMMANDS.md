@@ -41,24 +41,27 @@
 <!-- BEGIN GENERATED -->
 | 域 | 前缀 | 条数 | 安卓已有 |
 |---|---|--:|--:|
-| Emby 浏览与详情 | `emby.*` | 42 | 38 |
+| Emby 浏览与详情 | `emby.*` | 44 | 40 |
 | 账号与线路 | `account.*` | 21 | 21 |
 | 播放器 | `player.*` | 52 | 40 |
 | 媒体源与数据源 | `source.*` | 30 | 30 |
 | 弹幕 | `danmaku.*` | 17 | 17 |
 | 下载 | `download.*` | 9 | 8 |
 | 设置与偏好 | `prefs.*` | 30 | 21 |
-| 系统 | `system.*` | 18 | 8 |
+| 系统 | `system.*` | 20 | 10 |
 | 手机扫码遥控(电视端) | `companion.*` | 4 | 0 |
+| 同步账号与追剧日历 | `sync.*` | 14 | 14 |
 | 插件 | `plugin.*` | 32 | 32 |
-| **合计** | | **255** | **215** |
+| **合计** | | **273** | **233** |
 
-### Emby 浏览与详情 · `emby.*` — 42 条
+### Emby 浏览与详情 · `emby.*` — 44 条
 
 | 移植 | 新命令名 | 现有名 | 参数 | 返回 | 安卓已注册 |
 |:--:|---|---|---|---|:--:|
 | [x] | `emby.aggregateOverview` | `aggregate_overview` | `—` | `Result<Vec<SourceOverview>, String>` | ✅ |
 | [x] | `emby.aggregateSearch` | `aggregate_search` | `query: String, include_episodes: Option<bool>` | `Result<Vec<ServerGroup>, String>` | ✅ |
+| [x] | `emby.rankingCategories` | `ranking_categories` | `—` | `Vec<ranking::Category>` | ✅ |
+| [x] | `emby.rankingFetch` | `ranking_fetch` | `category_id: String, force_refresh: Option<bool>` | `Result<Vec<ranking::Entry>, String>` | ✅ |
 | [x] | `emby.aggregateVersions` | **新增** | `item_id, server_id: Option<String>, version_regex: Option<String>` | `Vec<aggregate::VersionGroup>` | — | <!-- 跨服聚合同一部片的版本表。匹配判据与跨服续播共用 history.MatchCandidates -->
 | [x] | `emby.blockedList` | `blocked_list` | `—` | `Entry` | ✅ |
 | [x] | `emby.counts` | **新增** | `server, token, user_id` | `Counts` | — | <!-- 媒体库规模统计。Rust 版里 emby::counts 只被 aggregate_overview 内部调用,没单独成命令 -->
@@ -289,7 +292,7 @@
 | [x] | `prefs.setUpdateSettings` | `set_update_settings` | `channel: String, auto_check: bool, proxy: String` | `Result<(), String>` | ✅ |
 | [x] | `prefs.setWritebackSettings` | `set_writeback_settings` | `settings: WritebackSettings` | `Result<(), String>` | ✅ |
 
-### 系统 · `system.*` — 18 条
+### 系统 · `system.*` — 20 条
 
 | 移植 | 新命令名 | 现有名 | 参数 | 返回 | 安卓已注册 |
 |:--:|---|---|---|---|:--:|
@@ -311,6 +314,8 @@
 | [x] | `system.pickLocalFolder` | `pick_local_folder` | `—` | `Result<Option<String>, String>` | ❌ |
 | [x] | `system.ping` | **新增** | `-` | `{ pong: true, ... }` | — | <!-- 核心层活着吗。契约测试的第一条 -->
 | [x] | `system.updateProgress` | **新增** | `-` | `Result<system::UpdateProgress, String>` | ✅ | <!-- 轮询下载进度 -->
+| [x] | `system.afdianSponsorUrl` | `afdian_sponsor_url` | `—` | `String` | ✅ |
+| [x] | `system.afdianVerify` | `afdian_verify` | `order_no: String` | `Result<linplayer_core::sync::AfdianVerifyResult, String>` | ✅ |
 
 ### 手机扫码遥控(电视端) · `companion.*` — 4 条
 
@@ -320,6 +325,25 @@
 | [x] | `companion.status` | **新增** | `—` | `{enabled, running, url, port, error, ip_error, connected}` | — | <!-- url 拿不到 IP 时为空串;error 是起服失败原话;connected = 15 秒内收到过手机页请求 -->
 | [x] | `companion.setEnabled` | **新增** | `enabled: bool` | `{enabled, running, url, port, error, ip_error, connected}` | — | <!-- 持久化 companion_enabled;关=停监听,开=换新 token 起 -->
 | [x] | `companion.setNowPlaying` | **新增** | `title: String` | `{title}` | — | <!-- 播放页起播/离页时报片名,空串=清空。事件:companion.key{key} / companion.open{item_id,type,server_id} / companion.status / account.status{} -->
+
+### 同步账号与追剧日历 · `sync.*` — 14 条
+
+| 移植 | 新命令名 | 现有名 | 参数 | 返回 | 安卓已注册 |
+|:--:|---|---|---|---|:--:|
+| [x] | `sync.traktAccount` | `trakt_account` | `—` | `Option<linplayer_core::sync::SyncAccount>` | ✅ |
+| [x] | `sync.traktDeviceCode` | `trakt_device_code` | `—` | `Result<trakt::TraktDeviceCode, String>` | ✅ |
+| [x] | `sync.traktPoll` | `trakt_poll` | `device_code: String` | `Result<trakt::TraktPollResult, String>` | ✅ |
+| [x] | `sync.traktLogout` | `trakt_logout` | `—` | `()` | ✅ |
+| [x] | `sync.traktCalendar` | `trakt_calendar` | `only_mine: Option<bool>` | `Result<Vec<linplayer_core::sync::calendar::CalendarEntry>, String>` | ✅ |
+| [x] | `sync.bangumiAccount` | `bangumi_account` | `—` | `Option<linplayer_core::sync::SyncAccount>` | ✅ |
+| [x] | `sync.bangumiAuthorizeUrl` | `bangumi_authorize_url` | `redirect_uri: Option<String>` | `String` | ✅ |
+| [x] | `sync.bangumiExchange` | `bangumi_exchange` | `code: String, redirect_uri: Option<String>` | `Result<linplayer_core::sync::SyncAccount, String>` | ✅ |
+| [x] | `sync.bangumiLoginToken` | `bangumi_login_token` | `token: String` | `Result<linplayer_core::sync::SyncAccount, String>` | ✅ |
+| [x] | `sync.bangumiLogout` | `bangumi_logout` | `—` | `()` | ✅ |
+| [x] | `sync.bangumiSummary` | `bangumi_summary` | `subject_id: i64` | `Result<Option<String>, String>` | ✅ |
+| [x] | `sync.bangumiCalendar` | `bangumi_calendar` | `only_mine: Option<bool>` | `Result<Vec<linplayer_core::sync::calendar::CalendarEntry>, String>` | ✅ |
+| [x] | `sync.calendarLibrary` | **新增** | `entries: [{key, title, tmdb_id?, season?, episode?}]` | `{key: LibraryHit}` | ✅ | <!-- 追剧日历「已入库 / 可播」(D366) -->
+| [x] | `sync.calendarDue` | **新增** | `—` | `Vec<CalendarEntry>` | ✅ | <!-- 开播提醒:新开播且没提醒过的(D366) -->
 
 ### 插件 · `plugin.*` — 32 条
 
@@ -357,4 +381,5 @@
 | [x] | `plugin.devList` | **新增** | `—` | `{id: dir}` | ✅ |
 | [x] | `plugin.setCapabilities` | **新增** | `webview, spider_jar, spider_py` | `—` | ✅ |
 | [x] | `plugin.shellResult` | **新增** | `id, ok, data?, error?` | `—` | ✅ |
+| [x] | `plugin.setCookies` | **新增** | `plugin_id, jar, url, cookies` | `—` | ✅ |
 <!-- END GENERATED -->

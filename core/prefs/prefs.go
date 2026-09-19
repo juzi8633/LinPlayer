@@ -93,6 +93,18 @@ func RegisterCommands(version string) {
 		if _, ok := a["search_history"]; ok {
 			p.SearchHistory = config.ClampSearchHistory(strList(a, "search_history"))
 		}
+		// 选集正序/倒序按剧记(D332),键 = 服务器#剧 id。整表替换,true = 倒序
+		if m, ok := a["episode_desc"].(map[string]any); ok {
+			p.EpisodeDesc = map[string]bool{}
+			for k, v := range m {
+				if b, _ := v.(bool); b {
+					p.EpisodeDesc[k] = true
+				}
+			}
+		}
+		if v, ok := a["calendar_notify"].(bool); ok {
+			p.CalendarNotify = v
+		}
 		return p, save(c, p)
 	})
 

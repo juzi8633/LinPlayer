@@ -98,6 +98,8 @@
             <RadioButton Classes="nav" Name="NavAggregate" GroupName="nav" Content="聚合视界" Tag="&#xE774;" />
             <RadioButton Classes="nav" Name="NavHistory" GroupName="nav" Content="观看历史" Tag="&#xE81C;" />
             <RadioButton Classes="nav" Name="NavDownload" GroupName="nav" Content="下载" Tag="&#xE896;" />
+            <RadioButton Classes="nav" Name="NavRanking" GroupName="nav" Content="排行榜" Tag="&#xE8CB;" />
+            <RadioButton Classes="nav" Name="NavCalendar" GroupName="nav" Content="追剧日历" Tag="&#xE787;" />
           </StackPanel>
 
           <!--
@@ -116,6 +118,7 @@
                        FontSize="11" FontWeight="SemiBold"
                        Foreground="{DynamicResource Ink3}" />
             <StackPanel Name="ServerList" Spacing="0" />
+            <StackPanel Name="SourceGroups" Spacing="0" />
           </StackPanel>
             </StackPanel>
           </ScrollViewer>

@@ -12,7 +12,17 @@ import (
 	"linplayer/core/paths"
 )
 
+// afdianSponsorURL 付费追剧日历的赞助地址,构建期注入(见 core/cmd/sealsecrets)。
+//
+// ★ 只能有一份、必须在核心层:2026-07-19 UI 里写死了一个凭空猜的主页,功能看着完全正常,
+// 赞助收益却是零 —— 收款地址是「错了也不会报错」的东西。它是账号地址,不进提交。
+var afdianSponsorURL string
+
 func registerMiscCommands() {
+	bus.Register("system.afdianSponsorUrl", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
+		return afdianSponsorURL, nil
+	})
+
 	// system.openDataDir —— 在系统文件管理器里打开数据目录。
 	//
 	// ★ sub 只认**白名单**里那几个:直接把用户传的路径拼上去等于给了一个

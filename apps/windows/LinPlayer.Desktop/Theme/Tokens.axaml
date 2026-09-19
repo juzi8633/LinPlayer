@@ -27,6 +27,9 @@
       <Color x:Key="DangerColor">#e06c6c</Color>
       <Color x:Key="DangerBgColor">#4a1d28</Color>
       <Color x:Key="DangerInkColor">#ffd9de</Color>
+      <Color x:Key="Medal1Color">#e0a95b</Color>
+      <Color x:Key="Medal2Color">#c9cfda</Color>
+      <Color x:Key="Medal3Color">#c6803f</Color>
     </ResourceDictionary>
     <ResourceDictionary x:Key="Light">
       <Color x:Key="BgColor">#f1ece2</Color>
@@ -45,6 +48,9 @@
       <Color x:Key="DangerColor">#c95555</Color>
       <Color x:Key="DangerBgColor">#f7dfe0</Color>
       <Color x:Key="DangerInkColor">#6e2430</Color>
+      <Color x:Key="Medal1Color">#b8862e</Color>
+      <Color x:Key="Medal2Color">#7d8797</Color>
+      <Color x:Key="Medal3Color">#a0612a</Color>
     </ResourceDictionary>
   </ResourceDictionary.ThemeDictionaries>
 
@@ -64,6 +70,10 @@
   <SolidColorBrush x:Key="Danger" Color="{DynamicResource DangerColor}" />
   <SolidColorBrush x:Key="DangerBg" Color="{DynamicResource DangerBgColor}" />
   <SolidColorBrush x:Key="DangerInk" Color="{DynamicResource DangerInkColor}" />
+  <!-- 排行榜前三名的名次色(金 / 银 / 铜);第四名起用 Ink -->
+  <SolidColorBrush x:Key="Medal1" Color="{DynamicResource Medal1Color}" />
+  <SolidColorBrush x:Key="Medal2" Color="{DynamicResource Medal2Color}" />
+  <SolidColorBrush x:Key="Medal3" Color="{DynamicResource Medal3Color}" />
 
   <!--
     滑块(进度条 / 音量)的配色。

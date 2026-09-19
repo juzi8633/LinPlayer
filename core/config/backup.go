@@ -42,6 +42,8 @@ type backupSettings struct {
 	Prefs            json.RawMessage `json:"prefs,omitempty"`
 	DanmakuSources   json.RawMessage `json:"danmaku_sources,omitempty"`
 	Proxy            json.RawMessage `json:"proxy,omitempty"`
+	SyncTrakt        json.RawMessage `json:"sync_trakt,omitempty"`
+	SyncBangumi      json.RawMessage `json:"sync_bangumi,omitempty"`
 }
 
 // EncodeBackup 出一份备份文件的内容。
@@ -61,6 +63,8 @@ func EncodeBackup(c *AppConfig, exportTimeUnix int64, withAccounts, withSettings
 			Prefs:            c.Prefs,
 			DanmakuSources:   c.DanmakuSources,
 			Proxy:            c.Proxy,
+			SyncTrakt:        c.SyncTrakt,
+			SyncBangumi:      c.SyncBangumi,
 		})
 		if err != nil {
 			return nil, err
@@ -153,6 +157,8 @@ func ApplyBackup(c *AppConfig, container map[string]any, withAccounts, withSetti
 	}
 	assign(&c.DanmakuSources, st.DanmakuSources)
 	assign(&c.Proxy, st.Proxy)
+	assign(&c.SyncTrakt, st.SyncTrakt)
+	assign(&c.SyncBangumi, st.SyncBangumi)
 	if len(st.Prefs) > 0 {
 		c.Prefs = dropDeadPaths(st.Prefs)
 	}

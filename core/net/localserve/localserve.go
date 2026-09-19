@@ -58,6 +58,9 @@ type Server struct {
 	mu sync.RWMutex
 	// allow 是 src 白名单:origin(scheme://host[:port])→ 取图时要带的头。
 	allow map[string]http.Header
+	// raw 不是 Emby 的图床(数据源、排行榜):不拼 maxWidth/maxHeight,改 query 会弄坏签名地址。
+	// 整表重建白名单时不动它 —— 它只决定「怎么回源」,放不放行仍由 allow 管。
+	raw map[string]bool
 
 	// Client 出网口。测试可以换掉。
 	Client *http.Client
@@ -145,6 +148,10 @@ func (s *Server) Allow(rawOrigin string, headers http.Header) {
 		headers = http.Header{}
 	}
 	s.allow[o] = headers
+	if s.raw == nil {
+		s.raw = map[string]bool{}
+	}
+	s.raw[o] = true
 }
 
 // Revoke 从白名单里去掉一个来源(登出 / 删账号 / 撤销插件授权时调)。
@@ -170,6 +177,12 @@ func (s *Server) lookup(rawURL string) (http.Header, bool) {
 	defer s.mu.RUnlock()
 	h, ok := s.allow[o]
 	return h, ok
+}
+
+func (s *Server) isRaw(origin string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.raw[origin]
 }
 
 // originOf 取 scheme://host[:port]。
@@ -250,7 +263,11 @@ func (s *Server) handleImg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	upstream, err := withSize(src, q.Get("w"), q.Get("h"))
+	wq, hq := q.Get("w"), q.Get("h")
+	if o, _ := originOf(src); s.isRaw(o) {
+		wq, hq = "", ""
+	}
+	upstream, err := withSize(src, wq, hq)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

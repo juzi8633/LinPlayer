@@ -260,6 +260,9 @@ public sealed class PlayerPage : UserControl
     /// <summary>这一条是不是文件浏览型源的条目(走 source.play)。</summary>
     private readonly bool _isSource;
 
+    /// <summary>插件数据源的一次播放(线路 + 集);null = 不是数据源。起播走 source.playItem。</summary>
+    private readonly SourcePlay? _src;
+
     /// <summary>
     /// 播的是<b>已经下载到本地的文件</b>(下载页点进来的),走 <c>player.playLocal</c>。
     ///
@@ -321,15 +324,16 @@ public sealed class PlayerPage : UserControl
     public PlayerPage(CoreClient core, string itemId, string title, double resumeSecs,
         bool isSource = false, string mediaSourceId = "",
         CardItem? next = null, int audioIndex = -1, int subIndex = -1, bool isLocal = false,
-        string serverId = "")
+        string serverId = "", SourcePlay? src = null)
     {
+        _src = src;
         _serverId = serverId;
         _isLocal = isLocal;
         _wantAudioIndex = audioIndex;
         _wantSubIndex = subIndex;
         _mediaSourceId = mediaSourceId;
         _core = core;
-        _isSource = isSource;
+        _isSource = isSource || src is not null;
         _title = title;
         _itemId = itemId;
         _next = next;
@@ -537,6 +541,18 @@ public sealed class PlayerPage : UserControl
         // 下一集。 没有下一集就**整个不画**,不摆一个灰着的按钮
         var nextBtn = Glyph(Ico.Next, "下一集(N)");
         nextBtn.Click += (_, _) => GoNext();
+        // 数据源:播放页内切线路(保持集数与进度,D54 D464)与换源(D232)
+        var lineBtn = Osd("线路", "换线路(保持集数和进度)");
+        lineBtn.IsVisible = _src is not null;
+        lineBtn.Click += (_, _) => ShowSourceLines(lineBtn);
+        // Emby 的片也能换到数据源看(D525)
+        var switchBtn = Osd("换源", "去别的源找这一集");
+        switchBtn.IsVisible = _src is not null || (!NoEmby && !_isLocal && !_isSource && _itemId != "");
+        switchBtn.Click += (_, _) =>
+        {
+            if (_src is { } sp) SwitchSource.Show(this, _core, sp.ServerId, sp.Item, sp.LineId, SrcIndex(), _position);
+            else _ = SwitchSource.ShowForEmby(this, _core, _itemId, _position);
+        };
 
         /* 选集(用户 2026-09-05:「播放页没有选集按钮,不方便切换」)。
            光有「下一集」不够 —— 追剧时常见的动作是**跳回去看某一集**,
@@ -681,7 +697,7 @@ public sealed class PlayerPage : UserControl
             VerticalAlignment = VerticalAlignment.Center,
             Children = { _pause, back10, fwd10 },
         };
-        if (_next is not null) left.Children.Add(nextBtn);
+        if (_next is not null || SrcNext() is not null) left.Children.Add(nextBtn);
         left.Children.Add(_volBox);
         left.Children.Add(clock);
         // 右下角:选集 / 倍速 / 音轨 / 字幕 / 全屏(用户 2026-09-06 点名的那一组)
@@ -690,7 +706,7 @@ public sealed class PlayerPage : UserControl
             Orientation = Orientation.Horizontal, Spacing = 6,
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center,
-            Children = { _pickEp, _speed, _audioBtn, subsBtn, dmBtn, full },
+            Children = { lineBtn, switchBtn, _pickEp, _speed, _audioBtn, subsBtn, dmBtn, full },
         };
         var controls = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
         Grid.SetColumn(left, 0);
@@ -1171,6 +1187,13 @@ public sealed class PlayerPage : UserControl
 
     private void GoNext()
     {
+        if (_src is not null && SrcNext() is { } n)
+        {
+            Stop();
+            _leaving = true;
+            Nav.Replace(new PlayerPage(_core, n.EpisodeId, $"{Mi.Str(n.Item, "title")} {n.Label}".Trim(), 0, src: n));
+            return;
+        }
         if (_next is null) return;
         Stop();
         _leaving = true;
@@ -1737,7 +1760,15 @@ public sealed class PlayerPage : UserControl
         resumeSecs = Math.Max(resumeSecs, 0);
         try
         {
-            if (_isLocal)
+            if (_src is { } sp)
+            {
+                // resume 给 0 = 让核心层按观看记录定;换源 / 切线路带过来的进度才显式送
+                if (resumeSecs > 0)
+                    await _core.SourcePlayItem(new { server_id = sp.ServerId, item = sp.Item, line_id = sp.LineId, episode_id = sp.EpisodeId, resume_secs = resumeSecs });
+                else
+                    await _core.SourcePlayItem(new { server_id = sp.ServerId, item = sp.Item, line_id = sp.LineId, episode_id = sp.EpisodeId });
+            }
+            else if (_isLocal)
             {
                 /* 本地文件那条路:核心层自己按下载任务 id 找到落盘路径,
                    还会再 stat 一次确认文件真的在(用户可能手动删了 / 挪走了)。
@@ -1766,7 +1797,71 @@ public sealed class PlayerPage : UserControl
                 });
             }
         }
-        catch (Exception e) { _msg.Text = $"起播失败:{LibraryPage.Advice(e)}"; }
+        catch (Exception e)
+        {
+            _msg.Text = $"起播失败:{LibraryPage.Advice(e)}";
+            // 数据源播放失败**不自动切线路**,直接弹换源列表让用户选(D263)
+            if (_src is { } sp) Dispatcher.UIThread.Post(() => SwitchSource.Show(this, _core, sp.ServerId, sp.Item, sp.LineId, SrcIndex(), 0));
+        }
+    }
+
+    // ---------------------------------------------------------------- 数据源:线路与下一集
+
+    private List<JsonElement> SrcEpisodes(string lineId)
+    {
+        if (_src is null) return [];
+        foreach (var l in Mi.Arr(_src.Item, "lines"))
+            if (Mi.Str(l, "id") == lineId) return Mi.Arr(l, "episodes");
+        return [];
+    }
+
+    /// <summary>当前这一集的序号(换源 / 切线路按集序号对应,D464)。</summary>
+    private int SrcIndex()
+    {
+        if (_src is null) return 0;
+        var eps = SrcEpisodes(_src.LineId);
+        var i = eps.FindIndex(e => Mi.Str(e, "id") == _src.EpisodeId);
+        if (i < 0) return 0;
+        return Mi.Num(eps[i], "index") is var n && n > 0 ? (int)n : i + 1;
+    }
+
+    /// <summary>下一集:同线路、按选集格的正序(D460),最后一集就没有。</summary>
+    private SourcePlay? SrcNext()
+    {
+        if (_src is null) return null;
+        var eps = SrcEpisodes(_src.LineId);
+        var i = eps.FindIndex(e => Mi.Str(e, "id") == _src.EpisodeId);
+        if (i < 0 || i + 1 >= eps.Count) return null;
+        var n = eps[i + 1];
+        return _src with { EpisodeId = Mi.Str(n, "id"), Label = Mi.Str(n, "label") is { Length: > 0 } lb ? lb : Mi.Str(n, "name") };
+    }
+
+    private void ShowSourceLines(Button anchor)
+    {
+        if (_src is not { } sp) return;
+        var idx = SrcIndex();
+        var items = new List<(string Label, Action? Go)>();
+        var lines = Mi.Arr(sp.Item, "lines");
+        var focus = -1;
+        foreach (var l in lines)
+        {
+            var id = Mi.Str(l, "id");
+            var name = Mi.Str(l, "name");
+            if (id == sp.LineId) focus = items.Count;
+            items.Add((name, () =>
+            {
+                if (id == sp.LineId) return;
+                var eps = Mi.Arr(l, "episodes");
+                var hit = eps.FindIndex(e => (Mi.Num(e, "index") is var n && n > 0 ? (int)n : eps.IndexOf(e) + 1) == idx);
+                if (hit < 0) { Toast.Show($"{name} 没有第 {idx} 集"); return; } // 留在原线路(D464)
+                var e = eps[hit];
+                var next = sp with { LineId = id, EpisodeId = Mi.Str(e, "id") };
+                Stop();
+                _leaving = true;
+                Nav.Replace(new PlayerPage(_core, next.EpisodeId, _title, _position, src: next));
+            }));
+        }
+        DetailPage.Flyout(anchor, items, focus);
     }
 
     // ---------------------------------------------------------------- 交互

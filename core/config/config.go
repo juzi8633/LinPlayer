@@ -52,6 +52,9 @@ type AppConfig struct {
 	Prefs          json.RawMessage `json:"prefs,omitempty"`
 	DanmakuSources json.RawMessage `json:"danmaku_sources,omitempty"`
 	Proxy          json.RawMessage `json:"proxy,omitempty"`
+	// SyncTrakt / SyncBangumi 宿主里连接的 Trakt / Bangumi 账号(追剧日历用;同步插件经宿主借用,D365)。
+	SyncTrakt   json.RawMessage `json:"sync_trakt,omitempty"`
+	SyncBangumi json.RawMessage `json:"sync_bangumi,omitempty"`
 
 	// 未知字段的兜底。加载时把整份 JSON 也存一份,保存时合并回去 ——
 	// 这样即使上面漏了某个键,也不会在保存时把它抹掉。

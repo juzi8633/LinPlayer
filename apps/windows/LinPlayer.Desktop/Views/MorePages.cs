@@ -59,7 +59,7 @@ public sealed class SearchPage : PageBase
            做成开关不是按钮:它要能关回来 —— 只搜当前这台仍然是默认动作。 */
         var everywhere = new CheckBox
         {
-            Content = "聚合搜索(所有服务器)", IsChecked = false,
+            Content = "聚合搜索(所有来源,回车才搜)", IsChecked = false,
             VerticalAlignment = VerticalAlignment.Center,
         };
         var status = Dim("");
@@ -68,9 +68,13 @@ public sealed class SearchPage : PageBase
            写「暂无数据」等于白占一屏,而「上次搜的那个」正是这里最可能的下一步。
            历史落在核心层偏好里(去重/置顶/封顶也在那儿),不在界面自己攒一份 ——
            三端各攒一份的话「同一个词搜两次会不会出两条」迟早说不一样的话。 */
-        void ShowEmpty(List<string> hist) => host.Content = Empty(hist,
-            q => { box.Text = q; box.CaretIndex = q.Length; },
-            () => _ = ClearHistory(core, ShowEmpty));
+        void ShowEmpty(List<string> hist)
+        {
+            // 历史是异步拉的:回来时已经在搜了,就别拿空态盖掉结果
+            if ((box.Text ?? "").Trim() != "") return;
+            host.Content = Empty(hist, q => { box.Text = q; box.CaretIndex = q.Length; },
+                () => _ = ClearHistory(core, ShowEmpty));
+        }
         ShowEmpty([]);
         _ = LoadHistory(core, ShowEmpty);
 
@@ -116,23 +120,25 @@ public sealed class SearchPage : PageBase
                      但**别给它 include_episodes**。 */
                 if (all)
                 {
-                    var res = await core.EmbyAggregateSearch(new { query = q });
-                    if (mine != _seq) return;
-                    var groups = res.ValueKind == JsonValueKind.Array
-                        ? res.EnumerateArray().ToList() : [];
-                    var total = groups.Sum(g => g.TryGetProperty("items", out var it)
-                        && it.ValueKind == JsonValueKind.Array ? it.GetArrayLength() : 0);
-                    /* 没搜成的服(带 error)要单独说。以前它们被当成「0 条」跳过,
-                       全部没搜成时显示「没有搜到」—— 把「没搜成」说成了「没有」。 */
-                    var failed = groups.Where(g => g.TryGetProperty("error", out var e)
-                        && e.ValueKind == JsonValueKind.String).ToList();
+                    // 数据源一起搜(D258 D262):按源分行、谁先回谁先显示;只含「允许聚合」的源
+                    var rowsHost = new StackPanel { Spacing = 18 };
+                    host.Content = rowsHost;
+                    int hit = 0, total = 0, failed = 0;
+                    void Add(JsonElement g)
+                    {
+                        if (mine != _seq) return;
+                        if (AggRow(core, g) is not { } row) return;
+                        if (g.TryGetProperty("error", out var ev) && ev.ValueKind == JsonValueKind.String) failed++;
+                        else { hit++; total += row.Count; }
+                        rowsHost.Children.Add(row.View);
+                        status.Text = $"{hit} 个来源 · 共 {total} 条" + (failed == 0 ? "" : $" · {failed} 个没搜成");
+                    }
+                    await core.CallStreamAsync("source.aggregateSearch", new { query = q },
+                        g => { var c = g.Clone(); Dispatcher.UIThread.Post(() => Add(c)); });
                     Dispatcher.UIThread.Post(() =>
                     {
                         if (mine != _seq) return;
-                        var hit = groups.Count - failed.Count;
-                        status.Text = (total == 0 ? "" : $"{hit} 台服务器 · 共 {total} 条")
-                            + (failed.Count == 0 ? "" : $"{(total == 0 ? "" : " · ")}{failed.Count} 台没搜成");
-                        host.Content = total == 0 && failed.Count == 0 ? NoHit(q, true) : Groups(core, groups);
+                        if (hit == 0 && failed == 0) { status.Text = ""; host.Content = NoHit(q, true); }
                     });
                     _ = Push(core, q);
                     return;
@@ -168,43 +174,6 @@ public sealed class SearchPage : PageBase
             }
         }
 
-        /* 聚合结果<b>按服务器分组</b>,不是拌成一锅。
-           拌起来的话同一部片会出现三张一模一样的卡,而用户点哪张、
-           实际会从哪台服务器起播,界面上一个字都没说。 */
-        Control Groups(CoreClient c, List<JsonElement> groups)
-        {
-            var host2 = new StackPanel { Spacing = 18 };
-            foreach (var g in groups)
-            {
-                var srv = g.TryGetProperty("server_id", out var sv) ? sv.GetString() ?? "" : "";
-                var nm = g.TryGetProperty("server_name", out var nv) ? nv.GetString() ?? "" : "";
-                var items = g.TryGetProperty("items", out var iv) && iv.ValueKind == JsonValueKind.Array
-                    ? iv.EnumerateArray().Select(CardItem.From).ToList() : [];
-                if (g.TryGetProperty("error", out var ev) && ev.ValueKind == JsonValueKind.String)
-                {
-                    host2.Children.Add(new StackPanel
-                    {
-                        Spacing = 6,
-                        Children = { H2($"{(nm == "" ? srv : nm)} · 没搜成"), Dim(ev.GetString() ?? "") },
-                    });
-                    continue;
-                }
-                if (items.Count == 0) continue;
-                host2.Children.Add(new StackPanel
-                {
-                    Spacing = 10,
-                    Children =
-                    {
-                        H2($"{(nm == "" ? srv : nm)} · {items.Count} 条"),
-                        /* 点开的详情页要用**那一台**的地址,不是当前活跃的那台 ——
-                           拿当前会话去打另一台的 item_id,拿到的是 404 或者一条别的片。 */
-                        LibraryPage.Grid(c, srv, items, false, LibraryPage.OpenDetail(c, srv)),
-                    },
-                });
-            }
-            return host2;
-        }
-
         /* 停手就搜。
             每敲一下就撤销上一次的等待 —— 不撤的话敲 5 个字会排 5 次搜索,
             前 4 次全是白发的请求,而且它们乱序回来还会盖掉最后一次的结果。 */
@@ -217,7 +186,7 @@ public sealed class SearchPage : PageBase
                 .ContinueWith(t =>
                 {
                     if (t.IsCanceled) return;
-                    Dispatcher.UIThread.Post(async () => await Run());
+                    Dispatcher.UIThread.Post(async () => { if (everywhere.IsChecked != true) await Run(); });
                 }, TaskScheduler.Default);
         };
 
@@ -228,6 +197,8 @@ public sealed class SearchPage : PageBase
             _typing?.Cancel();
             await Run();
         };
+        // 当前是插件数据源:没有 Emby 会话,只能聚合搜
+        if (Nav.Session is null) { everywhere.IsChecked = true; everywhere.IsEnabled = false; }
         // 换了「聚合搜索」要重搜 —— 不重搜的话开关看着像没生效。
         everywhere.IsCheckedChanged += async (_, _) => { if ((box.Text ?? "") != "") await Run(); };
 
@@ -235,6 +206,7 @@ public sealed class SearchPage : PageBase
         // 是对着一个还没上屏的控件调,静默无效。
         AttachedToVisualTree += (_, _) => Dispatcher.UIThread.Post(() => box.Focus());
         _box = box;
+        _run = Run;
     }
 
     /// <summary>
@@ -244,7 +216,36 @@ public sealed class SearchPage : PageBase
     /// 「边打字边搜、乱序回来的结果要丢掉」正是这一页最容易写错的地方。
     /// 走真实入口才验得到。</para>
     /// </summary>
-    internal void SelfCheckQuery(string q) => Dispatcher.UIThread.Post(() => _box.Text = q);
+    /// <summary>聚合搜索的一行(一个来源)。没结果也没报错的来源整行不出。</summary>
+    private static (Control View, int Count)? AggRow(CoreClient core, JsonElement g)
+    {
+        var srv = g.TryGetProperty("server_id", out var sv) ? sv.GetString() ?? "" : "";
+        var nm = g.TryGetProperty("server_name", out var nv) && nv.GetString() is { Length: > 0 } n ? n : srv;
+        if (g.TryGetProperty("error", out var ev) && ev.ValueKind == JsonValueKind.String)
+            return (new StackPanel { Spacing = 6, Children = { H2($"{nm} · 没搜成"), Dim(ev.GetString() ?? "") } }, 0);
+        if (g.TryGetProperty("kind", out var kv) && kv.GetString() == "plugin")
+        {
+            var its = g.TryGetProperty("items", out var iv) && iv.ValueKind == JsonValueKind.Array ? iv.EnumerateArray().ToList() : [];
+            if (its.Count == 0) return null;
+            var wrap = new WrapPanel { ItemSpacing = 18, LineSpacing = 26 };
+            foreach (var it in its) wrap.Children.Add(new SourceCard(core, it, SourceNav.OpenDetail(core, srv)));
+            return (new StackPanel { Spacing = 10, Children = { H2($"{nm} · {its.Count} 条"), wrap } }, its.Count);
+        }
+        var items = g.TryGetProperty("emby_items", out var ei) && ei.ValueKind == JsonValueKind.Array
+            ? ei.EnumerateArray().Select(CardItem.From).ToList() : [];
+        if (items.Count == 0) return null;
+        // 点开的详情页要用**那一台**的地址,不是当前活跃的那台
+        return (new StackPanel { Spacing = 10, Children = { H2($"{nm} · {items.Count} 条"), LibraryPage.Grid(core, srv, items, false, LibraryPage.OpenDetail(core, srv)) } }, items.Count);
+    }
+
+    internal void SelfCheckQuery(string q) => Dispatcher.UIThread.Post(() =>
+    {
+        _box.Text = q;
+        // 聚合搜索只在回车时发,自检替用户按这一下
+        if (Nav.Session is null) _ = _run!();
+    });
+
+    private Func<Task>? _run;
 
     /// <summary>
     /// 还没搜之前的那一屏:提示 + <b>搜索历史片</b>(草稿 09 页第 34 条)。
@@ -271,8 +272,9 @@ public sealed class SearchPage : PageBase
             col.Children.Add(row);
         }
         col.Children.Add(Frame(
-            "🔍", "搜这台服务器上的片名、剧名、演员",
-            "输入后停一下就会自动搜,回车也行。\n结果里默认只有电影和剧集 —— 要跨服务器找,把上面的「聚合搜索」勾上。"));
+            "🔍", Nav.Session is null ? "在所有来源里搜片名、剧名" : "搜这台服务器上的片名、剧名、演员",
+            Nav.Session is null ? "按回车或点「搜索」才发出去:每个来源各占一行,谁先回来谁先显示。"
+                : "输入后停一下就会自动搜,回车也行。\n结果里默认只有电影和剧集 —— 要跨服务器找,把上面的「聚合搜索」勾上。"));
         return col;
     }
 
@@ -388,7 +390,15 @@ public sealed class FavoritesPage : PageBase
         picks.Children.Add(_view);
         rows.Children.Add(picks);
         rows.Children.Add(busy);
-        Content = Scrolled(rows);
+        // 数据源收藏排在 Emby 收藏下面(D326),不跟排序档位走:它没有这些排序维度
+        var srcFav = new ContentControl();
+        Content = Scrolled(new StackPanel { Spacing = 26, Children = { rows, srcFav } });
+        _ = LoadSources();
+        async Task LoadSources()
+        {
+            try { if (await SourceNav.FavoritesSection(core) is { } c) srcFav.Content = new StackPanel { Spacing = 14, Children = { H1("数据源收藏"), c } }; }
+            catch (Exception e) { srcFav.Content = Dim("数据源收藏读不到:" + LibraryPage.Advice(e)); }
+        }
 
         // 档位换了整页重画:收藏是一次全量拉回来的(没有分页),重排就是重来一遍
         void Load()
@@ -588,12 +598,14 @@ public sealed class SettingsPage : PageBase
                     Add(gGeneral, Shortcut(core));
                     // 快捷键不挂 Features 开关:它是操作方式,不是一块可下线的功能
                     Add(gGeneral, SettingsKeys.Section(core));
+                    Add(gGeneral, Jump("插件", "安装、启停、市场、仓库订阅。", "打开插件页", () => new PluginPage(core)));
 
                     // ── 播放:从选轨到 mpv,由浅入深 ──
                     Add(gPlay, TrackPrefs(core, p));
                     Add(gPlay, Playback(core, p));
                     // 补帧组件排在「播放」后面:N 卡包要装五六分钟,得在开片前就找得到(用户 2026-09-18)
-                    Add(gPlay, SettingsSections.Interp(core));
+                    // 管理挪到扩展组件页(SPEC 18.5),这里留入口
+                    Add(gPlay, Jump("补帧组件", "RIFE / DRBA 补帧要先下组件,在扩展组件页装。", "去扩展组件页", () => new ExtensionsPage(core)));
                     Add(gPlay, SettingsSections.SkipSegments(core, p));
                     // mpv 配置排这一节最后:它是同一件事的「高级」那一档
                     Add(gPlay, SettingsSections.MpvConf(core));
@@ -809,6 +821,13 @@ public sealed class SettingsPage : PageBase
     /// <para>非 Windows 上<b>整块不画</b> —— 那儿没有 .lnk 这回事,
     /// 摆一个必定失败的按钮比不摆更糟。</para>
     /// </summary>
+    private static Control Jump(string title, string desc, string action, Func<Control> page)
+    {
+        var b = new Button { Classes = { "ghost" }, Content = action };
+        b.Click += (_, _) => Nav.Push(page(), page);
+        return Card(title, new StackPanel { Spacing = 10, Children = { Dim(desc), b } });
+    }
+
     private static Control Shortcut(CoreClient core)
     {
         var state = Dim("检查中…");

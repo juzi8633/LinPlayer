@@ -98,6 +98,8 @@ public sealed class CoreClient : ILinPlayerCommands, IDisposable
 {
     private long _seq;
     private readonly ConcurrentDictionary<long, TaskCompletionSource<JsonElement>> _pending = new();
+    // 流式命令的中间结果回调(聚合搜索按源逐行、换源逐源);在事件线程上触发
+    private readonly ConcurrentDictionary<long, Action<JsonElement>> _partials = new();
     private readonly Thread _pump;
     private volatile bool _stop;
 
@@ -131,9 +133,11 @@ public sealed class CoreClient : ILinPlayerCommands, IDisposable
     }
 
     /// <summary>发一条命令,等它的 result 事件。</summary>
-    public Task<JsonElement> CallAsync(string command, object? args, CancellationToken ct = default)
+    public Task<JsonElement> CallAsync(string command, object? args, CancellationToken ct = default) =>
+        Send(Interlocked.Increment(ref _seq), command, args, ct);
+
+    private Task<JsonElement> Send(long seq, string command, object? args, CancellationToken ct)
     {
-        var seq = Interlocked.Increment(ref _seq);
         var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[seq] = tcs;
 
@@ -149,6 +153,18 @@ public sealed class CoreClient : ILinPlayerCommands, IDisposable
         if (ct.CanBeCanceled)
             ct.Register(() => { Native.lp_cancel(seq); _pending.TryRemove(seq, out _); tcs.TrySetCanceled(); });
         return Perf.On ? Timed(command, tcs.Task) : tcs.Task;
+    }
+
+    /// <summary>
+    /// 发一条流式命令:每条中间结果(<c>{t:"partial"}</c>)回调一次 <paramref name="onPartial"/>,
+    /// 最后的 result 照常作为返回值。回调在事件线程上,改界面要 Post。
+    /// </summary>
+    public async Task<JsonElement> CallStreamAsync(string command, object? args, Action<JsonElement> onPartial, CancellationToken ct = default)
+    {
+        var seq = Interlocked.Increment(ref _seq);
+        _partials[seq] = onPartial; // 先挂回调再发命令:第一条 partial 可能比返回还早到
+        try { return await Send(seq, command, args, ct); }
+        finally { _partials.TryRemove(seq, out _); }
     }
 
     /// <summary>LP_PERF=1 时给每条命令记一行耗时。关着的时候这个方法一次都不会被调到。</summary>
@@ -228,6 +244,13 @@ public sealed class CoreClient : ILinPlayerCommands, IDisposable
                     if (name == "log" && (Str(data, "msg") ?? "").StartsWith("补帧"))
                         LinPlayer.Desktop.Core.Log.I("补帧", Str(data, "msg") ?? "");
                     OnEvent?.Invoke(name, data);
+                    return;
+                }
+            case "partial":
+                {
+                    var seq = root.GetProperty("seq").GetInt64();
+                    if (_partials.TryGetValue(seq, out var cb) && root.TryGetProperty("data", out var d))
+                        cb(d.Clone());
                     return;
                 }
             case "eof":

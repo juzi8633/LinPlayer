@@ -2,6 +2,7 @@ package localserve
 
 import (
 	"net/http"
+	"net/url"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -234,11 +235,25 @@ func TestCacheKeyIncludesSize(t *testing.T) {
 		hits++
 		_, _ = w.Write(pngBytes)
 	})
-	s.Allow(up.URL, nil)
+	s.ReplaceAllowlist(func(add func(string, http.Header)) { add(up.URL, nil) }) // 账号表那条路 = Emby 服务器
 	get(t, s, "/img?src="+up.URL+"/a.jpg&h=480", true)
 	get(t, s, "/img?src="+up.URL+"/a.jpg&h=1080", true)
 	if hits != 2 {
 		t.Fatalf("不同尺寸是两份缓存,上游该被打 2 次,实得 %d", hits)
+	}
+}
+
+// 数据源 / 排行榜的图床不是 Emby:query 原样回源,拼 maxHeight 会弄坏签名地址。
+func TestRawOriginKeepsQuery(t *testing.T) {
+	var got string
+	s, up := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.RawQuery
+		_, _ = w.Write(pngBytes)
+	})
+	s.Allow(up.URL, nil)
+	get(t, s, "/img?src="+url.QueryEscape(up.URL+"/a.jpg?sign=x1")+"&h=480", true)
+	if got != "sign=x1" {
+		t.Fatalf("第三方图床的地址要原样回源,上游收到 query=%q", got)
 	}
 }
 

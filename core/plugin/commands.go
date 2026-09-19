@@ -168,6 +168,22 @@ func RegisterCommands() {
 		rt.SetShellCaps(rt.ShellCaps{WebView: b(a, "webview"), SpiderJar: b(a, "spider_jar"), SpiderPy: b(a, "spider_py")})
 		return nil, nil
 	})
+	// 整页 WebView 过验证后,Cookie 进该源的罐子(罐子名 = 数据源开放键),插件后续请求都带上(D60 D323)
+	reg("plugin.setCookies", func(ctx context.Context, a map[string]any) (any, error) {
+		l, err := h().get(s(a, "plugin_id"), "lazy")
+		if err != nil {
+			return nil, err
+		}
+		cs := map[string]string{}
+		if m, ok := a["cookies"].(map[string]any); ok {
+			for k, v := range m {
+				if str, ok := v.(string); ok {
+					cs[k] = str
+				}
+			}
+		}
+		return nil, l.rt.SetCookies(s(a, "jar"), s(a, "url"), cs)
+	})
 	reg("plugin.shellResult", func(ctx context.Context, a map[string]any) (any, error) {
 		id, _ := a["id"].(float64)
 		data, _ := json.Marshal(a["data"])

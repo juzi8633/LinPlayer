@@ -119,6 +119,9 @@ jobs:
 
       - name: Core gate (go vet / test / FFI 契约 / 差分对账)
         shell: bash
+        # TVBox 全链路测试要用插件内置的 drpy 引擎:不入库,check-core 里按 sha256 现拉(上游地址放 Secret)
+        env:
+          LP_DRPY_BASE: ${{ secrets.LP_DRPY_BASE }}
         run: bash scripts/check-core.sh
 
       - name: Bindings gate (COMMANDS.md ↔ Go ↔ C# ↔ Kotlin)
@@ -140,6 +143,10 @@ jobs:
           LP_SYNC_PROXY_KEY: ${{ secrets.LP_SYNC_PROXY_KEY }}
           LP_ICON_LIBRARY_SOURCES: ${{ secrets.LP_ICON_LIBRARY_SOURCES }}
           LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          LP_BANGUMI_REDIRECT_URI: ${{ secrets.LP_BANGUMI_REDIRECT_URI }}
+          LP_AFDIAN_SPONSOR_URL: ${{ secrets.LP_AFDIAN_SPONSOR_URL }}
+          LP_PLUGIN_MARKET_URL: ${{ secrets.LP_PLUGIN_MARKET_URL }}
           # 崩溃上报地址(scripts/sentry-dsn.sh)
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: bash scripts/pack-win.sh "$GITHUB_WORKSPACE/release"
@@ -200,6 +207,10 @@ jobs:
           LP_SYNC_PROXY_KEY: ${{ secrets.LP_SYNC_PROXY_KEY }}
           LP_ICON_LIBRARY_SOURCES: ${{ secrets.LP_ICON_LIBRARY_SOURCES }}
           LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          LP_BANGUMI_REDIRECT_URI: ${{ secrets.LP_BANGUMI_REDIRECT_URI }}
+          LP_AFDIAN_SPONSOR_URL: ${{ secrets.LP_AFDIAN_SPONSOR_URL }}
+          LP_PLUGIN_MARKET_URL: ${{ secrets.LP_PLUGIN_MARKET_URL }}
           # 崩溃上报地址(scripts/sentry-dsn.sh)
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: bash scripts/pack-linux.sh "$GITHUB_WORKSPACE/release"
@@ -328,6 +339,10 @@ jobs:
           LP_SYNC_PROXY_KEY: ${{ secrets.LP_SYNC_PROXY_KEY }}
           LP_ICON_LIBRARY_SOURCES: ${{ secrets.LP_ICON_LIBRARY_SOURCES }}
           LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          LP_BANGUMI_REDIRECT_URI: ${{ secrets.LP_BANGUMI_REDIRECT_URI }}
+          LP_AFDIAN_SPONSOR_URL: ${{ secrets.LP_AFDIAN_SPONSOR_URL }}
+          LP_PLUGIN_MARKET_URL: ${{ secrets.LP_PLUGIN_MARKET_URL }}
         run: bash scripts/build-core-android.sh arm64-v8a
 
       # ★ 命令名有 check-bindings 的四方比对守着,**参数名没有任何东西守**。
@@ -386,6 +401,10 @@ jobs:
           LP_SYNC_PROXY_KEY: ${{ secrets.LP_SYNC_PROXY_KEY }}
           LP_ICON_LIBRARY_SOURCES: ${{ secrets.LP_ICON_LIBRARY_SOURCES }}
           LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          LP_BANGUMI_REDIRECT_URI: ${{ secrets.LP_BANGUMI_REDIRECT_URI }}
+          LP_AFDIAN_SPONSOR_URL: ${{ secrets.LP_AFDIAN_SPONSOR_URL }}
+          LP_PLUGIN_MARKET_URL: ${{ secrets.LP_PLUGIN_MARKET_URL }}
           # 崩溃上报地址(scripts/sentry-dsn.sh)
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: bash scripts/pack-android.sh arm64-v8a
@@ -401,6 +420,10 @@ jobs:
           LP_SYNC_PROXY_KEY: ${{ secrets.LP_SYNC_PROXY_KEY }}
           LP_ICON_LIBRARY_SOURCES: ${{ secrets.LP_ICON_LIBRARY_SOURCES }}
           LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          LP_BANGUMI_REDIRECT_URI: ${{ secrets.LP_BANGUMI_REDIRECT_URI }}
+          LP_AFDIAN_SPONSOR_URL: ${{ secrets.LP_AFDIAN_SPONSOR_URL }}
+          LP_PLUGIN_MARKET_URL: ${{ secrets.LP_PLUGIN_MARKET_URL }}
           # 崩溃上报地址(scripts/sentry-dsn.sh)
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: bash scripts/pack-android.sh tv

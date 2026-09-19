@@ -273,6 +273,7 @@ type Info struct {
 	Icon         string   `json:"icon,omitempty"`
 	Issues       string   `json:"issues,omitempty"`
 	LAN          bool     `json:"lan"`
+	Components   []string `json:"components"` // 需要的扩展组件(扩展组件页「谁在用」)
 }
 
 // List 已装插件,有问题的在前(已自动禁用 / 有更新 / 待重启),其余按名称(SPEC 14.4)。
@@ -293,6 +294,7 @@ func (h *Host) List(updates map[string]string) []Info {
 		if b, err := os.ReadFile(filepath.Join(pkgDir(r.ID, ver), "manifest.json")); err == nil {
 			if m, err := ParseManifest(b); err == nil {
 				in.Name, in.Description, in.Contributes, in.Icon, in.Issues, in.LAN = m.Name, m.Description, m.ContributionList(), m.Icon, m.Issues, m.LAN
+				in.Components = m.Requires.Components
 			}
 		}
 		if in.Name == "" {
@@ -326,7 +328,7 @@ func (h *Host) List(updates map[string]string) []Info {
 		}
 		out = append(out, Info{ID: id, Name: d.m.Name, Version: d.m.Version, Author: strings.SplitN(id, "/", 2)[0],
 			Description: d.m.Description, Source: "dev", Enabled: true, Want: true, Status: "dev", Dev: true,
-			Contributes: d.m.ContributionList(), Loaded: h.loaded[id] != nil})
+			Contributes: d.m.ContributionList(), Components: d.m.Requires.Components, Loaded: h.loaded[id] != nil})
 	}
 	rank := map[string]int{"autoDisabled": 0, "update": 1, "pendingRestart": 2, "dev": 3, "ok": 4}
 	sort.SliceStable(out, func(i, j int) bool {

@@ -25,7 +25,9 @@ import (
 	"linplayer/core/player"
 	"linplayer/core/plugin"
 	"linplayer/core/prefs"
+	"linplayer/core/ranking"
 	"linplayer/core/sourcecmd"
+	lpsync "linplayer/core/sync"
 	"linplayer/core/system"
 )
 
@@ -41,8 +43,10 @@ func RegisterAll(version string) {
 	prefs.RegisterCommands(version)
 	history.RegisterCommands()
 	aggregate.RegisterCommands(version)
+	ranking.RegisterCommands()
 	sourcecmd.RegisterCommands()
 	download.RegisterCommands()
+	lpsync.RegisterCommands(version)
 	danmaku.RegisterCommands()
 	companion.RegisterCommands()
 	plugin.RegisterCommands()

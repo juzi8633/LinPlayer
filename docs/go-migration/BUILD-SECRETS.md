@@ -13,7 +13,7 @@
 
 ## 全表
 
-> ★★ **发行版这六个全都要配。**「选配」这个说法在播放器上不成立 ——
+> ★★ **发行版这十个全都要配。**「选配」这个说法在播放器上不成立 ——
 > 用户不会觉得「这个版本没带弹幕凭据所以搜不到」是一种配置,他只会觉得弹幕坏了。
 > 下面那列写的是**漏配之后用户实际看到什么**,不是「可以不要」。
 >
@@ -23,7 +23,11 @@
 | 环境变量 | 管什么 | 漏配之后用户看到什么 |
 |---|---|---|
 | `DANDANPLAY_APP_ID` | 弹幕(弹弹Play) | 弹幕搜不到 |
-| `DANDANPLAY_APP_SECRET` | 同上 | 同上 |
+| `DANDANPLAY_APP_SECRET` | 同上(也管排行榜的弹弹动漫榜) | 同上;排行榜没有动漫榜 |
+| `TMDB_API_KEY` | 排行榜的影视榜(TMDB) | 排行榜只剩动漫榜和 Bangumi 榜 |
+| `LP_BANGUMI_REDIRECT_URI` | 追剧日历的 Bangumi 授权回调页(我们的中转) | Bangumi 只能粘贴 token 登录 |
+| `LP_AFDIAN_SPONSOR_URL` | 付费追剧日历的赞助入口 | 追剧日历没有「去赞助」入口;**填错不报错,收益直接归零** |
+| `LP_PLUGIN_MARKET_URL` | 官方插件市场 `index.json` 地址 | 插件页的市场里没有官方市场,只有用户自己订阅的仓库 |
 | `LP_SYNC_PROXY_BASE` | 自建代理(`oauth-proxy/`)**地址**,**要带 `/api` 后缀**;现在只有问题反馈 / 崩溃报告走它 | 「发送反馈」报「这个构建没有配反馈服务」 |
 | `LP_SYNC_PROXY_KEY` | 访问代理的**共享密钥**,= 代理的 `LINPLAYER_PROXY_KEY` | 同上(值填错是另一个现象:全 401) |
 | `LP_ICON_LIBRARY_SOURCES` | 服务器图标库(逗号分隔的多个 registry 地址) | 图标库页只能上传本地图片 |
@@ -33,10 +37,11 @@
 **全部放 Secrets,不放 Variables** —— Variables 在日志里是明文可见的,
 而这批里有几个本身就是密钥。
 
-> 2026-09-19 删掉了三个:`TMDB_API_KEY`(影视排行榜)、`LP_BANGUMI_REDIRECT_URI`(Bangumi 授权回调)、
-> `LP_AFDIAN_SPONSOR_URL`(追剧日历赞助入口)—— 排行榜 / 追剧日历 / Trakt·Bangumi 同步从宿主删除,
-> 以后做成官方插件。GitHub 里那三个 Secret 已无引用,可以删;插件需要时由插件自己的分发链路决定怎么给。
-> `LP_SYNC_PROXY_*` 名字沿用:CI 里的 Secret 就叫这个,改名 = 反馈静默断掉。
+> 2026-09-19 删过 `TMDB_API_KEY` / `LP_BANGUMI_REDIRECT_URI` / `LP_AFDIAN_SPONSOR_URL`;2026-09-20 排行榜与付费追剧日历
+> 改回宿主内置(D361,插件走 CF 中转配额不够),三个原名加回。`LP_SYNC_PROXY_*` 名字沿用:CI 里的 Secret 就叫这个,改名 = 反馈静默断掉。
+>
+> 另有一个**只给门禁用**的:`LP_DRPY_BASE`(TVBox 插件内置 drpy 引擎的上游 raw 地址,`scripts/fetch-drpy.sh` 按 sha256 拉)。
+> 它不进产物,只挂在 Core gate 那一步;漏配的表现是 TVBox 全链路测试红,不是静默。
 
 ★ 图标源和测速地址是 2026-09-01 从黄金实现里挪出来的:Rust 版把四条图标源和测速地址
 **硬编在 `.rs` 里**,那是既有的红线欠账。Go 侧一律注入,并各有一条测试钉住
@@ -134,11 +139,15 @@ LinPlayer 客户端  ───────────────────�
     LP_SYNC_PROXY_KEY: ${{ secrets.LP_SYNC_PROXY_KEY }}
     LP_ICON_LIBRARY_SOURCES: ${{ secrets.LP_ICON_LIBRARY_SOURCES }}
     LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
+    TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+    LP_BANGUMI_REDIRECT_URI: ${{ secrets.LP_BANGUMI_REDIRECT_URI }}
+    LP_AFDIAN_SPONSOR_URL: ${{ secrets.LP_AFDIAN_SPONSOR_URL }}
+    LP_PLUGIN_MARKET_URL: ${{ secrets.LP_PLUGIN_MARKET_URL }}
 ```
 
 > ★★ **漏传一个是静默的**:构建照样绿,产物照样能跑,只是那个功能永远不工作。
 > 2026-07-21 就这么栽过一次(安卓 job 从建起来就没传 `DANDANPLAY_*`/`TMDB_API_KEY`)。
-> `scripts/check-workflows.sh` 里有一道闸门,六个一个都不能少(出包步骤另要 `SENTRY_DSN`)。
+> `scripts/check-workflows.sh` 里有一道闸门,十个一个都不能少(出包步骤另要 `SENTRY_DSN`)。
 
 ## 本机怎么试
 

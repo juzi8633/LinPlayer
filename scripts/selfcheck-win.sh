@@ -279,6 +279,19 @@ if [ -n "${LP_PANEL:-}" ]; then
   export LP_SELFCHECK_SRT="$(cd "$ROOT/build" && pwd -W 2>/dev/null || printf '%s' "$ROOT/build")/selfcheck.srt"
 fi
 
+# LP_TVBOX=1:起假资源站(core/cmd/fakevod),开发版加载 plugins/tvbox,订阅它的配置并切到第一个源。
+#   第二个参数照旧是「之后落到哪页」(空 = 数据源首页)。插件数据目录每次清掉,订阅从零走一遍。
+if [ -n "${LP_TVBOX:-}" ]; then
+  echo "== 4.6/5 起假资源站 + 订阅(LP_TVBOX=1)=="
+  powershell -NoProfile -Command "Get-Process fakevod -EA SilentlyContinue | Stop-Process -Force" || true
+  ( cd "$ROOT/core" && go build -o "$ROOT/build/fakevod.exe" ./cmd/fakevod )
+  ( cd "$ROOT" && "$ROOT/build/fakevod.exe" -addr "127.0.0.1:18097" ${LP_TVBOX_MEDIA:+-media "$LP_TVBOX_MEDIA"} > "$ROOT/build/fakevod.log" 2>&1 & )
+  rm -rf "$BIN/userdata/plugins"
+  for _ in $(seq 30); do curl -s -o /dev/null "http://127.0.0.1:18097/config/plain.json" && break; sleep 0.2; done
+  PLUGIN_DIR="$(cd "$ROOT/plugins/tvbox" && pwd -W)"
+  PAGE="tvbox:$PLUGIN_DIR|http://127.0.0.1:18097/config/plain.json|$PAGE"
+fi
+
 echo "== 5/5 起 exe 截图 =="
 # 图标库的聚合源(假服务器兼职图床)。
 # ★ 真实构建里这个是 -ldflags 注入的,源码里没有 —— 自检走环境变量那条覆盖。
@@ -305,6 +318,7 @@ powershell -NoProfile -Command "
   \$p = Get-Process LinPlayer -EA SilentlyContinue
   if (\$p) { \$null = \$p.CloseMainWindow(); if (-not \$p.WaitForExit(8000)) { \$p.Kill(); Write-Output '!! 8 秒没退干净,只能 kill' } }
 " || true
+[ -n "${LP_TVBOX:-}" ] && { powershell -NoProfile -Command "Get-Process fakevod -EA SilentlyContinue | Stop-Process -Force" || true; }
 
 # ☠☠ **播放上报三件套**只在服务器那边看得见。
 #   缺哪一件都是「看一半退出续播不落地」,而客户端一切正常:

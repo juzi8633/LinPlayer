@@ -336,6 +336,11 @@ func (c *Client) SeasonEpisodes(ctx context.Context, s *Session, parentID string
 	return c.fetchPage(ctx, s, u)
 }
 
+// AllEpisodes 同 episodes,给追剧日历对「这一集入库没有」用。
+func (c *Client) AllEpisodes(ctx context.Context, s *Session, seriesID string) ([]Item, error) {
+	return c.episodes(ctx, s, seriesID)
+}
+
 // episodes 全量拉某剧的分集(跨季按季号+集号排序)。带 MediaSources。
 func (c *Client) episodes(ctx context.Context, s *Session, seriesID string) ([]Item, error) {
 	base := fmt.Sprintf("%s/Users/%s/Items?ParentId=%s&IncludeItemTypes=Episode&Recursive=true"+

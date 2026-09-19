@@ -2044,6 +2044,7 @@ public sealed class DetailPage : PageBase
         var items = new List<(string Label, Action? Go)>();
         var played = Bool(d, "played");
         items.Add((played ? "标记为未看" : "标记为已看", () => _ = MarkPlayed(id, !played)));
+        if (Playable(type) || type == "Series") items.Add(("换源(去数据源找)", () => _ = SwitchSource.ShowForEmby(more, _core, id, Num(d, "resume_secs"))));
         more.Click += (_, _) => Flyout(more, items);
         if (Playable(type)) _ = AddExternalPlayer(items, id, Num(d, "resume_secs"));
         return more;
