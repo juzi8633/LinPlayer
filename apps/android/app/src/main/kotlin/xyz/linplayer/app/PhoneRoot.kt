@@ -131,6 +131,7 @@ private fun MainShell() {
     LaunchedEffect(Unit) {
         val p = MainActivity.SelfCheck.page ?: return@LaunchedEffect
         MainActivity.SelfCheck.page = null
+        if (p.startsWith("tvbox:")) { xyz.linplayer.app.ui.pages.selfCheckTvbox(app, nav, p.removePrefix("tvbox:")); return@LaunchedEffect }
         val parts = p.split(":")
         when (parts[0]) {
             "aggregate" -> nav.navigate(Route.Aggregate)

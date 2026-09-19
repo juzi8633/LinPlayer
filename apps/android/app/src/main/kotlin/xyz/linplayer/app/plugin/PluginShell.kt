@@ -79,6 +79,7 @@ object PluginShell {
             } finally {
                 running.remove(id)
             }
+            if (reply["ok"] != true) Logs.w("plugin", "壳请求 $op 失败:${reply["error"]}")
             runCatching { app.core.callJson("plugin.shellResult", toJsonObject(reply)) }
         }
     }

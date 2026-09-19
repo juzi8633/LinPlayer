@@ -45,6 +45,7 @@ class SpiderService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        SpiderProxy.start()
         val t = HandlerThread("spider-ipc").apply { start() }
         messenger = Messenger(Handler(t.looper) { m ->
             val id = m.data.getLong("id")
@@ -83,9 +84,16 @@ class SpiderService : Service() {
             DexClassLoader(jar.absolutePath, codeCacheDir.absolutePath, null, javaClass.classLoader)
         }
         // jar 自带的 Init 要先调一次(它往里塞 Context、初始化自带的网络库)
-        if (inited.add(jar.absolutePath)) runCatching {
-            loader.loadClass("com.github.catvod.spider.Init").getMethod("init", Context::class.java).invoke(null, applicationContext)
+        if (inited.add(jar.absolutePath)) {
+            runCatching {
+                loader.loadClass("com.github.catvod.spider.Init").getMethod("init", Context::class.java).invoke(null, applicationContext)
+            }
+            // 没占到 9978 时告诉 jar 实际端口(有 port 静态字段的 jar 才认,没有的就只能用 9978)
+            if (SpiderProxy.port != 9978) runCatching {
+                loader.loadClass("com.github.catvod.spider.Proxy").getField("port").setInt(null, SpiderProxy.port)
+            }
         }
+        SpiderProxy.register(loader)
         val cls = "com.github.catvod.spider." + s(req, "api").removePrefix("csp_")
         val sp = loader.loadClass(cls).getDeclaredConstructor().newInstance() as Spider
         sp.init(applicationContext, s(req, "ext"))

@@ -248,6 +248,10 @@ async function engineFor(api: string): Promise<string> {
 }
 
 /** 源的 ext 是远程地址时拉取并缓存,拉不到用上次缓存(D533)。 */
+function rawExt(ext: unknown): string {
+  return typeof ext === 'string' ? ext : ext == null ? '' : JSON.stringify(ext)
+}
+
 export async function extText(ext: unknown): Promise<string> {
   if (typeof ext !== 'string') return ext == null ? '' : JSON.stringify(ext)
   if (!/^https?:/.test(ext)) return ext
@@ -366,7 +370,8 @@ class Spider implements Driver {
       const jar = this.s.site.jar || this.s.spiderJar || ''
       const [url, md5] = jar.split(';md5;')
       p = (async () =>
-        spider.load({ kind: this.kind, url: this.kind === 'py' ? this.s.site.api : url, md5, api: this.s.site.api, ext: await extText(this.s.site.ext), sourceKey: this.s.key }))()
+        // ext 原样交给 spider 的 init(TVBox 同款):是 URL 的话由 spider 自己决定拉不拉,宿主代拉会拉错东西
+        spider.load({ kind: this.kind, url: this.kind === 'py' ? this.s.site.api : url, md5, api: this.s.site.api, ext: rawExt(this.s.site.ext), sourceKey: this.s.key }))()
       spiders.set(this.s.key, p)
       p.catch(() => spiders.delete(this.s.key))
     }

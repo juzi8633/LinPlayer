@@ -109,8 +109,10 @@ for abi in "${ABIS[@]}"; do
     export CC="$TOOLBIN/$TRIPLE$MIN_API-clang"
     export CXX="$TOOLBIN/$TRIPLE$MIN_API-clang++"
     export CGO_CFLAGS="-I$ROOT/third_party/libmpv"
-    # -lavcodec:av_jni_set_java_vm 在 ffmpeg 自己的库里(自编 libmpv 的 ffmpeg 是动态库)
-    export CGO_LDFLAGS="-L$MPVDIR -lavcodec -landroid -llog"
+    # -lavcodec:av_jni_set_java_vm 在 ffmpeg 自己的库里(自编 libmpv 的 ffmpeg 是动态库);
+    # 单体 libmpv(x86_64 模拟器用的那份,ffmpeg 静态链在里面)没有 libavcodec.so,符号由 libmpv 自己导出
+    AVCODEC="-lavcodec"; [ -f "$MPVDIR/libavcodec.so" ] || AVCODEC=""
+    export CGO_LDFLAGS="-L$MPVDIR $AVCODEC -landroid -llog"
     go build -buildmode=c-shared -ldflags "-s -w $SEAL $VER_FLAG" -o "$OUT/liblpcore.so" ./ffi
   )
 

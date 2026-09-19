@@ -440,6 +440,16 @@ UHD(<UHD 求片站>)**测试账号**(用户提供,服主已授权测试,可直�
   插件手里的句柄一直有效。
 - jar 反射调用宿主的 `com.github.catvod.crawler.Spider`、也常直接用宿主的 OkHttp:R8 必须 keep
   `com.github.catvod.**` / `okhttp3.**` / `okio.**`,否则发行包里 jar 加载即 `NoClassDefFoundError`。
+- **明文 HTTP 必须全局放开**(`res/xml/network_security_config.xml`):插件 WebView 和 :spider 里的 jar
+  走的是 Java 层网络,受 NetworkSecurityPolicy 管;TVBox 站点大多是 http。不放开的表现是嗅探页不加载、
+  jar「下载失败」,假站一个请求都收不到。Go 核心层的请求不受这条管,所以以前只放行回环没出过事。
+- **jar 源的 `ext` 原样交给 spider 的 init**,宿主不代拉:真实配置里 jar 的 ext 常是 spider 自己解析的 URL,
+  代拉会把网页当 ext 传进去(实测拉到 404 直接报「站点上没有这个内容」)。drpy 的 ext 才是规则地址要拉。
+- **真机自检**:`bash scripts/selfcheck-android-tvbox.sh`(五个场景:首页 / 直链 / 网页嗅探 / jar / jar 代理)。
+  x86_64 模拟器的 ARM 转译跑我们的 arm64 核心层会 **SIGILL**(berberis `UndefinedInsnThunk`),要编 x86_64 那份;
+  x86_64 用的是单体 libmpv(ffmpeg 静态链在里面),`build-core-android.sh` 在没有 libavcodec.so 时不链 `-lavcodec`。
+  模拟器截图拍不到视频层,起播的判据是假站收到了 m3u8 之后的分片请求。
+  内存紧时模拟器 + Gradle + Go 一起跑会被系统回收,先分步编好再 `LP_SKIP_BUILD=1` 跑场景。
 - 插件用的 WebView 全挂在 MainActivity 顶层一个 FrameLayout 里,平时 `translationX` 平移到屏幕外 ——
   alpha=0 会挡触摸,INVISIBLE 可能暂停渲染;要用户动手时挪回来,同一个 WebView,页面状态不丢。
 

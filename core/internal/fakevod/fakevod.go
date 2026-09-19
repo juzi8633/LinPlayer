@@ -56,6 +56,8 @@ type Server struct {
 	hits     sync.Map     // 路径 → 次数(测试看缓存有没有生效)
 	// EngineJS 配置指定的 drpy 引擎(测试把插件内置那份喂进来,验证「用配置指定的引擎」这条路)
 	EngineJS string
+	// SpiderJar 真机自检用的 TVBox jar(scripts/build-spider-demo.sh 编出来的);空 = /spider.jar 回 404
+	SpiderJar string
 }
 
 // New 造一个假站。mediaDir 为空时媒体地址回 404(门禁不播放,只验到地址)。
@@ -140,6 +142,13 @@ func (s *Server) Handler() http.Handler {
 		fmt.Fprint(w, s.EngineJS)
 	}))
 	mux.HandleFunc("/t4", count(s.t4))
+	mux.HandleFunc("/spider.jar", count(func(w http.ResponseWriter, r *http.Request) {
+		if s.SpiderJar == "" {
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeFile(w, r, s.SpiderJar)
+	}))
 	mux.HandleFunc("/jx/", count(s.parser))
 	mux.HandleFunc("/page/", count(func(w http.ResponseWriter, r *http.Request) {
 		// 官源线路的「网页地址」:本身不是媒体,要走解析;网页里的播放器会去拉 m3u8(网页嗅探抓的就是这一下)
@@ -197,7 +206,7 @@ func (s *Server) Config() string {
 		{"key": "cmsb", "name": "假站B", "type": 1, "api": b + "/b/api.php/provide/vod/", "searchable": 1},
 		{"key": "drpy1", "name": "假站drpy", "type": 3, "api": b + "/libs/drpy2.min.js", "ext": b + "/rules/fake.js", "searchable": 1},
 		{"key": "t4", "name": "假站T4", "type": 4, "api": b + "/t4", "searchable": 0},
-		{"key": "jar1", "name": "jar源", "type": 3, "api": "csp_Demo", "jar": b + "/spider.jar;md5;0123456789abcdef", "searchable": 1},
+		{"key": "jar1", "name": "jar源", "type": 3, "api": "csp_Demo", "jar": b + "/spider.jar;md5;0123456789abcdef", "ext": b, "searchable": 1},
 	}
 	if s.variant.Load() == 0 {
 		sites = append(sites, map[string]any{"key": "cms0", "name": "假站XML", "type": 0, "api": b + "/xml/api.php/provide/vod/", "searchable": 1})

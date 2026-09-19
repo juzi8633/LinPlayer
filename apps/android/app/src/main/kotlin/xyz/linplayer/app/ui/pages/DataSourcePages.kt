@@ -606,3 +606,29 @@ private fun PickDialog(title: String, rows: List<Triple<String, String, String>>
         }
     }
 }
+
+/**
+ * 真机自检直达:`-e lp_page 'tvbox:<插件目录>|<订阅地址>|play:<源名>:<关键词>:<线路>[:<第几集>]'`。
+ * 开发版加载插件 → 订阅 → 全部源加进来 → 切到那个源 → 搜关键词 → 进详情并按线路起第 1 集。
+ */
+internal suspend fun selfCheckTvbox(app: AppState, nav: NavController, arg: String) {
+    val (dir, cfg, then) = (arg.split("|") + listOf("", "", "")).take(3)
+    try {
+        app.call("plugin.devLoad", args("dir" to dir))
+        val r = app.call("source.createSources", j("plugin_id" to "linplayer/tvbox", "type_id" to "subscription", "form" to mapOf("url" to cfg))).obj()
+        val drafts = r?.get("sources").arr().mapNotNull { it.obj() }.filter { it.str("unavailableReason").isNullOrEmpty() }
+        app.call("source.addSources", j("plugin_id" to "linplayer/tvbox", "type_id" to "subscription", "sources" to drafts))
+        android.util.Log.i("LinPlayer", "[自检 tvbox] 加了 ${drafts.size} 个源")
+        val p = then.removePrefix("play:").split(":")
+        val src = drafts.firstOrNull { it.str("name") == p.getOrNull(0) } ?: drafts.first()
+        val key = "plugin:linplayer/tvbox/" + src.str("id")
+        app.call("account.setActiveServer", args("server_id" to key))
+        app.refreshSession()
+        if (!then.startsWith("play:")) return
+        val found = app.call("source.searchItems", args("server_id" to key, "keyword" to (p.getOrNull(1) ?: ""))).obj()?.get("items").arr().firstOrNull().obj()
+        android.util.Log.i("LinPlayer", "[自检 tvbox] 搜到 ${found.str("id")}")
+        nav.navigate(Route.SourceDetail(key, found.str("id") ?: "", autoLine = p.getOrNull(2), autoIndex = p.getOrNull(3)?.toIntOrNull() ?: 1))
+    } catch (e: Throwable) {
+        android.util.Log.w("LinPlayer", "[自检 tvbox] 失败:" + e.message)
+    }
+}
