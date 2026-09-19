@@ -104,5 +104,11 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+
+        <!-- TVBox jar spider 独立进程(插件 SPEC D354):jar 崩了只死这个进程,播放不断 -->
+        <service
+            android:name=".plugin.SpiderService"
+            android:exported="false"
+            android:process=":spider" />
     </application>
 </manifest>

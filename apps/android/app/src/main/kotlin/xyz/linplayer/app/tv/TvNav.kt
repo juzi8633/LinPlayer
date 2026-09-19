@@ -24,14 +24,15 @@ sealed interface TvRoute {
     /** 没带库 id = 选库;当前源是本机文件夹时这一项进的是文件夹浏览(§7.14)。 */
     data class Library(val viewId: String? = null, val title: String = "") : TvRoute { override val rail = 2 }
     data object Favorites : TvRoute { override val rail = 3 }
-    data object Downloads : TvRoute { override val rail = 4 }
-    data object Servers : TvRoute { override val rail = 5 }
-    data object Settings : TvRoute { override val rail = 6 }
+    data object Discover : TvRoute { override val rail = 4 }
+    data object Downloads : TvRoute { override val rail = 5 }
+    data object Servers : TvRoute { override val rail = 6 }
+    data object Settings : TvRoute { override val rail = 7 }
 
     // ☠ 下面这些是**下钻,必须入栈**:线路管理、带库 id 的媒体库当平级处理的话,按一下返回就退出应用
-    data class Lines(val serverId: String, val name: String) : TvRoute { override val rail = 5 }
-    data object AddServer : TvRoute { override val rail = 5 }
-    data object LocalPicker : TvRoute { override val rail = 5 }
+    data class Lines(val serverId: String, val name: String) : TvRoute { override val rail = 6 }
+    data object AddServer : TvRoute { override val rail = 6 }
+    data object LocalPicker : TvRoute { override val rail = 6 }
     data class LocalDir(val dirId: String, val trail: List<Pair<String?, String>>) : TvRoute { override val rail = 2 }
     data class Detail(val itemId: String, val type: String) : TvRoute { override val rail = -1 }
     data class Episode(val itemId: String) : TvRoute { override val rail = -1 }
@@ -47,13 +48,22 @@ sealed interface TvRoute {
         val download: Boolean = false,
         /** 换内核 / 换线路 / 换版本重播时接着当前位置,不回到服务端记的进度。 */
         val resumeAt: Double? = null,
+        /** 数据源播放:`{server_id, item, line_id, episode_id}` 的 JSON 原文,走 source.playItem。 */
+        val src: String? = null,
     ) : TvRoute { override val rail = -1 }
+    // 数据源(插件 SPEC 8.7)与插件页(14.7)
+    data class SourceCategory(val serverId: String, val cat: String) : TvRoute { override val rail = 1 }
+    data class SourceDetail(
+        val serverId: String, val itemId: String,
+        val autoLine: String? = null, val autoEp: String? = null, val autoPos: Double = 0.0, val autoIndex: Int = 0,
+    ) : TvRoute { override val rail = -1 }
+    data object Plugins : TvRoute { override val rail = 7 }
 }
 
 /** 轨上第 i 项对应的平级页。 */
 fun railRoute(i: Int): TvRoute = when (i) {
     0 -> TvRoute.Search; 1 -> TvRoute.Home; 2 -> TvRoute.Library(); 3 -> TvRoute.Favorites
-    4 -> TvRoute.Downloads; 5 -> TvRoute.Servers; else -> TvRoute.Settings
+    4 -> TvRoute.Discover; 5 -> TvRoute.Downloads; 6 -> TvRoute.Servers; else -> TvRoute.Settings
 }
 
 /**

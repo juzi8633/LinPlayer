@@ -138,7 +138,7 @@ fun TvPlayerPage(r: TvRoute.Player) {
     var target by remember { mutableStateOf(r) }
     var attempt by remember { mutableIntStateOf(0) }
     var autoRetried by remember(target) { mutableStateOf(false) }
-    val engine = if (target.localEntry || target.download) "mpv" else target.engine ?: UiPrefs.engine.value
+    val engine = if (target.localEntry || target.download || target.src != null) "mpv" else target.engine ?: UiPrefs.engine.value
     var subLangPref by remember { mutableStateOf<String?>(null) }
     var subOffPref by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -182,6 +182,8 @@ fun TvPlayerPage(r: TvRoute.Player) {
         runCatching {
             when {
                 target.download -> app.call("player.playLocal", args("id" to target.itemId))
+                // 数据源:取流、解析、请求头都在核心层(source.playItem)
+                target.src != null -> app.call("source.playItem", kotlinx.serialization.json.Json.parseToJsonElement(target.src!!) as kotlinx.serialization.json.JsonObject)
                 target.localEntry -> app.call("source.play", args("entry_id" to target.itemId, "entry_name" to target.title,
                     "resume_secs" to (target.resumeAt ?: 0.0)))
                 else -> {
@@ -210,7 +212,7 @@ fun TvPlayerPage(r: TvRoute.Player) {
             ui.failed = e.message ?: "起播失败"
         }
         runCatching { app.call("companion.setNowPlaying", args("title" to target.title)) }
-        if (!target.localEntry && !target.download) launch { startDanmakuFor(app, target.itemId) }
+        if (!target.localEntry && !target.download && target.src == null) launch { startDanmakuFor(app, target.itemId) }
     }
 
     // 剧集上下文、规格行、章节 / 片头片尾

@@ -110,7 +110,10 @@ fun FavoritesPage(nav: NavController) {
     }
     LaunchedEffect(Unit) { app.invalidate.collect { if (it == "library" || it == "all") reload++ } }
 
-    LpScaffold("收藏", scrolled = rememberScrolled(grid)) { pad ->
+    LpScaffold("收藏", scrolled = rememberScrolled(grid), actions = {
+        // 数据源的收藏单独一页(D326):它们不在 Emby 服务器上,排序档位也对不上
+        xyz.linplayer.app.ui.components.LpIconButton(LpIcons.plugin, "数据源收藏") { nav.navigate(Route.SourceFavorites) }
+    }) { pad ->
         BlockBox(block, { reload++ }, skeleton = { GridSkel(pad) }) { items ->
             if (items.isEmpty()) EmptyState(
                 "还没有收藏任何内容",

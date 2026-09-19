@@ -31,3 +31,9 @@
 # 也试过 -dontoptimize 保住真行号 —— APK 大 2MB 且没了内联,TV 盒子上的 Compose 吃不消。
 -dontobfuscate
 -keepattributes SourceFile
+
+# TVBox jar 在运行时用 DexClassLoader 加载,它继承 / 调用的宿主类只在反射里出现,R8 看不见。
+# catvod 基类的类名和签名是外部 jar 的硬契约;jar 常直接用宿主的 OkHttp,也得原样保住。
+-keep class com.github.catvod.** { *; }
+-keep class okhttp3.** { *; }
+-keep class okio.** { *; }

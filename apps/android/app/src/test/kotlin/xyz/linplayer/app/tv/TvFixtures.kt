@@ -186,6 +186,29 @@ fun FakeCore.settings(): FakeCore {
     return this
 }
 
+fun FakeCore.discover(): FakeCore {
+    ret("emby.rankingCategories", arr(*listOf("番剧 · 本季", "番剧 · 总榜", "电影 · 热门", "电影 · 高分", "剧集 · 热门", "剧集 · 高分")
+        .mapIndexed { i, n -> buildJsonObject { put("id", "c$i"); put("label", n); put("source", "dandan") } }.toTypedArray()))
+    val rank = listOf("葬送的芙莉莲" to 9.2, "药屋少女的呢喃" to 8.9, "迷宫饭" to 8.8, "我心里危险的东西" to 8.7, "败犬女主太多了" to 8.5,
+        "小市民系列" to 8.1, "胆大党" to 8.6, "青之箱" to null, "Re:从零开始的异世界生活" to 8.4, "天久鹰央的推理病历表" to 7.9)
+    ret("emby.rankingFetch", arr(*rank.mapIndexed { i, (n, r) ->
+        buildJsonObject { put("source", "dandan"); put("id", "k$i"); put("title", n); put("image_url", "fake:rank$i"); put("rank", i + 1); r?.let { put("rating", it) } ?: put("subtitle", "暂无评分") }
+    }.toTypedArray()))
+    val today = java.time.LocalDate.now().dayOfWeek.value
+    ret("sync.bangumiCalendar", arr(*listOf("胆大党" to "EP08", "青之箱" to "EP07", "药屋少女的呢喃" to "EP19", "天久鹰央的推理病历表" to "EP06",
+        "Re:从零开始的异世界生活" to "EP11", "败犬女主太多了" to "EP03", "我心里危险的东西" to "EP04").mapIndexed { i, (n, ep) ->
+        buildJsonObject {
+            put("title", n); put("subtitle", ep); put("weekday", today); put("source", "bangumi"); put("image_url", "fake:cal$i")
+            // 放送时刻按本机时区换算,夹具也按本机时区造,出图才稳定
+            listOf(23 to 30, 0 to 0, null, 22 to 0, 22 to 30).getOrNull(i)?.let { (h, m) ->
+                put("broadcast_at", java.time.LocalDate.now().atTime(h, m).atZone(java.time.ZoneId.systemDefault()).toInstant().toString())
+            }
+        }
+    }.toTypedArray()))
+    ret("sync.bangumiAccount", JsonNull)
+    return this
+}
+
 fun FakeCore.favorites(): FakeCore {
     ret("emby.listFavorites", arr(
         item("f1", "谎言的代价", "Episode", series = "寂静的星河", season = 2, episode = 4),

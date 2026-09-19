@@ -22,6 +22,8 @@ class LinPlayerApp : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
+        // `:spider` 子进程只跑 TVBox jar,不起核心层(一个数据目录只能有一个核心层实例)
+        if (processName().endsWith(":spider")) return
         // 最先起:核心层起不来本身就要能报上来
         Telemetry.init(this)
         // 日志排在核心层之前:核心层起不来本身就是最该留下记录的一种失败
@@ -34,6 +36,10 @@ class LinPlayerApp : Application(), SingletonImageLoader.Factory {
             version = BuildConfig.VERSION_NAME,
         )
     }
+
+    private fun processName(): String =
+        if (android.os.Build.VERSION.SDK_INT >= 28) getProcessName()
+        else runCatching { java.io.File("/proc/self/cmdline").readText().trimEnd(Char(0)) }.getOrDefault("")
 
     /**
      * 图片加载器(UI_MOBILE.md §4.4)。

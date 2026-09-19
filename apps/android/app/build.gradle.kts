@@ -170,6 +170,8 @@ dependencies {
     //   接 SimpleBasePlayer 只是为了让 media3 帮我们画一遍通知,代价是把 mpv 的状态
     //   映射成 Player 的二十几个方法 —— 那是一层纯翻译的债。
     implementation("androidx.media:media:1.8.0")
+    // 追剧日历开播提醒:应用没开也要能发通知(插件 SPEC 18.1),系统调度的周期任务
+    implementation("androidx.work:work-runtime-ktx:2.10.1")
     /* ★ 第二个播放内核【用户定 2026-09-06:两个内核 + 可切】。
        mpv 走的是核心层里的 libmpv(全平台一套解码);ExoPlayer 走的是**安卓平台自己的
        MediaCodec**。两者各有各的死角:mpv 在部分机型上出「有声音没画面」,

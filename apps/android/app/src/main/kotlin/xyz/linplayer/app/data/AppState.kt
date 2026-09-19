@@ -44,6 +44,10 @@ class AppState(val core: CorePort, scope: CoroutineScope) {
     private val _caps = MutableStateFlow(Capabilities.EMPTY)
     val caps: StateFlow<Capabilities> = _caps.asStateFlow()
 
+    /** 当前服务器是插件数据源时是它(首页 / 搜索 / 收藏据此换成数据源那一套),否则 null。 */
+    private val _activeSource = MutableStateFlow<Account?>(null)
+    val activeSource: StateFlow<Account?> = _activeSource.asStateFlow()
+
     private val _hasAnyAccount = MutableStateFlow(false)
     val hasAnyAccount: StateFlow<Boolean> = _hasAnyAccount.asStateFlow()
 
@@ -84,6 +88,7 @@ class AppState(val core: CorePort, scope: CoroutineScope) {
             PageCache.clear()
         }
         _session.value = s
+        _activeSource.value = accounts.firstOrNull { it.isActive && it.plugin != null }
         _hasAnyAccount.value = accounts.isNotEmpty()
         _loggedIn.value = s != null || accounts.isNotEmpty()
     }
@@ -141,6 +146,13 @@ class AppState(val core: CorePort, scope: CoroutineScope) {
      * ★ **UI 传期望宽度,核心层决定实际取多大** —— 有的服务端完全忽略 maxWidth。
      * ★ 尺寸走 `h=` 不写进 `src`:写进去等于每种尺寸一个缓存键。
      */
+    /** 数据源条目的图(海报地址是插件给的完整 URL,核心层已登记白名单,原样回源)。 */
+    fun proxiedImage(url: String?, height: Int = 330): String? {
+        val base = core.localBaseUrl
+        if (url.isNullOrEmpty() || base.isEmpty()) return null
+        return "$base/img?src=${Uri.encode(url)}&h=${ladder(height)}"
+    }
+
     fun imageUrl(itemId: String?, kind: String = "Primary", height: Int = 330): String? {
         val server = _session.value?.server ?: return null
         val base = core.localBaseUrl

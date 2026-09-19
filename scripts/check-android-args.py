@@ -62,7 +62,8 @@ READ_PATTERNS = [
 def go_commands():
     """command -> 它读过的参数名集合。"""
     out = {}
-    reg = re.compile(r'(?:bus\.Register|list)\("([a-z]+\.[A-Za-z]+)",\s*(\w+)?')
+    # reg(...) 是 core/plugin 包装过的注册(把插件错误映射成 bus 错误),读参数的写法一样
+    reg = re.compile(r'(?:bus\.Register|list|reg)\("([a-z]+\.[A-Za-z]+)",\s*(\w+)?')
     for base, _, files in os.walk(CORE):
         for f in files:
             if not f.endswith('.go'):
@@ -75,10 +76,13 @@ def go_commands():
                 body = src[end:stop]
                 # `bus.Register("x", cmdFoo)` —— 处理函数在别处,跟过去一起读
                 if handler and handler != 'func':
-                    fm = re.search(r'\nfunc ' + re.escape(handler) + r'\(', src)
-                    if fm:
-                        nxt = src.find('\nfunc ', fm.end())
-                        body += src[fm.end(): nxt if nxt > 0 else len(src)]
+                    # handler 可能写在同包另一个文件里(datasource 的 cmdXxx 分散在 forms.go / verbs.go)
+                    for hsrc in [src] + pkg_sources(base):
+                        fm = re.search(r'\nfunc ' + re.escape(handler) + r'\(', hsrc)
+                        if fm:
+                            nxt = hsrc.find('\nfunc ', fm.end())
+                            body += hsrc[fm.end(): nxt if nxt > 0 else len(hsrc)]
+                            break
                 # `x := helper(a)` —— 参数在同包的 helper 里读(player.play 的 resumeArg)。跟过去一起读
                 for h in set(re.findall(r'\b(\w+)\(\s*a\s*\)', body)):
                     for hsrc in pkg_sources(base):

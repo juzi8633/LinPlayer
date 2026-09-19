@@ -35,7 +35,9 @@
 
 - **读串了对象、而同函数里另一条命令恰好发这个键。** 回落分支会放过它。
   想让它精确,把响应**绑到一个变量**上再读,别写成一长串链式。
-- 解析被抽进另一个函数(参数是 JsonObject)。窗口跟不进去。
+- 解析被抽进另一个函数(参数是 JsonObject)。窗口跟不进去;接收者是本函数形参的读取
+  直接放行(它是别处拿到的响应,算到本函数的命令头上只会造假红)。
+- 事件数据(`val o = ev.data.obj()`)不是命令响应,读取放行。
 - 同名 struct 跨包合并成并集(成功行会 ⚠ 出来是哪几个)。
 """
 import io
@@ -61,6 +63,8 @@ LOCAL_KEYS = {'url'}
 
 # 一行字段:`People []Person `json:"people"``  ->  (Person, people)
 FIELD = re.compile(r'^\s*\w+\s+[\[\]\*]*(?:\w+\.)?(\w+)[^`]*`[^`]*json:"([^",]+)', re.M)
+# 内嵌(匿名)字段:`IndexEntry` 独占一行、没有字段名也没有 json 标签 —— 它的字段平铺进外层
+EMBED = re.compile(r'^\s*\*?(?:\w+\.)?([A-Z]\w*)\s*$', re.M)
 
 
 def go_struct_fields():
@@ -85,11 +89,12 @@ def go_struct_fields():
                     elif src[i] == '}':
                         depth -= 1
                     i += 1
-                tags, kids, where = out.setdefault(m.group(1), (set(), set(), set()))
+                tags, kids, where, embeds = out.setdefault(m.group(1), (set(), set(), set(), set()))
                 where.add(os.path.join(base, f))
                 for ty, tag in FIELD.findall(src[m.end():i]):
                     tags.add(tag)
                     kids.add(ty)
+                embeds.update(EMBED.findall(src[m.end():i - 1]))
     return out
 
 
@@ -109,10 +114,13 @@ def flatten(structs, name, depth=1, seen=None):
     if name not in structs or name in seen or depth < 0:
         return set()
     seen.add(name)
-    tags, kids = structs[name][0], structs[name][1]
+    tags, kids, embeds = structs[name][0], structs[name][1], structs[name][3]
     out = set(tags)
     for k in kids:
         out |= flatten(structs, k, depth - 1, seen)
+    # 内嵌字段是**同一层**的(JSON 里平铺),不消耗展开层数
+    for e in embeds:
+        out |= flatten(structs, e, depth, seen)
     return out
 
 
@@ -205,6 +213,7 @@ LVAL = re.compile(r'(\w+)\s*=\s*[^=\n]{0,120}$')
 # 任何一次给这个名字赋值/绑参(含 lambda 形参 `{ x ->`)
 ASSIGN_ANY = re.compile(r'(?:^|[^\w.])(\w+)\s*(?:=[^=]|->)')
 ALIAS = re.compile(r'^\s*(?:val|var)\s+(\w+)\s*=\s*(\w+)\s*$', re.M)
+EVENT_BIND = re.compile(r'\b(?:val|var)\s+(\w+)\s*=\s*\w+\.data\b')
 
 
 def bindings(src, spans):
@@ -227,10 +236,15 @@ def bindings(src, spans):
         key = (fn_of(src, m.start()), m.group(2))
         if key in out:
             out.setdefault((key[0], m.group(1)), out[key])
+    # 事件数据(`val o = ev.data.obj()`)不是任何命令的响应:绑成 None,读取一律不归给命令
+    for m in EVENT_BIND.finditer(src):
+        out[(fn_of(src, m.start()), m.group(1))] = None
     # ☠ 同名变量在一个函数里被赋值不止一次 = 被 lambda 遮蔽过,这条绑定不能信。
     #   实测 `p` 在详情页既是 prefs.getPrefs 的结果,又是 people 那个 lambda 的形参,
     #   不这么收的话它会拿 Prefs 的字段表去判 people 里的 id / name,报两条假红。
     for (fn, name) in list(out):
+        if out[(fn, name)] is None:
+            continue
         n = 0
         for m in ASSIGN_ANY.finditer(src):
             if m.group(1) == name and fn_of(src, m.start()) == fn:
@@ -238,6 +252,14 @@ def bindings(src, spans):
         if n != 1:
             del out[(fn, name)]
     return out
+
+
+def is_param(src, pos, name):
+    """接收者是本函数的形参 = 调用方传进来的对象,不是本函数里哪条命令的响应。"""
+    head = fn_of(src, pos)
+    paren = src.find('(', head)
+    close = src.find(')', paren) if paren >= 0 else -1
+    return 0 <= paren < close and re.search(r'\b' + re.escape(name) + r'\s*:', src[paren:close]) is not None
 
 
 def fn_of(src, pos):
@@ -313,7 +335,12 @@ def main():
                     # 认得出接收者就**按它归属**,认不出才回落到函数作用域。
                     # 只回落的话「读串了对象」这一整类就放走了。
                     rv = RECV.search(src[max(0, pos - 120):pos])
-                    own = binds.get((fn_of(src, pos), rv.group(1))) if rv else None
+                    bkey = (fn_of(src, pos), rv.group(1)) if rv else None
+                    if bkey in binds and binds[bkey] is None:
+                        continue            # 事件数据,不是命令响应
+                    if rv and bkey not in binds and is_param(src, pos, rv.group(1)):
+                        continue            # 形参:别的函数拿到的响应,这里对不了账
+                    own = binds.get(bkey) if bkey else None
                     if own is not None:
                         t = rets.get(own, '')
                         ok = t not in OPAQUE and t in structs and k in flatten(structs, t)

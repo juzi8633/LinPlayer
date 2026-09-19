@@ -166,11 +166,16 @@ fun TvShell(nav: TvNav, booting: Boolean = false) {
 @Composable
 private fun TvPage(r: TvRoute) {
     when (r) {
-        TvRoute.Home -> HomePage()
+        TvRoute.Home -> {
+            // 当前是插件数据源:首页换成数据源首页(D167)
+            val src by LocalApp.current.activeSource.collectAsStateWithLifecycle()
+            src?.let { SourceHomeTv(it.id, it.name) } ?: HomePage()
+        }
         TvRoute.Search -> SearchPage()
         is TvRoute.Library -> if (r.viewId == null && LocalIsLocalSource.current) LocalBrowsePage(null)
             else if (r.viewId == null) LibraryPickerPage() else LibraryGridPage(r)
         TvRoute.Favorites -> FavoritesPage()
+        TvRoute.Discover -> DiscoverPage()
         TvRoute.Downloads -> DownloadsPage()
         TvRoute.Servers -> ServersPage()
         TvRoute.Settings -> SettingsPage()
@@ -181,6 +186,9 @@ private fun TvPage(r: TvRoute) {
         is TvRoute.Detail -> DetailPage(r)
         is TvRoute.Episode -> EpisodePage(r)
         is TvRoute.Player -> TvPlayerPage(r)
+        is TvRoute.SourceCategory -> SourceCategoryTv(r)
+        is TvRoute.SourceDetail -> SourceDetailTv(r)
+        TvRoute.Plugins -> PluginsPageTv()
     }
 }
 

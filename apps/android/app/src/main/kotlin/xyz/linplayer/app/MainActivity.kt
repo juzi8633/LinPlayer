@@ -92,6 +92,10 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // 插件要壳做的事(WebView / jar spider),见 plugin/PluginShell
+        xyz.linplayer.app.plugin.PluginShell.start(this, app, lifecycleScope)
+        CalendarWorker.schedule(this)
+
         // 深链交给核心层解析,**UI 不自己解析 URL**(SPEC §8.5)
         lifecycleScope.launch {
             deepLink.collect { url ->

@@ -150,8 +150,11 @@ fun ServersPage() {
                 .mapNotNull { o -> o.str("server")?.let { it to o.bool("ok") } }.toMap()
         }
     }
-    val list = order ?: raw
+    // 插件数据源不进这张网格(一个订阅可能几十个源),按订阅分组画在下面(SPEC 8.7)
+    val normal = raw.filter { it["plugin"] == null }
+    val list = order ?: normal
     val reorder = order != null
+    val openGroups = remember { androidx.compose.runtime.mutableStateListOf<String>() }
 
     if (reorder) BackHandler {
         order = null; moving = -1
@@ -168,8 +171,9 @@ fun ServersPage() {
             return@onPreviewKeyEvent true
         }
         if (isOk(e.key)) {
+            // 网格里只有非插件的行:换算回账号表里的真实下标
             val from = movingFrom
-            val to = moving
+            val to = raw.indexOf(normal.getOrNull(moving) ?: return@onPreviewKeyEvent true)
             order = null; moving = -1
             if (from != to) scope.launch {
                 runCatching { app.call("account.reorderAccounts", args("from" to from, "to" to to)) }
@@ -200,7 +204,7 @@ fun ServersPage() {
                         Modifier.memo("srv.$id", initial = i == 0)) {
                         overlay.open { ServerPanel(o, raw.indexOf(o), overlay, onReorder = {
                             overlay.close()
-                            movingFrom = raw.indexOf(o); moving = movingFrom; order = raw
+                            movingFrom = raw.indexOf(o); moving = normal.indexOf(o); order = normal
                             scope.launch { kotlinx.coroutines.delay(50); runCatching { root.requestFocus() } }
                         }, onChanged = { reload++ }) }
                     }
@@ -208,6 +212,32 @@ fun ServersPage() {
                 // 「添加服务器」卡在排序模式下不画:它不参与排序,留着「位置 n / N」数不对
                 if (!reorder) item(key = "add") {
                     AddTile("添加服务器", 256.dp, 150.dp, 14.dp, Modifier.memo("srv.add")) { nav.push(TvRoute.AddServer) }
+                }
+                if (!reorder) raw.filter { it["plugin"] != null }.groupBy { it["plugin"].obj().str("group") ?: "" }.forEach { (group, rows) ->
+                    val p0 = rows.first()["plugin"].obj()
+                    val gname = p0.str("group_name")?.takeIf { it.isNotEmpty() } ?: p0.str("plugin_id") ?: ""
+                    val open = group in openGroups || rows.any { it.bool("active") }
+                    item(key = "g:$group", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(TvSp.x8), verticalAlignment = Alignment.CenterVertically) {
+                            TvButton("${if (open) "▾" else "▸"} $gname(${rows.size})", modifier = Modifier.memo("srv.g.$group")) {
+                                if (!openGroups.remove(group)) openGroups.add(group)
+                            }
+                            TvButton("管理", modifier = Modifier.memo("srv.gm.$group")) {
+                                overlay.open { SourceGroupPanel(group, gname, p0.str("plugin_id") ?: "", { overlay.close() }) { reload++ } }
+                            }
+                        }
+                    }
+                    if (open) itemsIndexed(rows, key = { _, o -> o.str("server") ?: "" }) { _, o ->
+                        val id = o.str("server") ?: ""
+                        val why = o["plugin"].obj().str("unavailable").orEmpty()
+                        ServerCard(o, if (o["plugin"].obj().bool("last_failed")) false else null, 0, 1, false, false, Modifier.memo("srv.$id")) {
+                            if (why.isNotEmpty()) { app.toast(why); return@ServerCard }
+                            scope.launch {
+                                runCatching { app.call("account.setActiveServer", args("server_id" to id)) }
+                                    .onSuccess { app.refreshSession(); reload++; app.toast("已切到「${o.str("name")}」") }.onFailure { app.report(it) }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -471,5 +501,40 @@ fun LinesPage(r: TvRoute.Lines) {
             }
         }
         OverlayHost(overlay)
+    }
+}
+
+/** 订阅分组的管理面板:检测这一组、插件声明的菜单(刷新订阅…)、删除整个订阅。 */
+@Composable
+private fun BoxScope.SourceGroupPanel(group: String, name: String, pluginId: String, onClose: () -> Unit, changed: () -> Unit) {
+    val app = LocalApp.current
+    val scope = rememberCoroutineScope()
+    var menus by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
+    LaunchedEffect(pluginId) { menus = runCatching { app.call("source.serverMenus", args("plugin_id" to pluginId)) }.getOrNull().arr().mapNotNull { it.obj() } }
+    TvSidePanel(name, onClose) {
+        PanelItem("检测这一组的源", sub = "打不开的会标红", onClick = {
+            scope.launch {
+                app.toast("正在检测…")
+                runCatching { app.call("source.checkAll", args("group" to group)) }.onSuccess { r ->
+                    val all = r.arr().mapNotNull { it.obj() }
+                    val bad = all.count { !it.bool("ok") }
+                    app.toast(if (bad == 0) "${all.size} 个源都能用" else "${all.size} 个源里 $bad 个打不开")
+                    changed()
+                }.onFailure { app.report(it) }
+            }
+        })
+        menus.forEach { m ->
+            PanelItem(m.str("title") ?: "", onClick = {
+                scope.launch {
+                    runCatching { app.call("source.runCommand", xyz.linplayer.app.ui.pages.j("plugin_id" to pluginId, "command" to m.str("command"), "args" to mapOf("group" to group))) }
+                        .onSuccess { app.toast("完成"); changed() }.onFailure { app.report(it) }
+                }
+            })
+        }
+        PanelItem("删除整个订阅", sub = "收藏和观看记录保留", danger = true, onClick = {
+            scope.launch {
+                runCatching { app.call("source.removeGroup", args("group" to group)) }.onSuccess { onClose(); app.refreshSession(); changed() }.onFailure { app.report(it) }
+            }
+        })
     }
 }

@@ -37,6 +37,8 @@ import xyz.linplayer.app.data.bool
 import xyz.linplayer.app.data.long
 import xyz.linplayer.app.data.obj
 import xyz.linplayer.app.data.str
+import xyz.linplayer.app.data.arr
+import xyz.linplayer.app.data.bool
 import xyz.linplayer.app.tv.kit.ScopeChips
 import xyz.linplayer.app.tv.kit.Skel
 import xyz.linplayer.app.tv.kit.StatusDot
@@ -75,6 +77,39 @@ fun OnboardingPage(embedded: Boolean) {
     var hint by remember { mutableStateOf<String?>(null) }
     var picking by remember { mutableStateOf(false) }
     val nav = if (embedded) LocalNav.current else null
+    // 插件提供的服务器类型(D131 D423):装了数据源插件才出现在类型片里
+    var pluginForms by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
+    val pluginValues = remember { androidx.compose.runtime.mutableStateMapOf<String, String>() }
+    LaunchedEffect(Unit) {
+        pluginForms = runCatching { app.call("source.formSchema") }.getOrNull().arr().mapNotNull { it.obj() }.filter { it.str("kind") == "plugin" }
+    }
+
+    /* TV 上逐个勾几十个源太累:仓全订、源全加(不可用的除外),不要的在服务器页整组或单个删。
+       订阅免责提示照样给(D523)。 */
+    fun addPluginSources(f: JsonObject) {
+        if (busy) return
+        busy = true; hint = null
+        scope.launch {
+            try {
+                app.toast("订阅内容由你自行添加,与 LinPlayer 官方无关。")
+                val pid = f.str("plugin_id") ?: ""
+                val tid = f.str("type_id") ?: ""
+                var r = app.call("source.createSources", xyz.linplayer.app.ui.pages.j("plugin_id" to pid, "type_id" to tid, "form" to pluginValues.toMap())).obj()
+                val repos = r?.get("repos").arr().mapNotNull { it.obj()?.str("id") }
+                if (repos.isNotEmpty()) r = app.call("source.createSources", xyz.linplayer.app.ui.pages.j("plugin_id" to pid, "type_id" to tid, "form" to pluginValues.toMap(), "repos" to repos)).obj()
+                val chosen = r?.get("sources").arr().mapNotNull { it.obj() }.filter { !it.bool("exists") && it.str("unavailableReason").isNullOrEmpty() }
+                if (chosen.isEmpty()) { hint = "这份配置里没有可添加的源"; return@launch }
+                app.call("source.addSources", xyz.linplayer.app.ui.pages.j("plugin_id" to pid, "type_id" to tid, "sources" to chosen))
+                app.toast("已添加 ${chosen.size} 个源,不要的在服务器页删", ToastKind.Ok)
+                app.refreshSession()
+                nav?.pop()
+            } catch (e: CoreException) {
+                hint = e.advice
+            } catch (e: Throwable) {
+                hint = e.message ?: "添加失败"
+            } finally { busy = false }
+        }
+    }
 
     if (picking) {
         // 首次启动页不在返回栈里,挑文件夹就地换内容;返回键回表单
@@ -117,7 +152,8 @@ fun OnboardingPage(embedded: Boolean) {
             TvText(if (embedded) "添加服务器" else "欢迎使用 LinPlayer", t.display, TvC.fg, weight = TvW.bold)
             TvText("推荐用手机扫右边的码,不用在电视上打字", t.body, TvC.fg2)
             Spacer(Modifier.height(TvSp.x16))
-            ScopeChips(listOf("Emby", "本机文件夹"), kind, itemModifier = { i -> Modifier.memo("gate.kind.$i") }, onSelect = { kind = it })
+            ScopeChips(listOf("Emby", "本机文件夹") + pluginForms.map { it.str("label") ?: "" }, kind,
+                itemModifier = { i -> Modifier.memo("gate.kind.$i") }, onSelect = { kind = it; pluginValues.clear() })
             Spacer(Modifier.height(TvSp.x16))
             if (kind == 0) {
                 // 名称排第一行【继承 PC A-46】:不填的话显示名回落成地址,到处都是真实地址
@@ -143,6 +179,20 @@ fun OnboardingPage(embedded: Boolean) {
                         }
                     })
                 }
+            } else if (kind >= 2) {
+                val f = pluginForms[kind - 2]
+                TvText("由插件「${f.str("plugin_name") ?: ""}」提供。长文本用手机扫右边的码填更快", t.body, TvC.fg2, maxLines = 2)
+                Spacer(Modifier.height(TvSp.x8))
+                f["fields"].arr().mapNotNull { it.obj() }.forEach { fd ->
+                    val key = fd.str("key") ?: return@forEach
+                    Field(fd.str("label") ?: key) {
+                        TvTextField(pluginValues[key] ?: "", { pluginValues[key] = it }, fd.str("placeholder") ?: "", 384.dp,
+                            Modifier.memo("gate.p.$key"), password = fd.str("type") == "password")
+                    }
+                }
+                Spacer(Modifier.height(TvSp.x12))
+                TvButton(if (busy) "添加中…" else "添加", LpIcons.check, primary = true, modifier = Modifier.memo("gate.padd"),
+                    onClick = { addPluginSources(f) })
             } else {
                 TvText("选一个装着影片的文件夹,它会像一台服务器那样出现在服务器页", t.body, TvC.fg2, maxLines = 2)
                 Spacer(Modifier.height(TvSp.x12))

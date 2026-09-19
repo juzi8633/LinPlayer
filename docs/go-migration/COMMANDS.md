@@ -134,7 +134,7 @@
 | 移植 | 新命令名 | 现有名 | 参数 | 返回 | 安卓已注册 |
 |:--:|---|---|---|---|:--:|
 | [x] | `player.addSubtitle` | `add_subtitle` | `url: String, title: Option<String>, secondary: Option<bool>` | `Result<(), String>` | ✅ |
-| [x] | `player.chapterInfo` | `chapter_info` | `item_id: String, runtime_secs: f64` | `Result<ChapterInfo, String>` | ✅ |
+| [x] | `player.chapterInfo` | `chapter_info` | `item_id: String, runtime_secs: f64` | `{chapters, intro, outro, skip_source, skip_auto, thumbs}` | ✅ |
 | [x] | `player.getMpvConf` | `get_mpv_conf` | `—` | `MpvConf` | ❌ |
 | [x] | `player.getPlaybackPrefs` | `get_playback_prefs` | `—` | `PlaybackPrefs` | ✅ |
 | [x] | `player.getScreenshotDir` | `get_screenshot_dir` | `—` | `ScreenshotDir` | ❌ |

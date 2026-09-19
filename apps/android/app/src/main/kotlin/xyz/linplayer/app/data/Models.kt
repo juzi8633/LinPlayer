@@ -159,6 +159,10 @@ data class Account(
     val userName: String?,
     val isActive: Boolean,
     val kind: String?,
+    /** 插件数据源才有:分组、来源插件、灰显原因、上次失败(core/account PluginInfo)。 */
+    val plugin: JsonObject? = null,
+    /** 「允许聚合」(D233):聚合搜索与换源时包不包括它。 */
+    val aggregate: Boolean = false,
 ) {
     companion object {
         fun list(e: JsonElement?): List<Account> = e.arr().mapNotNull {
@@ -173,6 +177,8 @@ data class Account(
                 userName = o.str("user_name") ?: o.str("username"),
                 isActive = o.bool("active") || o.bool("is_active"),
                 kind = o.str("kind"),
+                plugin = o["plugin"].obj(),
+                aggregate = o.bool("aggregate"),
             )
         }
 

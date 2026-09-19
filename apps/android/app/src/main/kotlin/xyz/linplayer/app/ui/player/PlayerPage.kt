@@ -207,6 +207,7 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
     var locked by remember { mutableStateOf(false) }
     var panel by remember { mutableStateOf<String?>(null) }
     var dmSearch by remember { mutableStateOf(false) }
+    var srcSwitch by remember { mutableStateOf(false) }
     /** 弹幕密度。空表 = 不画(关了热力图、或者这一集没弹幕)。 */
     var heat by remember { mutableStateOf<List<Float>>(emptyList()) }
     /* 语料换了要重取一次。**跟着弹幕开关和热力图开关走**,不做轮询 ——
@@ -254,7 +255,8 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
        播到一半用户去设置里改了内核,回来时这一片的状态机会当场换一套
        —— 位置、时长、暂停三个值来源全变,而 ExoPlayer 手里根本没有这一片。
        所以设置页那一行明说「退出当前播放再进才生效」。 */
-    val engine = remember { route.engine ?: xyz.linplayer.app.data.UiPrefs.engine.value }
+    // 数据源播放只走 mpv:取流、解析、请求头都在核心层,ExoPlayer 那条路拿不到这些
+    val engine = remember { if (route.src != null) "mpv" else route.engine ?: xyz.linplayer.app.data.UiPrefs.engine.value }
     /* 字幕样式要在**画第一句字幕之前**就位。晚一步的表现是「进来先按默认样式画几句,
        打开一次面板才变过来」—— 而用户明明上一集就调好了。
        只读一次:它落在核心层配置里,一次会话内不会自己变。 */
@@ -328,6 +330,13 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
                 put("engine", engine)
                 route.versionId?.let { put("media_source_id", it) }
             }
+            val src = route.src?.let { kotlinx.serialization.json.Json.parseToJsonElement(it).obj() }
+            if (src != null) {
+                // resume 不给 = 让核心层按观看记录定;换源 / 切线路带过来的进度才显式送
+                val pos = src["resume_secs"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toDoubleOrNull() } ?: 0.0
+                app.call("source.playItem", kotlinx.serialization.json.JsonObject(src.filterKeys { k -> k != "resume_secs" || pos > 0 }))
+                return@runCatching
+            }
             val r = app.call("player.play", args(*a.toList().toTypedArray())).obj()
             /* engine=exo 时核心层**只算不播**:它把该播的那条地址和续播位置回给这里,
                由 ExoPlayer 去 loadfile。地址一律用它回的这个 —— 在 UI 里自己拼
@@ -344,8 +353,11 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
                ExoPlayer 不解析 Attachments,不自己抠的话 libass 只能回落系统字体。
                ★ 和上面那条一样是 fire-and-forget:抠不到只是字形不对,不该挡住播放。 */
             if (exo != null && url != null) loadEmbeddedFonts(url)
-        }.onFailure { app.report(it) }
+        }.onFailure { app.report(it); if (route.src != null) srcSwitch = true }
     }
+    /* 数据源播放失败**不自动切线路**,直接弹换源列表让用户选(D263)。
+       进度带过去:从别的源接着看同一集。 */
+    if (srcSwitch) route.src?.let { raw -> xyz.linplayer.app.ui.pages.SourcePlayFailed(nav, raw, position) { srcSwitch = false } }
 
     /* ExoPlayer 那条路的状态:**轮询 4 Hz**,和 mpv 的 `player.status` 同频。
        ★ 只能在主线程读 ExoPlayer(它是单线程模型),`LaunchedEffect` 正好跑在

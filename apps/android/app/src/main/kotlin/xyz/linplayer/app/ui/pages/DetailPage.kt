@@ -192,11 +192,13 @@ internal fun arOf(v: Version?): Float {
  */
 @Composable
 fun DetailPage(nav: NavController, entry: NavBackStackEntry) {
+    var switching by remember { mutableStateOf(false) }
     val route = entry.toRoute<Route.Detail>()
     val app = LocalApp.current
     val c = Lp.colors
     val scope = rememberCoroutineScope()
     val list = rememberLazyListState()
+    if (switching) EmbySwitchSource(nav, route.itemId) { switching = false }
     // 截长屏认的就是这个滚动容器(设置里开了才画按钮,见 LongShot)
     LongShotTarget(list)
 
@@ -452,6 +454,8 @@ fun DetailPage(nav: NavController, entry: NavBackStackEntry) {
                                     }.onFailure { app.report(it) }
                                 }
                             }
+                            // Emby 的片也能换到数据源看(D525):这是跳转,不是把数据源塞进来当线路
+                            IconAction(LpIcons.search, "换源") { switching = true }
                             /* ☠ 这里原来还有一颗「选集」——**删了**【用户定 2026-09-07】。
                                它做的事只是把页面滚到下面那条选集栏,而那条栏本来就在同一页
                                再往下两屏之内。一个「带你去看你马上就会看到的东西」的按钮

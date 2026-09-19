@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -80,7 +81,13 @@ fun SearchPage() {
     val t = tvType
 
     var q by keepState("tv.search.q") { "" }
+    // 当前是插件数据源时没有 Emby 会话:只能聚合搜(含数据源,D258)
+    val onSource = app.activeSource.collectAsStateWithLifecycle().value != null
     var aggregate by keepState("tv.search.agg") { false }
+    if (onSource) aggregate = true
+    /** 聚合只在提交(遥控器确认 / 离开输入框)时发:每停一下就撒给所有来源太重。 */
+    var aggQ by remember { mutableStateOf("") }
+    var srcHits by remember { mutableStateOf<List<Triple<String, String, kotlinx.serialization.json.JsonObject>>>(emptyList()) }
     var withEps by keepState("tv.search.eps") { false }
     var history by remember { mutableStateOf<List<String>>(emptyList()) }
     var servers by remember { mutableIntStateOf(0) }
@@ -93,18 +100,22 @@ fun SearchPage() {
         launch { servers = Account.list(runCatching { app.call("account.listAccounts") }.getOrNull()).count { (it.kind ?: "emby") == "emby" } }
     }
     LaunchedEffect(Unit) {
-        snapshotFlow { listOf(q.trim(), aggregate, withEps, retry) }.distinctUntilChanged().debounce(400).collect { (text, agg, eps) ->
-            text as String
+        snapshotFlow { listOf(q.trim(), aggregate, withEps, retry, aggQ) }.distinctUntilChanged().debounce(400).collect { (typed, agg, eps, _, sub) ->
+            val text = if (agg as Boolean) sub as String else typed as String
             if (text.isEmpty()) { result = null; return@collect }
             result = Block.Loading
             failed = emptyList()
-            result = if (agg as Boolean) {
-                app.block("emby.aggregateSearch", args("query" to text, "include_episodes" to eps)).map { v ->
+            srcHits = emptyList()
+            result = if (agg) {
+                app.block("source.aggregateSearch", args("query" to text)).map { v ->
                     val gs = v.arr().mapNotNull { it.obj() }
+                    srcHits = gs.filter { it.str("kind") == "plugin" && it.str("error") == null }.flatMap { g ->
+                        g["items"].arr().mapNotNull { it.obj() }.map { Triple(g.str("server_id") ?: "", g.str("server_name") ?: "", it) }
+                    }
                     // 半失败(一路 429、一路回空)不能吞成「没搜到」
                     failed = gs.filter { it.str("error") != null }.map { it.str("server_name") ?: "服务器" }
                     // 按相关度排、同名挨着(§7.7 并列):按服务器分段排的话同一部片隔着几行,比不出哪台的版本好
-                    gs.flatMap { g -> Item.list(g["items"]).map { Hit(it, g.str("server_id"), g.str("server_name")) } }
+                    gs.filter { it.str("kind") != "plugin" }.flatMap { g -> Item.list(g["emby_items"]).map { Hit(it, g.str("server_id"), g.str("server_name")) } }
                         .sortedWith(compareBy<Hit>({ !it.item.name.startsWith(text) }, { it.item.name }))
                 }
             } else {
@@ -138,7 +149,7 @@ fun SearchPage() {
         Row(Modifier.contentArea()) {
             Column(Modifier.width(300.dp)) {
                 TvTextField(q, { q = it }, "搜索片名", 300.dp, Modifier.memo("search.input", initial = true),
-                    icon = LpIcons.search, onSubmit = { remember(it) })
+                    icon = LpIcons.search, onSubmit = { remember(it); aggQ = it.trim() })
                 Spacer(Modifier.height(TvSp.x16))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TvText("搜索历史", t.meta, TvC.fg3)
@@ -165,12 +176,22 @@ fun SearchPage() {
             Spacer(Modifier.width(TvSp.x24))
             Column(Modifier.weight(1f)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(TvSp.x8)) {
-                    ScopeChips(listOf("当前服务器", "聚合全部 · $servers"), if (aggregate) 1 else 0,
+                    if (!onSource) ScopeChips(listOf("当前服务器", "聚合全部 · $servers"), if (aggregate) 1 else 0,
                         itemModifier = { i -> Modifier.memo("search.scope.$i") }, onSelect = { aggregate = it == 1 })
                     ScopeChips(listOf("包括分集"), if (withEps) 0 else -1,
                         itemModifier = { Modifier.memo("search.eps") }, onSelect = { withEps = !withEps })
                 }
                 Spacer(Modifier.height(TvSp.x12))
+                if (srcHits.isNotEmpty()) {
+                    RowTitle("数据源", trailing = "${srcHits.size} 项")
+                    Spacer(Modifier.height(TvSp.x8))
+                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(TvSp.x12)) {
+                        items(srcHits, key = { "${it.first}.${it.third.str("id")}" }) { (sid, name, it) ->
+                            SourcePoster(it, "search.src.$sid.${it.str("id")}", name) { nav.push(TvRoute.SourceDetail(it.str("source") ?: sid, it.str("id") ?: "")) }
+                        }
+                    }
+                    Spacer(Modifier.height(TvSp.x12))
+                }
                 SearchResults(q.trim(), result, failed, aggregate, overlay, { open(it) }, { retry++ })
             }
         }

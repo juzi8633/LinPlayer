@@ -1,5 +1,6 @@
 package xyz.linplayer.app.ui.pages
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +33,8 @@ import xyz.linplayer.app.core.CoreException
 import xyz.linplayer.app.data.LocalApp
 import xyz.linplayer.app.data.obj
 import xyz.linplayer.app.data.str
+import xyz.linplayer.app.data.arr
+import xyz.linplayer.app.data.bool
 import xyz.linplayer.app.ui.components.BtnKind
 import xyz.linplayer.app.ui.components.Dim2
 import xyz.linplayer.app.ui.components.H1
@@ -48,8 +51,8 @@ import xyz.linplayer.app.ui.theme.Sp
  * **同一页的两种版式**:首登 = 全屏居中卡片(无返回);添加 = 从服务器页推入(有返回)。
  * 两套的话新增一种源就要改两处,漏掉的那处就是「某个入口加不了这种源」。
  *
- * ⚠️ `source.formSchema` 不存在(见 MOBILE_BLOCKERS.md B1),PC 端也是硬编的。
- * 本轮照 PC 的做法把源类型表写在这一处。
+ * Emby 表单写在这一处;插件提供的服务器类型(D131 D423)按 `source.formSchema` 渲染,
+ * 只有装了数据源插件时才出现那排类型片。
  */
 @Composable
 fun GatePage(onDone: suspend () -> Unit, embedded: Boolean = false) {
@@ -68,6 +71,14 @@ fun GatePage(onDone: suspend () -> Unit, embedded: Boolean = false) {
     var report by remember { mutableStateOf<Pair<String, String>?>(null) }
     var selfCheckLogin by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
+    var pluginForms by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
+    /** null = Emby;否则是选中的插件服务器类型。 */
+    var kind by remember { mutableStateOf<JsonObject?>(null) }
+    val pluginValues = remember { androidx.compose.runtime.mutableStateMapOf<String, String>() }
+    var flow by remember { mutableStateOf<Map<String, String>?>(null) }
+    LaunchedEffect(Unit) {
+        pluginForms = runCatching { app.call("source.formSchema") }.getOrNull().arr().mapNotNull { it.obj() }.filter { it.str("kind") == "plugin" }
+    }
 
     // 打开就把光标放进第一个要填的框:这一屏只有一件事可做,
     // 还要用户先点一下输入框,那一下点击是白让人做的
@@ -117,7 +128,28 @@ fun GatePage(onDone: suspend () -> Unit, embedded: Boolean = false) {
     val body = @Composable {
         Column(Modifier.fillMaxWidth().imePadding()) {
             H1("连接到你的媒体服务器")
+            if (pluginForms.isNotEmpty()) {
+                Spacer(Modifier.height(Sp.x10))
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Sp.x6)) {
+                    xyz.linplayer.app.ui.components.ToneChip("Emby", on = kind == null) { kind = null }
+                    pluginForms.forEach { f -> xyz.linplayer.app.ui.components.ToneChip(f.str("label") ?: "", on = kind == f) { kind = f; pluginValues.clear() } }
+                }
+            }
             Spacer(Modifier.height(Sp.x6))
+            val pk = kind
+            if (pk != null) {
+                Dim2("由插件「${pk.str("plugin_name") ?: ""}」提供。")
+                Spacer(Modifier.height(Sp.x20))
+                pk["fields"].arr().mapNotNull { it.obj() }.forEach { f ->
+                    val key = f.str("key") ?: return@forEach
+                    LpField(pluginValues[key] ?: "", { pluginValues[key] = it }, f.str("placeholder") ?: "", label = f.str("label"),
+                        password = f.str("type") == "password", lines = if (f.bool("multiline")) 5 else 1)
+                    Spacer(Modifier.height(Sp.x12))
+                }
+                hint?.let { Dim2(it); Spacer(Modifier.height(Sp.x12)) }
+                LpButton("添加", { keyboard?.hide(); flow = pluginValues.toMap() }, Modifier.fillMaxWidth())
+                return@Column
+            }
             Dim2("填服务器地址和账号即可。先点「测试连接」可以确认地址对不对。")
             Spacer(Modifier.height(Sp.x20))
 
@@ -180,6 +212,14 @@ fun GatePage(onDone: suspend () -> Unit, embedded: Boolean = false) {
                     }
                 }, kind = BtnKind.Secondary, loading = busy)
             }
+        }
+    }
+
+    flow?.let { form ->
+        val pk = kind ?: return@let
+        PluginSourceFlow(pk.str("plugin_id") ?: "", pk.str("type_id") ?: "", form) { ok ->
+            flow = null
+            if (ok) scope.launch { onDone() }
         }
     }
 

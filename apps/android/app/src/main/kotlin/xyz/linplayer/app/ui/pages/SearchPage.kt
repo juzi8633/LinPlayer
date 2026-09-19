@@ -1,6 +1,10 @@
 package xyz.linplayer.app.ui.pages
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.runtime.collectAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -83,11 +87,14 @@ fun SearchPage(nav: NavController, entry: NavBackStackEntry) {
     // 带 q 进来的直接预填,不用用户再打一遍
     var q by remember { mutableStateOf(route.q.orEmpty()) }
     var includeEpisodes by remember { mutableStateOf(false) }
-    var aggregate by remember { mutableStateOf(false) }
+    // 当前是插件数据源:没有 Emby 会话,只能聚合搜(数据源一起,D258)
+    val onSource = app.activeSource.collectAsState().value != null
+    var aggregate by remember { mutableStateOf(onSource) }
+    /** 聚合结果,一个来源一行,谁先回来谁先显示(source.aggregateSearch 的 partial)。 */
+    val aggRows = remember { androidx.compose.runtime.mutableStateListOf<kotlinx.serialization.json.JsonObject>() }
+    var aggRun by remember { mutableStateOf(0) }
+    var aggBusy by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<Block<List<Item>>?>(null) }
-    /** 聚合的分组结果:服务器名 → 条目。**一次性返回**,不是流式(核心层没有 partial)。 */
-    var groups by remember { mutableStateOf<Map<String, List<Item>>>(emptyMap()) }
-    var failedServers by remember { mutableStateOf<List<String>>(emptyList()) }
     var history by remember { mutableStateOf<List<String>>(emptyList()) }
     val focus = remember { FocusRequester() }
 
@@ -99,31 +106,11 @@ fun SearchPage(nav: NavController, entry: NavBackStackEntry) {
         snapshotFlow { Triple(q.trim(), includeEpisodes, aggregate) }
             .debounce(250)
             .collect { (text, eps, agg) ->
-                if (text.length < 1) { result = null; groups = emptyMap(); return@collect }
-                result = Block.Loading; groups = emptyMap(); failedServers = emptyList()
+                if (text.length < 1) { result = null; return@collect }
+                result = Block.Loading
                 if (agg && route.viewId == null) {
-                    /* ☠ `emby.aggregateSearch` **一次性返回整张表**,没有 partial。
-                       这里原来挂了 onPartial 又按 `server` / `failed` 取值,
-                       而核心层发的是 `server_name` / `items` —— 于是跨服搜索
-                       一组都画不出来,且不报错。 */
-                    result = runCatching {
-                        app.call("emby.aggregateSearch", args(
-                            // ★ 聚合那条命令的开关叫 include_episodes(不是 types)
-                            "query" to text,
-                            "include_episodes" to eps,
-                        ))
-                    }.fold({ v ->
-                        val gs = v.arr().mapNotNull { it.obj() }
-                        // 半失败(一路 429、一路回空)**不能吞成「没搜到」**:
-                        // 核心层现在会把失败的那台也发出来,带 error
-                        failedServers = gs.filter { it.str("error") != null }
-                            .map { it.str("server_name")?.takeIf { n -> n.isNotBlank() } ?: "服务器" }
-                        groups = gs.filter { it.str("error") == null }.associate { o ->
-                            (o.str("server_name")?.takeIf { n -> n.isNotBlank() } ?: "服务器") to
-                                Item.list(o["items"])
-                        }
-                        Block.Ok(emptyList())
-                    }, { Block.Fail("E_INTERNAL", it.message ?: "搜索失败") })
+                    // 聚合**按按钮才发**(D258):每停一下就把请求撒给所有来源太重
+                    result = null
                 } else {
                     /* ☠ 库内搜索的库 id 参数叫 **parent_id**;`types` 要的是**数组**。
                        传 view_id = 核心层读不到,搜的是全站(而「在这个库里搜」的入口
@@ -144,6 +131,17 @@ fun SearchPage(nav: NavController, entry: NavBackStackEntry) {
             }
     }
 
+    LaunchedEffect(aggRun) {
+        if (aggRun == 0) return@LaunchedEffect
+        aggRows.clear(); aggBusy = true
+        runCatching {
+            app.call("source.aggregateSearch", args("query" to q.trim())) { part ->
+                part.obj()?.let { app.bg.launch { aggRows.add(it) } }
+            }
+        }.onFailure { app.report(it) }
+        aggBusy = false
+    }
+
     LpScaffold(onBack = { nav.popBackStack() }, scrolled = true, title = " ") { pad ->
         Column(Modifier.fillMaxSize().imePadding()) {
             LpField(q, { q = it }, if (route.viewId != null) "在这个库里搜" else "搜片名、剧名或演员",
@@ -153,11 +151,39 @@ fun SearchPage(nav: NavController, entry: NavBackStackEntry) {
                 horizontalArrangement = Arrangement.spacedBy(Sp.x8)) {
                 Toggle("包括集", includeEpisodes) { includeEpisodes = it }
                 // 库内搜索与聚合互斥:有搜索范围时这个开关**整个不出现**
-                if (route.viewId == null) Toggle("聚合跨服", aggregate) { aggregate = it }
+                if (route.viewId == null && !onSource) Toggle("聚合(含数据源)", aggregate) { aggregate = it }
+                if (aggregate && route.viewId == null) xyz.linplayer.app.ui.components.LpButton("搜索", { if (q.isNotBlank()) aggRun++ })
             }
 
             val r = result
             when {
+                aggregate && route.viewId == null -> LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {
+                    if (aggRun == 0) item("hint") {
+                        EmptyState("在所有来源里搜", "输好关键词点「搜索」:每个来源各占一行,谁先回来谁先显示。", LpIcons.search)
+                    }
+                    items(aggRows.size) { i ->
+                        val g = aggRows[i]
+                        val name = g.str("server_name") ?: g.str("server_id") ?: ""
+                        val sid = g.str("server_id") ?: ""
+                        when {
+                            g.str("error") != null -> Dim3("$name 没搜成:${g.str("error")}", Modifier.padding(Sp.x16), maxLines = 2)
+                            g.str("kind") == "plugin" -> Column(Modifier.padding(vertical = Sp.x8)) {
+                                xyz.linplayer.app.ui.components.H2("$name · ${g["items"].arr().size} 条", Modifier.padding(horizontal = Sp.x16))
+                                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(Sp.x16), horizontalArrangement = Arrangement.spacedBy(Sp.x10)) {
+                                    g["items"].arr().mapNotNull { it.obj() }.forEach { it ->
+                                        SourceCard(it, { nav.navigate(Route.SourceDetail(it.str("source") ?: sid, it.str("id") ?: "")) }, Modifier.width(108.dp))
+                                    }
+                                }
+                            }
+                            // 跨服结果**不给长按菜单**:收藏 / 标已看是对当前活跃服务器写的
+                            else -> LpRow(name, Item.list(g["emby_items"]), { app.imageUrl(it.id, "Primary", 330) },
+                                { nav.navigate(Route.Detail(it.id, it.type)) }, menu = null)
+                        }
+                    }
+                    if (aggBusy) item("busy") { Dim3("还有来源在搜…", Modifier.padding(Sp.x16)) }
+                    else if (aggRun > 0 && aggRows.isEmpty()) item("none") { EmptyState("「${q.trim()}」没搜到东西", "只包括打开了「允许聚合」的来源。") }
+                }
+
                 r == null -> if (history.isEmpty()) EmptyState(
                     "搜片名、剧名或演员", "会搜当前服务器;打开「聚合跨服」可以一次搜所有已登录的服务器。",
                     LpIcons.search,
@@ -171,27 +197,6 @@ fun SearchPage(nav: NavController, entry: NavBackStackEntry) {
                 }
 
                 r is Block.Fail -> ErrorState(r.message)
-
-                aggregate && route.viewId == null -> LazyColumn(Modifier.fillMaxSize(),
-                    contentPadding = pad) {
-                    groups.forEach { (server, items) ->
-                        item(server) {
-                            // ★ 跨服结果**不给长按菜单** —— 收藏 / 标已看是对当前活跃服务器写的,
-                            //   对着别的服的条目按下去会写错地方,而且不报错
-                            LpRow(server, items, { app.imageUrl(it.id, "Primary", 330) },
-                                { nav.navigate(Route.Detail(it.id, it.type)); remember0(history) { history = it } },
-                                menu = null)
-                        }
-                    }
-                    // 半失败(一路 429、一路回空)**不能吞成「没搜到」**,要说清哪台失败了
-                    if (failedServers.isNotEmpty()) item("failed") {
-                        Dim3("这些服务器没搜成:${failedServers.joinToString("、")}",
-                            Modifier.padding(Sp.x16), maxLines = 3)
-                    }
-                    if (groups.isEmpty()) item("none") {
-                        EmptyState("「${q.trim()}」没搜到东西", "换个关键词试试 —— 有些片源用的是英文原名。")
-                    }
-                }
 
                 else -> {
                     val items = (r as Block.Ok).value

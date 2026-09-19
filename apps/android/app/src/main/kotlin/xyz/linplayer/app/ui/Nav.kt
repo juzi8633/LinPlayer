@@ -32,6 +32,19 @@ object Route {
     @Serializable data class Lines(val serverId: String, val name: String)    // U1.9b
     @Serializable data object Browse                                          // U1.10
     @Serializable data object Downloads                                       // U1.12
+    @Serializable data class Plugins(val tab: Int = 0)                        // 插件页四标签(插件 SPEC 14.4)
+    @Serializable data class PluginDetail(val id: String)
+    @Serializable data object Extensions                                      // 扩展组件(插件 SPEC 18.5)
+    /** 数据源分类页。`cat` 是分类对象的 JSON 原文(带筛选维度与海报比例)。 */
+    @Serializable data class SourceCategory(val serverId: String, val cat: String)
+    /** 数据源详情。auto* 非空 = 进来就接着那一集起播(继续观看 / 换源带进度)。 */
+    @Serializable data class SourceDetail(
+        val serverId: String, val itemId: String,
+        val autoLine: String? = null, val autoEp: String? = null, val autoPos: Double = 0.0, val autoIndex: Int = 0,
+    )
+    @Serializable data object SourceFavorites
+    @Serializable data object Ranking                                         // U1.14a
+    @Serializable data object Calendar                                        // U1.14b
     @Serializable data object Settings                                        // U1.15
     @Serializable data class SettingsSub(val group: String)                   // U1.15 二级
     /**
@@ -48,6 +61,8 @@ object Route {
            带过来是为了在**第一帧之前**把横竖屏定下来 —— 让播放页自己去问一次网络的话,
            用户会先看见一个竖屏的播放页,再整块转过去。0 = 不知道,播放页自己去问。 */
         val ar: Float = 0f,
+        /** 数据源播放:`{server_id, item, line_id, episode_id}` 的 JSON 原文。非空时走 source.playItem。 */
+        val src: String? = null,
     )
     @Serializable data object AddServer                                       // U1.2 的「添加」版式
 }

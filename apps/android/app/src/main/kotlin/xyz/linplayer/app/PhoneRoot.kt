@@ -41,6 +41,7 @@ import xyz.linplayer.app.ui.components.LongShotButton
 import xyz.linplayer.app.ui.components.LpTabBar
 import xyz.linplayer.app.ui.components.Skeleton
 import xyz.linplayer.app.ui.pages.AggregatePage
+import xyz.linplayer.app.ui.pages.CalendarPage
 import xyz.linplayer.app.ui.pages.DetailPage
 import xyz.linplayer.app.ui.pages.DownloadsPage
 import xyz.linplayer.app.ui.pages.FacetPage
@@ -50,6 +51,8 @@ import xyz.linplayer.app.ui.pages.HomePage
 import xyz.linplayer.app.ui.pages.LibraryPage
 import xyz.linplayer.app.ui.pages.LinesPage
 import xyz.linplayer.app.ui.pages.BrowsePage
+import xyz.linplayer.app.ui.pages.PluginsPage
+import xyz.linplayer.app.ui.pages.RankingPage
 import xyz.linplayer.app.ui.pages.SearchPage
 import xyz.linplayer.app.ui.pages.ServersPage
 import xyz.linplayer.app.ui.pages.SettingsPage
@@ -136,6 +139,11 @@ private fun MainShell() {
             "search" -> nav.navigate(Route.Search())
             "favorites" -> nav.navigate(Route.Favorites)
             "downloads" -> nav.navigate(Route.Downloads)
+            "plugins" -> nav.navigate(Route.Plugins(parts.getOrElse(1) { "0" }.toIntOrNull() ?: 0))
+            "extensions" -> nav.navigate(Route.Extensions)
+            "srcfav" -> nav.navigate(Route.SourceFavorites)
+            "ranking" -> nav.navigate(Route.Ranking)
+            "calendar" -> nav.navigate(Route.Calendar)
             "settings" -> nav.navigate(Route.Settings)
             "browse" -> nav.navigate(Route.Browse)
             "addServer" -> nav.navigate(Route.AddServer)
@@ -171,17 +179,32 @@ private fun MainShell() {
                         fadeOut(tween(T.T5))
                 },
             ) {
-                composable<Route.Home> { HomePage(nav) }
+                // 当前是插件数据源:首页换成数据源首页(D167),Emby 那一套它一样都没有
+                composable<Route.Home> {
+                    val src by app.activeSource.collectAsStateWithLifecycle()
+                    src?.let { xyz.linplayer.app.ui.pages.SourceHomePage(nav, it.id, it.name) } ?: HomePage(nav)
+                }
                 composable<Route.Aggregate> { AggregatePage(nav) }
                 composable<Route.Servers> { ServersPage(nav) }
                 composable<Route.Library> { LibraryPage(nav, it) }
                 composable<Route.Detail> { DetailPage(nav, it) }
                 composable<Route.Search> { SearchPage(nav, it) }
-                composable<Route.Favorites> { FavoritesPage(nav) }
+                composable<Route.Favorites> {
+                    val src by app.activeSource.collectAsStateWithLifecycle()
+                    if (src != null) xyz.linplayer.app.ui.pages.SourceFavoritesPage(nav) else FavoritesPage(nav)
+                }
                 composable<Route.Facet> { FacetPage(nav, it) }
                 composable<Route.Lines> { LinesPage(nav, it) }
                 composable<Route.Browse> { BrowsePage(nav) }
                 composable<Route.Downloads> { DownloadsPage(nav) }
+                composable<Route.Plugins> { PluginsPage(nav, it) }
+                composable<Route.PluginDetail> { xyz.linplayer.app.ui.pages.PluginDetailPage(nav, it) }
+                composable<Route.Extensions> { xyz.linplayer.app.ui.pages.ExtensionsPage(nav) }
+                composable<Route.SourceCategory> { xyz.linplayer.app.ui.pages.SourceCategoryPage(nav, it) }
+                composable<Route.SourceDetail> { xyz.linplayer.app.ui.pages.SourceDetailPage(nav, it) }
+                composable<Route.SourceFavorites> { xyz.linplayer.app.ui.pages.SourceFavoritesPage(nav) }
+                composable<Route.Ranking> { RankingPage(nav) }
+                composable<Route.Calendar> { CalendarPage(nav) }
                 composable<Route.Settings> { SettingsPage(nav) }
                 composable<Route.SettingsSub> { SettingsSubPage(nav, it) }
                 /* ☠ 加完服务器**必须重取一次会话**。只 popBackStack 的话:

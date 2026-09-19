@@ -116,6 +116,8 @@ fun ServersPage(nav: NavController) {
     var editFor by remember { mutableStateOf<Account?>(null) }
     var iconFor by remember { mutableStateOf<Account?>(null) }
     var confirmDelete by remember { mutableStateOf<Account?>(null) }
+    var hostFor by remember { mutableStateOf<Account?>(null) }
+    val openGroups = remember { androidx.compose.runtime.mutableStateListOf<String>() }
     var reload by remember { mutableStateOf(0) }
 
     LaunchedEffect(reload) {
@@ -144,6 +146,13 @@ fun ServersPage(nav: NavController) {
         }
     }
 
+    val setAggregate: (Account) -> Unit = { a ->
+        scope.launch {
+            runCatching { app.call("source.setAggregate", args("server_id" to a.id, "allow" to !a.aggregate)) }
+                .onSuccess { reload++ }.onFailure { app.report(it) }
+        }
+    }
+
     LpScaffold("服务器", scrolled = rememberScrolled(list), actions = {
         LpIconButton(LpIcons.plus, "添加服务器") { nav.navigate(Route.AddServer) }
         LpIconButton(LpIcons.settings, "设置") { nav.navigate(Route.Settings) }
@@ -154,7 +163,7 @@ fun ServersPage(nav: NavController) {
             return@LpScaffold
         }
         LazyColumn(Modifier.fillMaxSize(), list, contentPadding = pad) {
-            items(accounts, key = { it.id }) { a ->
+            items(accounts.filter { it.plugin == null }, key = { it.id }) { a ->
                 Box {
                     var at by remember(a.id) { mutableStateOf(IntOffset.Zero) }
                     val inset = with(LocalDensity.current) {
@@ -178,7 +187,32 @@ fun ServersPage(nav: NavController) {
                         LpMenuItem("编辑图标", { menuFor = null; iconFor = a })
                         LpMenuItem("服务器线路",
                             { menuFor = null; nav.navigate(Route.Lines(a.id, a.name)) })
+                        LpMenuItem(if (a.aggregate) "✓ 允许聚合" else "允许聚合", { menuFor = null; setAggregate(a) })
                         LpMenuItem("删除", { menuFor = null; confirmDelete = a }, danger = true)
+                    }
+                }
+            }
+            // 插件数据源:一个订阅一组,默认折叠;当前在用的那组总是展开(SPEC 8.7 D383)
+            accounts.filter { it.plugin != null }.groupBy { it.plugin.str("group") ?: "" }.forEach { (group, rows) ->
+                val gname = rows.first().plugin.str("group_name")?.takeIf { it.isNotEmpty() } ?: rows.first().plugin.str("plugin_id") ?: ""
+                val open = group in openGroups || rows.any { it.isActive }
+                item("g:$group") {
+                    SourceGroupHeader(gname, rows.size, open, rows.first().plugin.str("plugin_id") ?: "", group,
+                        onToggle = { if (!openGroups.remove(group)) openGroups.add(group) }) { reload++ }
+                }
+                if (open) items(rows, key = { it.id }) { a ->
+                    Box {
+                        val why = a.plugin.str("unavailable").orEmpty()
+                        ServerCard(a.copy(remark = if (why.isNotEmpty()) why else if (a.plugin.bool("last_failed")) "上次打开失败" else null),
+                            if (a.plugin.bool("last_failed")) "down" else null, a.isActive,
+                            onTap = { if (why.isNotEmpty()) app.toast(why) else if (!a.isActive) switchTo(a) },
+                            onLong = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuFor = a })
+                        LpMenu(menuFor?.id == a.id, { menuFor = null }, Alignment.TopStart, IntOffset.Zero) {
+                            if (!a.isActive && why.isEmpty()) LpMenuItem("设为当前", { menuFor = null; switchTo(a) })
+                            LpMenuItem(if (a.aggregate) "✓ 允许聚合" else "允许聚合", { menuFor = null; setAggregate(a) })
+                            LpMenuItem("修改地址(host)", { menuFor = null; hostFor = a })
+                            LpMenuItem("删除这个源", { menuFor = null; confirmDelete = a }, danger = true)
+                        }
                     }
                 }
             }
@@ -191,6 +225,22 @@ fun ServersPage(nav: NavController) {
     }
 
     editFor?.let { a -> EditDialog(a, { editFor = null }) { reload++ } }
+    hostFor?.let { a ->
+        var host by remember(a.id) { mutableStateOf(a.plugin.str("host_override").orEmpty()) }
+        LpDialog({ hostFor = null }, "修改地址") {
+            Dim3("站点换了域名时填新地址,插件请求会改用它。留空 = 用配置里的地址。", maxLines = 3)
+            Spacer(Modifier.height(Sp.x10))
+            LpField(host, { host = it }, "新地址")
+            Spacer(Modifier.height(Sp.x16))
+            LpButton("保存", {
+                scope.launch {
+                    runCatching { app.call("source.setHost", args("server_id" to a.id, "host" to host.trim())) }
+                        .onSuccess { app.toast("已保存") }.onFailure { app.report(it) }
+                    hostFor = null
+                }
+            })
+        }
+    }
     iconFor?.let { a -> IconDialog(a, { iconFor = null }) { iconCache.remove(a.id); reload++ } }
 
     // 不可逆的删除是**需要二次确认的三类之一**(UI_MOBILE.md §6.2)
@@ -658,3 +708,59 @@ private fun copyToCache(ctx: android.content.Context, uri: android.net.Uri): Str
     if (dst.length() == 0L) { dst.delete(); return null }
     dst.absolutePath
 }.getOrNull()
+
+/** 订阅分组的头:点一下折叠 / 展开,长按出分组菜单(检测这一组、删除整个订阅、插件声明的菜单)。 */
+@Composable
+private fun SourceGroupHeader(name: String, count: Int, open: Boolean, pluginId: String, group: String,
+                              onToggle: () -> Unit, changed: () -> Unit) {
+    val app = LocalApp.current
+    val scope = rememberCoroutineScope()
+    var menu by remember { mutableStateOf(false) }
+    var pluginMenus by remember { mutableStateOf<List<kotlinx.serialization.json.JsonObject>>(emptyList()) }
+    var askDelete by remember { mutableStateOf(false) }
+    LaunchedEffect(menu) {
+        if (menu && pluginMenus.isEmpty()) pluginMenus = runCatching { app.call("source.serverMenus", args("plugin_id" to pluginId)) }
+            .getOrNull().arr().mapNotNull { it.obj() }
+    }
+    Box {
+        Row(Modifier.fillMaxWidth().pointerInput(Unit) { detectTapGestures(onTap = { onToggle() }, onLongPress = { menu = true }) }
+            .padding(horizontal = Sp.x26, vertical = Sp.x12), verticalAlignment = Alignment.CenterVertically) {
+            Body("${if (open) "▾" else "▸"}  $name($count)", Modifier.weight(1f), maxLines = 1)
+        }
+        LpMenu(menu, { menu = false }, Alignment.TopStart, IntOffset.Zero) {
+            LpMenuItem("检测这一组的源", {
+                menu = false
+                scope.launch {
+                    app.toast("正在检测…")
+                    runCatching { app.call("source.checkAll", args("group" to group)) }.onSuccess { r ->
+                        val all = r.arr().mapNotNull { it.obj() }
+                        val bad = all.count { !it.bool("ok") }
+                        app.toast(if (bad == 0) "${all.size} 个源都能用" else "${all.size} 个源里 $bad 个打不开,已标红")
+                        changed()
+                    }.onFailure { app.report(it) }
+                }
+            })
+            pluginMenus.forEach { m ->
+                LpMenuItem(m.str("title") ?: "", {
+                    menu = false
+                    scope.launch {
+                        runCatching { app.call("source.runCommand", j("plugin_id" to pluginId, "command" to m.str("command"), "args" to mapOf("group" to group))) }
+                            .onSuccess { app.toast("完成"); changed() }.onFailure { app.report(it) }
+                    }
+                })
+            }
+            LpMenuItem("删除整个订阅", { menu = false; askDelete = true }, danger = true)
+        }
+    }
+    if (askDelete) LpDialog({ askDelete = false }, "删除「$name」?") {
+        Body("这一组的源都会移除,收藏和观看记录保留。")
+        Spacer(Modifier.height(Sp.x16))
+        Row(horizontalArrangement = Arrangement.spacedBy(Sp.x10)) {
+            LpButton("取消", { askDelete = false }, Modifier.weight(1f), BtnKind.Secondary)
+            LpButton("删除", {
+                askDelete = false
+                scope.launch { runCatching { app.call("source.removeGroup", args("group" to group)) }.onSuccess { app.refreshSession(); changed() }.onFailure { app.report(it) } }
+            }, Modifier.weight(1f), BtnKind.Danger)
+        }
+    }
+}

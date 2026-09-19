@@ -133,6 +133,8 @@ private fun Shortcuts(nav: NavController) {
     ) {
         Shortcut("服务器", LpIcons.server, Modifier.weight(1f)) { nav.navigate(Route.Servers) }
         Shortcut("下载", LpIcons.download, Modifier.weight(1f)) { nav.navigate(Route.Downloads) }
+        Shortcut("排行榜", LpIcons.trophy, Modifier.weight(1f)) { nav.navigate(Route.Ranking) }
+        Shortcut("日历", LpIcons.calendar, Modifier.weight(1f)) { nav.navigate(Route.Calendar) }
     }
 }
 

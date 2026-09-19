@@ -70,7 +70,7 @@ object FakeImages {
 
     private class Factory : Fetcher.Factory<coil3.Uri> {
         override fun create(data: coil3.Uri, options: Options, imageLoader: ImageLoader): Fetcher? =
-            // 夹具里的封面是 fake: 地址,不走 localBaseUrl:测试里一律画色块,不出网
+            // 排行榜 / 放送表的封面是外站地址,不走 localBaseUrl:测试里一律画色块,不出网
             Fetcher { draw(data.toString()) }
     }
 
