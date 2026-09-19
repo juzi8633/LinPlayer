@@ -87,10 +87,8 @@ CommonConfig 的客户端把 `.lpbak` 当配置文件喂进去就能用，它只
 {
   "theme": "dark",
   "companion_enabled": true,
-  "plugin_official_enabled": true,
   "prefs": { /* core/config/prefs.go 的 Prefs，原样 */ },
-  "danmaku_sources": [...], "proxy": {...},
-  "sync_trakt": {...}, "sync_bangumi": {...}, "plugin_sources": [...]
+  "danmaku_sources": [...], "proxy": {...}
 }
 ```
 

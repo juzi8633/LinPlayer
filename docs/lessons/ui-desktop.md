@@ -2908,7 +2908,7 @@ LP_EPS=1200 LP_RAIL=1 LP_RAILSTRESS=1 LP_WAIT=26 bash scripts/selfcheck-win.sh e
 **Windows 上起任何外部命令行工具都要带上它。**
 
 > **2026-09-16 订正:文件名变了。** `pshide_windows.go` 已不在,现存两份包私有实现 ——
-> `core/translate/hidewin_windows.go`(探 ffmpeg/whisper 用)、
+> `core/translate/hidewin_windows.go`(探 ffmpeg/whisper 用,2026-09-19 随字幕翻译一起删了)、
 > `core/system/spawn_windows.go`(更新的覆盖脚本用)。
 > Go 的小写函数跨不了包,所以是两份而不是一份;加第三个包时照抄,别去导出它。
 >

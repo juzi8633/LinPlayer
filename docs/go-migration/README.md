@@ -38,22 +38,20 @@ Swift/SwiftUI(Apple,后置)。**
 | `UPSCALING.md` | Anime4K / ArtCNN 等超分模型、mpv 内置画质选项、档位设计 |
 | `NETWORK.md` | 预取代理、环形磁盘缓存、Range/seek、下载、线路优选、HTTP 策略 |
 | `SOURCES.md` ⚠️**仅本地,不入公开库** | 媒体源抽象、19 个后端、登录逆向与签名算法 |
-| `PLUGINS.md` | 插件宿主契约(`ctx.*` API、manifest、权限、贡献点) |
 | `UI_LESSONS.md` | 前端经验甄别:哪些换 UI 框架后依然成立、哪些是浏览器/架构包袱 |
 | `PORTING_TRAPS.md` | **Rust → Go 的等价性陷阱**:两边都编译通过、单测都绿、但输出不一样的那类 |
 
-> 另见仓库根的 [`docs/lessons/`](../lessons/) —— 按领域整理的**历史踩坑全集**(123 条)。
+> 另见仓库根的 [`docs/lessons/`](../lessons/) —— 按领域整理的**历史踩坑全集**(125 条)。
 > `knowledge/` 是「这块该怎么做」,`lessons/` 是「以前在这块栽过什么」。
 
 ## 现在该做什么
 
-**阶段 0:四个 SPIKE。** 它们全部有结论之前不写第二行业务代码。
+**阶段 0:三个 SPIKE。** 它们全部有结论之前不写第二行业务代码。
 
 | SPIKE | 问题 | 为什么它排第一 |
 |---|---|---|
 | **SPIKE-1** | Windows/Linux 上视频能不能合成进 UI 场景;**Linux 侧 X11 与 Wayland 各跑一条** | 唯一可能推翻 UI 选型的风险。强制 X11 的旧理由已随架构失效(`SPEC.md` §15.2) |
 | **SPIKE-2** | Go 的 C ABI 能不能被三个宿主稳定调用 | 整个架构的地基 |
-| **SPIKE-3** | quickjs-go 能不能跑现有插件 | 插件生态是否断代 |
 | **SPIKE-4** | Compose TV 焦点是不是真的白送 | TV 端最大的收益点 |
 
 详见 [`TODO.md` §1](TODO.md)。每个 SPIKE 的产出写进 `spikes/SPIKE-N.md`,

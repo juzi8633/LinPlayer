@@ -34,12 +34,6 @@ func RegisterCommands() {
 	bus.Register("source.search", cmdSearch)
 	bus.Register("source.play", cmdPlay)
 	bus.Register("source.watchdog", cmdWatchdog)
-
-	// 影视目录三条:只有资源站那类源实现,别的源一律「没这个能力」。
-	bus.Register("source.categories", cmdCategories)
-	bus.Register("source.catalog", cmdCatalog)
-	bus.Register("source.mediaDetail", cmdMediaDetail)
-
 }
 
 // registerBackends 登记已移植的后端。
@@ -171,8 +165,8 @@ func cmdLogin(ctx context.Context, seq int64, a map[string]any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	// 验证这个源确实能用。探测口径(为什么不能只试 ListDir)见 source.ProbeBackend。
-	if err := source.ProbeBackend(ctx, b, client(), srv); err != nil {
+	// 验证这个源确实能用:根目录列得出来才落盘。
+	if _, err := b.ListDir(ctx, client(), srv, ""); err != nil {
 		return nil, classify(err)
 	}
 
@@ -292,69 +286,6 @@ func cmdWatchdog(ctx context.Context, seq int64, a map[string]any) (any, error) 
 	return false, nil
 }
 
-func cmdCategories(ctx context.Context, seq int64, a map[string]any) (any, error) {
-	cat, _, srv, err := activeCataloger()
-	if err != nil {
-		return nil, err
-	}
-	out, err := cat.Categories(ctx, client(), srv)
-	if err != nil {
-		return nil, classify(err)
-	}
-	if out == nil {
-		out = []source.MediaCategory{}
-	}
-	return out, nil
-}
-
-func cmdCatalog(ctx context.Context, seq int64, a map[string]any) (any, error) {
-	cat, _, srv, err := activeCataloger()
-	if err != nil {
-		return nil, err
-	}
-	page := uint32(num(a, "page"))
-	if page == 0 {
-		page = 1
-	}
-	out, err := cat.Catalog(ctx, client(), srv, str(a, "category_id"), str(a, "keyword"), page)
-	if err != nil {
-		return nil, classify(err)
-	}
-	return out, nil
-}
-
-func cmdMediaDetail(ctx context.Context, seq int64, a map[string]any) (any, error) {
-	cat, _, srv, err := activeCataloger()
-	if err != nil {
-		return nil, err
-	}
-	id := str(a, "id")
-	if id == "" {
-		return nil, bus.NewErr(bus.EInvalid, "缺少 id")
-	}
-	out, err := cat.MediaDetailOf(ctx, client(), srv, id)
-	if err != nil {
-		return nil, classify(err)
-	}
-	return out, nil
-}
-
-func activeCataloger() (source.Cataloger, source.Kind, *source.Server, error) {
-	kind, srv, err := activeSource()
-	if err != nil {
-		return nil, "", nil, err
-	}
-	b, err := backendFor(kind)
-	if err != nil {
-		return nil, "", nil, err
-	}
-	cat, ok := b.(source.Cataloger)
-	if !ok {
-		return nil, "", nil, classify(source.UnsupportedFeature("影视目录"))
-	}
-	return cat, kind, srv, nil
-}
-
 // ---------------------------------------------------------------------------
 // 辅助
 // ---------------------------------------------------------------------------
@@ -391,7 +322,7 @@ func persistRotated(b source.Backend, srv *source.Server) {
 // classify 把源错误翻成总线错误码。
 //
 // ★ 鉴权失效要走 E_AUTH:UI 据此引导**重新登录**,而不是提示「检查网络」。
-// ★ 「没这个能力」保留原文(带 __LP_UNSUPPORTED__ 前缀),前端据此静默退回另一条路。
+// ★ 「没这个能力」走 E_UNSUPPORTED,前端据此静默退回另一条路(搜索退回本地过滤)。
 func classify(err error) error {
 	if err == nil {
 		return nil

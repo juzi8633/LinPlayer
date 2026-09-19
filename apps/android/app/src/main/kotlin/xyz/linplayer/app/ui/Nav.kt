@@ -31,11 +31,7 @@ object Route {
     @Serializable data class Facet(val kind: String, val value: String, val label: String)
     @Serializable data class Lines(val serverId: String, val name: String)    // U1.9b
     @Serializable data object Browse                                          // U1.10
-    @Serializable data object Catalog                                         // U1.11
     @Serializable data object Downloads                                       // U1.12
-    @Serializable data object Plugins                                         // U1.13
-    @Serializable data object Ranking                                         // U1.14a
-    @Serializable data object Calendar                                        // U1.14b
     @Serializable data object Settings                                        // U1.15
     @Serializable data class SettingsSub(val group: String)                   // U1.15 二级
     /**

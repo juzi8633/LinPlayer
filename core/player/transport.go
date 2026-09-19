@@ -270,7 +270,6 @@ func registerTransport() {
 	//
 	// ★ 判「播完」必须读 **eof-reached 属性**,不能等 END_FILE 事件 ——
 	//   keep-open=yes 时文件不卸载,END_FILE **永远不发**。
-	//   这是「播完不同步 Trakt/Bangumi」的根因。
 	bus.Register("player.status", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
 		t := Current()
 		out := map[string]any{
@@ -317,8 +316,8 @@ func registerTransport() {
 			   而画面并没有变差 —— 拿它继续当判据会得出反的结论。 */
 			// aspect_override 自检对账用:控件显示 16:9 而 mpv 没收到,两者长得一样。
 			"aspect_override": propF("video-aspect-override"),
-			"vo_delayed": propF("vo-delayed-frame-count"),
-			"vsync_jitter": propF("vsync-jitter"),
+			"vo_delayed":      propF("vo-delayed-frame-count"),
+			"vsync_jitter":    propF("vsync-jitter"),
 		}
 		/* ★★ 出帧节奏:相邻两次上屏的**间隔抖动**。见 player.go 的 noteCadence。
 		   这是「画面抽搐」唯一量得出来的东西 —— avsync 量不出来(实测关掉授时

@@ -80,7 +80,7 @@ Windows でも使えます（`LinPlayer.exe`）。出力はリダイレクトか
 
 ## 機能
 
-ビジネスロジック（Emby プロトコル、ネットワーク、再生制御、弾幕、同期、ダウンロード、プラグイン）は**全プラットフォーム共通の Go コア**にまとまっており、
+ビジネスロジック（Emby プロトコル、ネットワーク、再生制御、弾幕、ダウンロード）は**全プラットフォーム共通の Go コア**にまとまっており、
 `lpcore` 共有ライブラリとしてビルドされます。各プラットフォームは自分の UI だけを書きます。そのため下表の ⬜ は「未着手」ではなく、**コアにはあるが、そのプラットフォームの UI がまだつながっていない**という意味です。
 
 | 機能 | 説明 | Windows | Linux | スマホ / タブレット | TV |
@@ -91,15 +91,10 @@ Windows でも使えます（`LinPlayer.exe`）。出力はリダイレクトか
 | **弾幕** | DanDanPlay ほか複数ソース、話数の自動マッチング、NG ワードと表示設定 | ✅ | ✅ | ✅ | ✅ |
 | **字幕** | Emby の内蔵 / 外部字幕、トラック切替、遅延、スタイル；libass の全効果 | ✅ | ✅ | ✅ | ✅ |
 | **進捗報告とサーバー間レジューム** | Emby への進捗報告；複数サーバーのうち最も進んだ位置から再開 | ✅ | ✅ | ✅ | ✅ |
-| **ランキング** | DanDanPlay アニメランキング + TMDB 映画・ドラマランキング | ✅ | ✅ | ✅ | ✅ |
-| **放送カレンダー** | Trakt / Bangumi の放送スケジュール（スマホは現状 Bangumi のみ） | ✅ | ✅ | ✅ | ✅ |
 | **ダウンロード** | 自前のマルチスレッド Range 分割ダウンロード、シーズン一括 | ✅ | ✅ | ✅ | ✅ |
 | **マルチスレッド読み込み** | ローカル先読みプロキシ。並列 Range 要求で先回りしてプレーヤーへ供給 | ✅ | ✅ | ✅ | ✅ |
 | **ローカルフォルダー再生** | ローカルのディレクトリを選んでそのまま閲覧・再生 | ✅ | ✅ | ✅ | ✅ |
 | **アプリ内更新** | 2 チャンネル、プラットフォームとアーキテクチャに合わせて自動選択 | ✅ | ✅ | ✅ | ✅ |
-| **プラグイン** | QuickJS エンジン、プラグインマーケット、プラグインごとの権限と隔離 | ✅ | ✅ | ✅ | ⬜ |
-| **Trakt / Bangumi アカウント** | ログイン、アカウントと放送スケジュールの表示 | ⬜ | ⬜ | ⬜ | ✅ |
-| **視聴履歴の同期** | Trakt Scrobble / Bangumi の話数チェック | ⬜ | ⬜ | ⬜ | ⬜ |
 | **カスタムネットワークプロキシ** | | ⬜ | ⬜ | ⬜ | ✅ |
 | **Cloudflare 最速 IP 測定** | Cloudflare のエッジノードをサンプリングして速度測定 | ✅ | ✅ | ⬜ | ⬜ |
 | **サーバー一括追加** | 複数行の設定を貼り付けて一括で解析・取り込み | ✅ | ✅ | ⬜ | ⬜ |
@@ -112,7 +107,7 @@ Windows でも使えます（`LinPlayer.exe`）。出力はリダイレクトか
 
 > **対象外にしたもの**（2026-09-04 決定）：クラウドストレージ（Aliyun / Baidu / 115 / 189 / 139 / Quark / OpenList / 飛牛）、
 > LAN ソース（SMB / WebDAV / FTP）、Ani-RSS はすべて取りやめ、コードも削除済みです。
-> 動画リソースサイトは今後**プラグインの形でのみ**提供されます。ローカルフォルダー再生は残します —— プレーヤーの基本機能だからです。
+> 動画リソースサイトは今後**プラグインの形でのみ**提供されます —— プラグインシステムは一から作り直し中です（設計：[`plugin-system/SPEC.md`](plugin-system/SPEC.md)、中国語）。ローカルフォルダー再生は残します —— プレーヤーの基本機能だからです。
 
 ## スクリーンショット
 
@@ -150,8 +145,6 @@ Windows でも使えます（`LinPlayer.exe`）。出力はリダイレクトか
   </tr>
   <tr>
     <td><img src="images/screenshots/tablet-player.jpg" width="100%" alt="プレーヤー"><br><sub><b>プレーヤー</b></sub></td>
-    <td><img src="images/screenshots/tablet-rankings.jpg" width="100%" alt="ランキング"><br><sub><b>ランキング</b></sub></td>
-    <td><img src="images/screenshots/tablet-calendar.jpg" width="100%" alt="放送カレンダー"><br><sub><b>放送カレンダー</b></sub></td>
   </tr>
 </table>
 
@@ -165,12 +158,10 @@ Windows でも使えます（`LinPlayer.exe`）。出力はリダイレクトか
   </tr>
   <tr>
     <td width="33%"><img src="images/screenshots/phone-home.jpg" width="100%" alt="ホーム"><br><sub><b>ホーム</b></sub></td>
-    <td width="33%"><img src="images/screenshots/phone-aggregate.jpg" width="100%" alt="集約ビュー"><br><sub><b>集約ビュー</b> —— サーバーをまたぐお気に入り / ダウンロード / ランキング / カレンダー</sub></td>
-    <td width="33%"><img src="images/screenshots/phone-rankings.jpg" width="100%" alt="ランキング"><br><sub><b>ランキング</b></sub></td>
+    <td width="33%"><img src="images/screenshots/phone-aggregate.jpg" width="100%" alt="集約ビュー"><br><sub><b>集約ビュー</b> —— サーバーをまたぐお気に入り / ダウンロード</sub></td>
   </tr>
   <tr>
     <td><img src="images/screenshots/phone-series-detail.jpg" width="100%" alt="シリーズ詳細"><br><sub><b>シリーズ詳細</b></sub></td>
-    <td><img src="images/screenshots/phone-calendar.jpg" width="100%" alt="放送カレンダー"><br><sub><b>放送カレンダー</b></sub></td>
     <td><img src="images/screenshots/phone-settings.jpg" width="100%" alt="設定"><br><sub><b>設定</b></sub></td>
   </tr>
 </table>
@@ -237,10 +228,8 @@ LinPlayer は以下のオープンソースプロジェクト、メディアサ�
 ### サービスとデータソース
 
 - [Emby](https://emby.media/) — メディアサーバー
-- [DanDanPlay](https://www.dandanplay.com/) — 弾幕とアニメランキングデータ
-- [TMDB](https://www.themoviedb.org/) — 映画・ドラマランキングデータ
-- [Bangumi (bgm.tv)](https://bgm.tv/) — アニメの放送スケジュールとコレクション
-- [Trakt](https://trakt.tv/) — 映画・ドラマの放送スケジュールと視聴履歴
+- [DanDanPlay](https://www.dandanplay.com/) — 弾幕データ
+- [Bangumi (bgm.tv)](https://bgm.tv/) — 作品名（弾幕マッチング用）
 
 ### Emby サーバー
 
@@ -253,9 +242,8 @@ UI デモと長期的なサポートを提供いただいた以下の Emby サ�
 ### ネットワークとツール
 
 - [CloudflareSpeedTest](https://github.com/XIU2/CloudflareSpeedTest) — Cloudflare 最速 IP 機能は XIU2 氏のこのプロジェクトに着想を得ています
-- [QuickJS](https://bellard.org/quickjs/) — プラグインスクリプトエンジン
 
-> TMDB と DanDanPlay のコンテンツの著作権はそれぞれの権利者に帰属します。本プロジェクトは集約・表示を行うのみで、著作権保護されたメディアの保存や配布は行いません。
+> DanDanPlay のコンテンツの著作権はそれぞれの権利者に帰属します。本プロジェクトは集約・表示を行うのみで、著作権保護されたメディアの保存や配布は行いません。
 
 ## Star History
 

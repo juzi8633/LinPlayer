@@ -163,10 +163,10 @@ import "C"
 
 import (
 	"errors"
-	"strings"
 	"fmt"
 	"math"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -183,10 +183,10 @@ var (
 	rctx    unsafe.Pointer // mpv_render_context*
 	rctxSet atomic.Bool    // 起播要等它(SPEC §7.2 约束 6)
 
-	renderCalls atomic.Int64
-	swapCalls   atomic.Int64
+	renderCalls  atomic.Int64
+	swapCalls    atomic.Int64
 	advanceCalls atomic.Int64
-	drainStop   atomic.Bool
+	drainStop    atomic.Bool
 )
 
 // baseOptions 是 mpv 起手的选项表。
@@ -406,7 +406,7 @@ func drainEvents(h unsafe.Pointer) {
 			}
 		case evEndFile:
 			// ★ keep-open=yes 时 END_FILE **永远不发**(文件不卸载)。
-			//   判「播完」必须读 eof-reached 属性 —— 这是「播完不同步 Trakt/Bangumi」的根因。
+			//   判「播完」必须读 eof-reached 属性 —— 旧版「播完不回写」就栽在这。
 			//   这个分支留着只为文档:真走到这儿说明 keep-open 被谁改了。
 			bus.Logf("info", "mpv END_FILE(keep-open 下本不该出现)")
 		}
@@ -561,8 +561,11 @@ func logGLIdentity(gpa, ctx unsafe.Pointer) {
 		C.GoString(ver), C.GoString(rend), C.GoString(glsl))
 }
 
-/* GLWantsRedraw 有没有新帧。**宿主已经不拿它决定画不画了** —— 见 GLRender 上面那段:
-   跳过 render 的那一个合成帧,宿主的 FBO 里是黑的。留着它只为分统计口径。 */
+/*
+GLWantsRedraw 有没有新帧。**宿主已经不拿它决定画不画了** —— 见 GLRender 上面那段:
+
+	跳过 render 的那一个合成帧,宿主的 FBO 里是黑的。留着它只为分统计口径。
+*/
 func GLWantsRedraw() int32 {
 	mpvMu.Lock()
 	rc := rctx
@@ -576,21 +579,22 @@ func GLWantsRedraw() int32 {
 	return 0
 }
 
+/*
+lead:这一帧被推上屏的时刻,比 mpv 给的呈现时刻早多少毫秒。
 
-/* lead:这一帧被推上屏的时刻,比 mpv 给的呈现时刻早多少毫秒。
+	它就是**画面比声音早多少** —— block_for_target_time=1 时 mpv 在 render 里等到点
+	才放行,所以恒为 0;设成 0 之后我们拿到帧就画,早多少完全取决于 mpv 提前多久交货。
+	2026-09-05 实测:提前约一帧(24fps 片子 ≈ +36ms),而且**改不掉** ——
+	`video-latency-hacks=yes` 试过,render 仍然堵 38.4ms,mpv 照样提前一帧交。
 
-   它就是**画面比声音早多少** —— block_for_target_time=1 时 mpv 在 render 里等到点
-   才放行,所以恒为 0;设成 0 之后我们拿到帧就画,早多少完全取决于 mpv 提前多久交货。
-   2026-09-05 实测:提前约一帧(24fps 片子 ≈ +36ms),而且**改不掉** ——
-   `video-latency-hacks=yes` 试过,render 仍然堵 38.4ms,mpv 照样提前一帧交。
-
-   ☠ 单位是**纳秒**,和 mpv_get_time_ns 同基,不是 render.h 注释里写的 mpv_get_time_us。
-     按微秒算会得到 99 万毫秒,然后被护栏静默丢光 —— 这里对不上量纲就吼一声,不许静默。 */
+	☠ 单位是**纳秒**,和 mpv_get_time_ns 同基,不是 render.h 注释里写的 mpv_get_time_us。
+	  按微秒算会得到 99 万毫秒,然后被护栏静默丢光 —— 这里对不上量纲就吼一声,不许静默。
+*/
 var (
-	leadMu    sync.Mutex
-	leadN     int64
-	leadSum   float64
-	leadBad   atomic.Int64
+	leadMu  sync.Mutex
+	leadN   int64
+	leadSum float64
+	leadBad atomic.Int64
 )
 
 func noteLead(rc unsafe.Pointer, h unsafe.Pointer) {
@@ -792,20 +796,21 @@ func Close() {
 // SetSurface 是视频通道 A(SPEC §7.2)。实现按平台分:
 // 安卓在 surface_android.go(真绑 mpv 的 wid),其余平台在 surface_other.go(桩)。
 
+/*
+★★ 出帧节奏。**「画面抽不抽搐」唯一量得出来的东西。**
 
-/* ★★ 出帧节奏。**「画面抽不抽搐」唯一量得出来的东西。**
+	用户 2026-09-04 报「正常播放的画面都会抽搐」,而这件事:
+	  · 截图看不出来 —— 抽搐是帧和帧之间的关系,截图只有一帧;
+	  · mpv 的 avsync 也看不出来 —— 实测把 block_for_target_time 关掉,
+	    它照样一路 0.0ms(音频时钟没受影响,受影响的是**画面上屏的时刻**)。
+	    第一版判据就写在 avsync 上,反向注入之后是绿的 —— 一条假绿的门禁。
 
-   用户 2026-09-04 报「正常播放的画面都会抽搐」,而这件事:
-     · 截图看不出来 —— 抽搐是帧和帧之间的关系,截图只有一帧;
-     · mpv 的 avsync 也看不出来 —— 实测把 block_for_target_time 关掉,
-       它照样一路 0.0ms(音频时钟没受影响,受影响的是**画面上屏的时刻**)。
-       第一版判据就写在 avsync 上,反向注入之后是绿的 —— 一条假绿的门禁。
+	真正变的是**相邻两次上屏之间隔了多久**:
+	  · block=1:mpv 阻塞到该帧的呈现时刻才返回,间隔贴着帧间隔走;
+	  · block=0:解码完就交,间隔随解码耗时上下跳 —— 那就是抽搐。
 
-   真正变的是**相邻两次上屏之间隔了多久**:
-     · block=1:mpv 阻塞到该帧的呈现时刻才返回,间隔贴着帧间隔走;
-     · block=0:解码完就交,间隔随解码耗时上下跳 —— 那就是抽搐。
-
-   所以量**间隔的标准差**(抖动)。★ 不是量平均帧率:抽搐的时候平均帧率是对的。 */
+	所以量**间隔的标准差**(抖动)。★ 不是量平均帧率:抽搐的时候平均帧率是对的。
+*/
 var (
 	cadMu    sync.Mutex
 	cadLast  int64 // 上一次 render 的时刻(ns)
@@ -831,12 +836,14 @@ func noteCadence() {
 	cadMu.Unlock()
 }
 
-/* renderCost:lp_rc_render **这一次调用本身**耗了多久(毫秒)。
+/*
+renderCost:lp_rc_render **这一次调用本身**耗了多久(毫秒)。
 
-   量这个是因为 block_for_target_time=1 的语义就是「阻塞到该帧的呈现时刻」——
-   而这个调用跑在宿主的合成/UI 线程上。它堵多久,整个界面就有多久画不了新东西。
-   2026-09-04 那次「合成线程被堵 83ms」是猜的,从来没量过,于是拿这个猜测去动了
-   mpv 的默认值,把正常播放弄坏了。这次先有数再动手。 */
+	量这个是因为 block_for_target_time=1 的语义就是「阻塞到该帧的呈现时刻」——
+	而这个调用跑在宿主的合成/UI 线程上。它堵多久,整个界面就有多久画不了新东西。
+	2026-09-04 那次「合成线程被堵 83ms」是猜的,从来没量过,于是拿这个猜测去动了
+	mpv 的默认值,把正常播放弄坏了。这次先有数再动手。
+*/
 var (
 	rcMu   sync.Mutex
 	rcN    int64

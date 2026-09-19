@@ -171,7 +171,6 @@ private fun TvPage(r: TvRoute) {
         is TvRoute.Library -> if (r.viewId == null && LocalIsLocalSource.current) LocalBrowsePage(null)
             else if (r.viewId == null) LibraryPickerPage() else LibraryGridPage(r)
         TvRoute.Favorites -> FavoritesPage()
-        TvRoute.Discover -> DiscoverPage()
         TvRoute.Downloads -> DownloadsPage()
         TvRoute.Servers -> ServersPage()
         TvRoute.Settings -> SettingsPage()

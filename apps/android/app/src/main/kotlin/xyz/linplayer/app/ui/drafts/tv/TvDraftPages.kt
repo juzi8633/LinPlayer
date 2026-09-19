@@ -254,7 +254,7 @@ enum class ServersMode { NORMAL, PANEL, REORDER }
 @Composable
 fun DraftServers(mode: ServersMode) {
     val t = tvType
-    RailShell(current = 6) {
+    RailShell(current = 5) {
         Column(Modifier.contentArea()) {
             if (mode == ServersMode.REORDER) {
                 Row(
@@ -361,7 +361,7 @@ private fun ServerCard(c: ServerInfo, index: Int, focused: Boolean, moving: Bool
 @Composable
 fun DraftLines() {
     val t = tvType
-    RailShell(current = 6) {
+    RailShell(current = 5) {
         Column(Modifier.contentArea()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TvText("线路管理", t.headline, TvC.fg, weight = TvW.semi)
@@ -420,7 +420,7 @@ fun DraftSettings(companion: Boolean) {
     val t = tvType
     val cats = listOf("通用", "播放", "跳过片头片尾", "字幕与音轨", "弹幕", "网络", "同步", "存储", "关于")
     val sel = if (companion) 0 else 1
-    RailShell(current = 7) {
+    RailShell(current = 6) {
         Row(Modifier.contentArea()) {
             Column(Modifier.width(180.dp)) {
                 TvText("设置", t.headline, TvC.fg, weight = TvW.semi)
@@ -467,71 +467,6 @@ fun DraftSettings(companion: Boolean) {
     }
 }
 
-// ---------------------------------------------------------------- 发现(§7.9)
-
-@Composable
-fun DraftDiscover(calendar: Boolean) {
-    val t = tvType
-    RailShell(current = 4) {
-        Row(Modifier.contentArea()) {
-            Column(Modifier.width(180.dp)) {
-                TvText("发现", t.headline, TvC.fg, weight = TvW.semi)
-                Spacer(Modifier.height(TvSp.x8))
-                ScopeChips(listOf("排行榜", "放送表"), selected = if (calendar) 1 else 0)
-                Spacer(Modifier.height(TvSp.x8))
-                val items = if (calendar) listOf("Bangumi 番剧", "Trakt 剧集")
-                else listOf("番剧 · 本季", "番剧 · 总榜", "电影 · 热门", "电影 · 高分", "剧集 · 热门", "剧集 · 高分")
-                items.forEachIndexed { i, s -> PanelItem(s, selected = i == 0, focused = i == 0, check = false) }
-            }
-            Spacer(Modifier.width(TvSp.x24))
-            Column(Modifier.weight(1f)) {
-                if (calendar) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        TvText("放送表", t.title, TvC.fg, weight = TvW.semi)
-                        Spacer(Modifier.width(TvSp.x8))
-                        TvText("Bangumi · 未登录(显示通用放送表)", t.meta, TvC.fg3)
-                    }
-                    Spacer(Modifier.height(TvSp.x8))
-                    ScopeChips(listOf("周一", "周二", "周三", "今天", "周五", "周六", "周日"), selected = 3)
-                    Spacer(Modifier.height(TvSp.x12))
-                    PosterGrid5(calendarTitles.map { it.first to it.second }, rank = false)
-                } else {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        TvText("番剧 · 本季", t.title, TvC.fg, weight = TvW.semi)
-                        Spacer(Modifier.width(TvSp.x8))
-                        TvText("弹弹play · 每日更新", t.meta, TvC.fg3)
-                    }
-                    Spacer(Modifier.height(TvSp.x12))
-                    PosterGrid5(rankTitles, rank = true)
-                }
-            }
-        }
-        DraftNote(if (calendar) "§7.9 一周七天做成日期 chip + 当天网格(七列放不下字)" else "§7.9 切分类焦点留在左栏 · 评分为空不画 0 分")
-    }
-}
-
-@Composable
-private fun PosterGrid5(items: List<Pair<String, String>>, rank: Boolean) {
-    LazyVerticalGrid(
-        GridCells.Fixed(5), horizontalArrangement = Arrangement.spacedBy(15.dp),
-        verticalArrangement = Arrangement.spacedBy(TvSp.x16), contentPadding = PaddingValues(12.dp), modifier = Modifier.bleed(12.dp),
-    ) {
-        itemsIndexed(items) { i, (n, s) ->
-            CardPoster(400 + i, n, s, rank = if (rank) i + 1 else 0, w = TvDim.posterW, h = TvDim.posterH)
-        }
-    }
-}
-
-private val rankTitles = listOf(
-    "葬送的芙莉莲" to "★ 9.2", "药屋少女的呢喃" to "★ 8.9", "迷宫饭" to "★ 8.8", "我心里危险的东西" to "★ 8.7",
-    "败犬女主太多了" to "★ 8.5", "小市民系列" to "★ 8.1", "胆大党" to "★ 8.6", "青之箱" to "暂无评分",
-    "Re:从零开始的异世界生活" to "★ 8.4", "天久鹰央的推理病历表" to "★ 7.9",
-)
-private val calendarTitles = listOf(
-    "胆大党" to "EP08 · 23:30", "青之箱" to "EP07 · 00:00", "药屋少女的呢喃" to "EP19", "天久鹰央的推理病历表" to "EP06 · 22:00",
-    "Re:从零开始的异世界生活" to "EP11 · 22:30", "败犬女主太多了" to "EP03 · 01:28", "我心里危险的东西" to "EP04 · 00:30",
-)
-
 // ---------------------------------------------------------------- 收藏(§7.8)
 
 @Composable
@@ -568,7 +503,7 @@ fun DraftFavorites() {
 @Composable
 fun DraftDownloads() {
     val t = tvType
-    RailShell(current = 5) {
+    RailShell(current = 4) {
         Column(Modifier.contentArea()) {
             Row(verticalAlignment = Alignment.Bottom) {
                 PageHead("下载", count = "2 进行中 · 2 已完成")
@@ -621,7 +556,7 @@ private fun DownloadRow(
 @Composable
 fun DraftLocal(picker: Boolean) {
     val t = tvType
-    RailShell(current = if (picker) 6 else 2) {
+    RailShell(current = if (picker) 5 else 2) {
         Column(Modifier.contentArea()) {
             if (picker) {
                 PageHead("选择文件夹", sub = "选好之后,这个文件夹会作为一个源出现在服务器页")

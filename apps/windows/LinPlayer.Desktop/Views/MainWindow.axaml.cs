@@ -73,28 +73,12 @@ public partial class MainWindow : Window
            那不是功能,那是一个专门用来报错的入口。 */
         this.FindControl<RadioButton>("NavBrowse")!.Checked += (_, _) =>
             Nav.Root(new BrowsePage(_core!, _sourceName), () => new BrowsePage(_core!, _sourceName));
-        /* 「影视目录」和「文件浏览」是**两页**,不是一页的两种模式。
-           资源站有分类、有分页、有分集,不是文件树 —— 塞进文件浏览页的话
-           分类要伪装成文件夹、翻页要伪装成一个叫「下一页」的文件夹。
-           入口按源的能力显隐:探不到影视目录能力时这一页会自己退回文件浏览。 */
-        this.FindControl<RadioButton>("NavCatalog")!.Checked += (_, _) =>
-        {
-            Control Make() => new CatalogPage(_core!, () =>
-                this.FindControl<RadioButton>("NavBrowse")!.IsChecked = true);
-            Nav.Root(Make(), Make);
-        };
-        // 插件页不需要 Emby 会话:它打的是插件源和本地插件目录,和用户的服务器无关。
-        this.FindControl<RadioButton>("NavPlugins")!.Checked += (_, _) => Nav.Root(new PluginPage(_core!), () => new PluginPage(_core!));
         this.FindControl<RadioButton>("NavLibrary")!.Checked += (_, _) => Emby("媒体库", () => new LibraryPage(_core!));
         this.FindControl<RadioButton>("NavSearch")!.Checked += (_, _) => Emby("搜索", () => new SearchPage(_core!));
         this.FindControl<RadioButton>("NavFavorites")!.Checked += (_, _) => Emby("收藏", () => new FavoritesPage(_core!));
         // 聚合视界和观看历史**不需要**当前会话:前者自己遍历账号表,后者读的是本地库
         this.FindControl<RadioButton>("NavAggregate")!.Checked += (_, _) => Nav.Root(new AggregatePage(_core!), () => new AggregatePage(_core!));
         this.FindControl<RadioButton>("NavHistory")!.Checked += (_, _) => Nav.Root(new HistoryPage(_core!), () => new HistoryPage(_core!));
-        // 排行榜**不需要** Emby 会话:它打的是弹弹Play / TMDB,和用户的服务器无关。
-        // 套 Emby() 的话,网盘用户和没登录的人会被挡在 NoSessionPage 上,
-        // 而那页说的是「请先登录服务器」—— 和这一页的实际前提对不上。
-        this.FindControl<RadioButton>("NavRanking")!.Checked += (_, _) => Nav.Root(new RankingPage(_core!), () => new RankingPage(_core!));
         // 下载页不要求 Emby 会话:列表读的是本地索引,网盘用户也看得到自己的历史任务
         this.FindControl<RadioButton>("NavDownload")!.Checked += (_, _) =>
         {
@@ -102,8 +86,6 @@ public partial class MainWindow : Window
             Nav.Root(dl, () => new DownloadPage(_core!));
             dl.SelfCheck();          // LP_DL=1 才做事,平时是一句 return
         };
-        // 日历同样不要求 Emby 会话:它打的是 Bangumi / Trakt
-        this.FindControl<RadioButton>("NavCalendar")!.Checked += (_, _) => Nav.Root(new CalendarPage(_core!), () => new CalendarPage(_core!));
         this.FindControl<RadioButton>("NavSettings")!.Checked += (_, _) =>
         {
             /* 闸口下**压栈**不是换根。换根会清掉返回栈,而闸口那一页正是用户
@@ -217,9 +199,7 @@ public partial class MainWindow : Window
     [
         ("NavFavorites", "nav.favorites"), ("NavAggregate", "nav.aggregate"),
         ("NavHistory", "nav.history"), ("NavDownload", "nav.download"),
-        ("NavRanking", "nav.ranking"), ("NavCalendar", "nav.calendar"),
-        ("NavPlugins", "nav.plugins"), ("NavBrowse", "nav.browse"),
-        ("NavCatalog", "nav.catalog"),
+        ("NavBrowse", "nav.browse"),
     ];
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
@@ -243,32 +223,6 @@ public partial class MainWindow : Window
     }
 
     private void SelfCheckJump() => SelfCheckJump(Environment.GetEnvironmentVariable("LP_SELFCHECK_PAGE"));
-
-    /// <summary>
-    /// 自检:挂一个开发目录插件、直接启用(自检不弹授权框)。
-    /// <paramref name="loginKind"/> 非空时顺带把它贡献的源登录进来并落到影视目录页。
-    /// </summary>
-    private async Task SelfCheckMountPlugin(string dir, string? loginKind)
-    {
-        try
-        {
-            var info = await _core!.PluginPickDevDir(new { path = dir });
-            var id = info.TryGetProperty("id", out var v) ? v.GetString() ?? "" : "";
-            if (id != "") await _core.PluginEnable(new { id });
-            if (loginKind is not null)
-            {
-                await _core.SourceLogin(new { kind = loginKind, base_url = "http://127.0.0.1:18096" });
-                UpdateServerChip(await _core.AccountListAccounts());
-                this.FindControl<RadioButton>("NavCatalog")!.IsChecked = true;
-                // 自检:再把详情盖层打开一次 —— 它是这一页最容易画错的部分。
-                if (Environment.GetEnvironmentVariable("LP_SELFCHECK_CATALOG_DETAIL") == "1" &&
-                    Nav.Current is CatalogPage cp) await cp.SelfCheckOpenFirst();
-                return;
-            }
-        }
-        catch (Exception e) { Console.WriteLine("[自检] 挂插件失败:" + e.Message); }
-        if (Nav.Current is PluginPage pp2) { pp2.SelectTab(1); await pp2.SelfCheckReload(); }
-    }
 
     private void SelfCheckJump(string? want)
     {
@@ -332,41 +286,11 @@ public partial class MainWindow : Window
             case "settings": this.FindControl<RadioButton>("NavSettings")!.IsChecked = true; break;
             case "aggregate": this.FindControl<RadioButton>("NavAggregate")!.IsChecked = true; break;
             case "history": this.FindControl<RadioButton>("NavHistory")!.IsChecked = true; break;
-            case "calendar": this.FindControl<RadioButton>("NavCalendar")!.IsChecked = true; break;
             case "download": this.FindControl<RadioButton>("NavDownload")!.IsChecked = true; break;
-            case "catalog":
-                this.FindControl<RadioButton>("NavCatalog")!.IsChecked = true;
-                break;
-            /* 自检:挂一个开发目录插件并启用,再落到「已装」。
-                这一条是**不能省的**:市场那两张卡片走的是 registry 解析那条路,
-                 而「装上 → 授权 → 启用 → 引擎跑起来 → 贡献点出现」是另一条路,
-                 只截市场页的话它一次都没被走过。 */
-            case "plugindev":
-                this.FindControl<RadioButton>("NavPlugins")!.IsChecked = true;
-                if (arg.Length > 0) _ = SelfCheckMountPlugin(arg, null);
-                break;
-            /* 自检:挂插件 → 把它贡献的源登录进来 → 落到影视目录页。
-               这条走的是**最长的一条链**:JS 引擎 → 贡献点 → 源分派表 →
-               source.categories/catalog → 影视目录页渲染。 */
-            case "plugincatalog":
-                if (arg.Length > 0) _ = SelfCheckMountPlugin(arg, "plugin:com.linplayer.selfcheck/vod");
-                break;
-            case "plugins":
-                this.FindControl<RadioButton>("NavPlugins")!.IsChecked = true;
-                // 自检用:plugins:1 直接落到「已装」,plugins:2 落到「源订阅」。
-                if (arg.Length > 0 && int.TryParse(arg, out var tab) && Nav.Current is PluginPage pp)
-                    pp.SelectTab(tab);
-                break;
             case "browse":
                 this.FindControl<RadioButton>("NavBrowse")!.IsChecked = true;
                 // 带参数(browse:空文件夹)时再点进那个子目录 —— 「空目录说空目录」要验得到
                 if (arg.Length > 0 && Nav.Current is BrowsePage bp) bp.SelfCheckEnter(arg);
-                break;
-            case "ranking":
-                // 带参数(ranking:movie)时落到指定分组 —— TMDB 那条链和弹弹那条
-                // 解析口径不同(id 数字/字符串混、图床要自己拼前缀),要分别验
-                this.FindControl<RadioButton>("NavRanking")!.IsChecked = true;
-                if (arg.Length > 0 && Nav.Current is RankingPage rp) rp.SelfCheckGroup(arg);
                 break;
             /* 自检:侧栏那条「＋ 添加服务器」。
                 要看的是**选中态落在哪一行** —— 用户 2026-09-04 报的正是
@@ -844,10 +768,9 @@ public partial class MainWindow : Window
         {
             ("标题栏 最小化", ""), ("标题栏 最大化", ""), ("标题栏 关闭", ""),
             ("侧栏 服务器", ""), ("侧栏 收起", ""), ("侧栏 展开", ""),
-            ("侧栏 首页", ""), ("侧栏 文件浏览", ""), ("侧栏 影视目录", ""),
+            ("侧栏 首页", ""), ("侧栏 文件浏览", ""),
             ("侧栏 媒体库", ""), ("侧栏 搜索", ""), ("侧栏 收藏", ""),
             ("侧栏 聚合视界", ""), ("侧栏 观看历史", ""), ("侧栏 下载", ""),
-            ("侧栏 排行榜", ""), ("侧栏 追剧日历", ""), ("侧栏 插件", ""),
             ("侧栏 设置", ""),
             // 服务器右键菜单 / 侧栏服务器行(2026-09-03 新增)。
             // 加了新图标**必须**往这里加一行 —— 字体里没有那个码位时
@@ -1465,9 +1388,8 @@ public partial class MainWindow : Window
     {
         if (_core is null) return;
         foreach (var n in new[] { "NavHome", "NavLibrary", "NavSearch", "NavFavorites",
-                                  "NavAggregate", "NavHistory", "NavBrowse", "NavCatalog",
-                                  "NavDownload", "NavRanking", "NavCalendar", "NavPlugins",
-                                  "NavSettings" })
+                                  "NavAggregate", "NavHistory", "NavBrowse",
+                                  "NavDownload", "NavSettings" })
             if (this.FindControl<RadioButton>(n) is { } rb) rb.IsChecked = false;
         Nav.Push(new AddServerPage(_core, () => _ = AfterServerChange()));
     }
@@ -1488,9 +1410,8 @@ public partial class MainWindow : Window
         Loaded += (_, _) =>
         {
             foreach (var n in new[] { "NavHome", "NavLibrary", "NavSearch", "NavFavorites",
-                                      "NavAggregate", "NavBrowse", "NavCatalog", "NavHistory",
-                                      "NavDownload", "NavRanking", "NavCalendar", "NavPlugins",
-                                      "NavSettings" })
+                                      "NavAggregate", "NavBrowse", "NavHistory",
+                                      "NavDownload", "NavSettings" })
             {
                 // 别拿 Tag 做「挂过了」的标记 —— 那一格装的是这一项的图标字形。
                 if (this.FindControl<RadioButton>(n) is not { } rb || !wired.Add(rb)) continue;
@@ -1743,7 +1664,6 @@ public partial class MainWindow : Window
             Gate("NavHome", "nav.home", !isBrowse);
             Gate("NavDownload", "nav.download", !isBrowse);
             Gate("NavBrowse", "nav.browse", isBrowse);
-            Gate("NavCatalog", "nav.catalog", isBrowse);
             Gate("NavLibrary", "nav.library", !isBrowse);
             Gate("NavSearch", "nav.search", !isBrowse);
             Gate("NavFavorites", "nav.favorites", !isBrowse);

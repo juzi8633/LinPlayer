@@ -108,8 +108,8 @@ ok "已登录"
 # 中间任何一步没点中后面全错位,而截图看起来还像是「那一页做坏了」。
 PAGES=("$@")
 if [ ${#PAGES[@]} -eq 0 ]; then
-  PAGES=(home aggregate servers search favorites downloads plugins
-         ranking calendar settings settingsSub:about browse addServer)
+  PAGES=(home aggregate servers search favorites downloads
+         settings settingsSub:about browse addServer)
 fi
 
 shoot() {

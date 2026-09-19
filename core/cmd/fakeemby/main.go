@@ -106,34 +106,6 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	/* ---- 排行榜的两个上游(弹弹Play / TMDB)----
-
-	   ★★ 为什么假 Emby 要管排行榜:排行榜**有凭据时长什么样**,单测验不到 ——
-	   凭据是编译期注入的,而页面渲染只有真 exe 跑起来才现形。
-	   本仓库已经栽过两次「预置形状 ≠ 真实形状」(自检永远灌配置没走过真登录 /
-	   假服务器不开 gzip 让 Go 不解压那个洞本地全绿),所以这条路要能端到端走一遍。
-
-	   核心层那边靠 LP_RANKING_BASE_DANDAN / LP_RANKING_BASE_TMDB 指过来。 */
-	mux.HandleFunc("/api/v2/trending/", func(w http.ResponseWriter, r *http.Request) {
-		// ★ 顺带把签名头验了:三个头缺一个都说明命令层漏了东西
-		for _, h := range []string{"X-AppId", "X-Timestamp", "X-Signature"} {
-			if r.Header.Get(h) == "" {
-				writeJSON(w, map[string]any{"success": false, "errorCode": 400,
-					"errorMessage": "缺少签名头 " + h})
-				return
-			}
-		}
-		list := []map[string]any{}
-		for i := 1; i <= 12; i++ {
-			list = append(list, map[string]any{
-				"animeId": i, "animeTitle": fmt.Sprintf("假榜番剧 %d", i),
-				"imageUrl":        fmt.Sprintf("http://%s/rankimg/anime-%d.png", r.Host, i),
-				"rating":          9.5 - float64(i)/10,
-				"typeDescription": "TV 动画", "isFavorited": i%3 == 0,
-			})
-		}
-		writeJSON(w, map[string]any{"success": true, "bangumiList": list})
-	})
 	/* 假的图标聚合源(自检用)。核心层靠 LP_ICON_LIBRARY_SOURCES 指过来。
 	   ★ 夹具里要带上**会出事的那两种条目**:空 url 和非 http 的 url ——
 	     不带的话「丢掉坏条目」那条判据在真渲染里根本走不到。 */
@@ -151,81 +123,7 @@ func main() {
 		writeJSON(w, map[string]any{"name": "自检图标库", "description": "", "icons": icons})
 	})
 
-	/* 假的插件源 registry(自检用)。核心层靠 LP_PLUGIN_OFFICIAL_REGISTRY 指过来。
-	   ★ 夹具要带上**会出事的那几种条目**,不然对应的 UI 判据在真渲染里走不到:
-	     · 一条 v1 schema(author 是对象)—— 它必须被跳过,而且「跳了几条」要报出来
-	     · 版本数组**故意乱序且 1.10 在 1.9 前面** —— 卡片必须显示 1.10.0
-	       (照数组第一个取的话显示 1.2.0,而装下去是另一版)
-	     · 一条 apiVersion=3 的高版本 —— 宿主装不了,要回退到能装的那版
-	     · 权限里带危险权限 —— 授权弹窗的 ⚠ 那一支才有东西可画 */
-	mux.HandleFunc("/plugins/registry.json", func(w http.ResponseWriter, r *http.Request) {
-		ver := func(v string, api int) map[string]any {
-			return map[string]any{
-				"version": v, "api_version": api,
-				"package_url": fmt.Sprintf("http://%s/plugins/pkg-%s.ipk", r.Host, v),
-			}
-		}
-		writeJSON(w, map[string]any{"plugins": []any{
-			map[string]any{
-				"id": "com.fake.source", "name": "假网盘源", "author": "自检",
-				"description": "贡献一个数据源,用来验「添加服务器」里能不能看到插件源。",
-				"category":    "source",
-				"permissions": []string{"sources", "http", "storage"},
-				"versions":    []any{ver("1.2.0", 2), ver("1.10.0", 2), ver("1.9.0", 2), ver("2.0.0", 3)},
-			},
-			map[string]any{
-				"id": "com.fake.tools", "name": "假工具", "author": "自检",
-				"description": "只申请了界面权限的插件。", "category": "tools",
-				"permissions": []string{"ui", "extensions"},
-				"versions":    []any{ver("0.1.0", 2)},
-			},
-			// v1 schema:author 是对象。**必须被跳过**,而且跳过数要能报出来
-			map[string]any{
-				"id": "com.fake.v1", "name": "老插件",
-				"author":   map[string]any{"name": "谁"},
-				"versions": []any{ver("1.0.0", 2)},
-			},
-		}})
-	})
-
-	/* 假的 Bangumi 放送表(自检用)。核心层靠 LP_BANGUMI_API 指过来。
-	   ★ 夹具要带上**真实形状里那些会出事的东西**:0 分的条目、只有原名的条目、
-	     协议相对的图片地址 —— 缺一样,对应那条 UI 判据就验不到。 */
-	mux.HandleFunc("/calendar", func(w http.ResponseWriter, r *http.Request) {
-		groups := []any{}
-		names := []string{"假番一号", "假番二号", "假番三号", "假番四号", "假番五号", "假番六号", "假番七号"}
-		for wd := 1; wd <= 7; wd++ {
-			items := []any{}
-			for i := 0; i <= wd%3; i++ {
-				it := map[string]any{
-					"id":       wd*10 + i,
-					"name":     fmt.Sprintf("Fake Anime %d-%d", wd, i),
-					"name_cn":  fmt.Sprintf("%s · 第%d部", names[wd-1], i+1),
-					"air_date": "2026-07-06",
-					"images": map[string]any{
-						"large": fmt.Sprintf("http://%s/rankimg/bgm-%d-%d.png", r.Host, wd, i),
-					},
-				}
-				// 一半有评分、一半 0 分(0 分不许画出来)
-				if i == 0 {
-					it["rating"] = map[string]any{"score": 8.0 + float64(wd)/10}
-				} else {
-					it["rating"] = map[string]any{"score": 0}
-				}
-				items = append(items, it)
-			}
-			groups = append(groups, map[string]any{
-				"weekday": map[string]any{"id": wd},
-				"items":   items,
-			})
-		}
-		writeJSON(w, groups)
-	})
-
-	mux.HandleFunc("/trending/", tmdbList)
-	mux.HandleFunc("/movie/", tmdbList)
-	mux.HandleFunc("/tv/", tmdbList)
-	// 榜单封面:和 Emby 的封面不同源,走的是**静态白名单**那条路
+	// 图标库封面:和 Emby 的封面不同源,走的是**静态白名单**那条路
 	mux.HandleFunc("/rankimg/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		_ = png.Encode(w, solid(strings.TrimPrefix(r.URL.Path, "/rankimg/"), false))
@@ -1019,34 +917,4 @@ func writePem(path, typ string, der []byte) {
 	if err := pem.Encode(f, &pem.Block{Type: typ, Bytes: der}); err != nil {
 		log.Fatal(err)
 	}
-}
-
-// tmdbList 假的 TMDB 榜。★ 故意让 id 一半是数字一半是字符串 ——
-// 真 TMDB 给数字,但我们的解析要两种都吃得下(移植时这里错过一次)。
-func tmdbList(w http.ResponseWriter, r *http.Request) {
-	kind := "movie"
-	if strings.Contains(r.URL.Path, "/tv") {
-		kind = "tv"
-	}
-	out := []map[string]any{}
-	for i := 1; i <= 12; i++ {
-		m := map[string]any{
-			"poster_path":  fmt.Sprintf("/rankimg/%s-%d.png", kind, i),
-			"vote_average": 8.8 - float64(i)/10,
-		}
-		if i%2 == 0 {
-			m["id"] = i
-		} else {
-			m["id"] = fmt.Sprintf("%d", i)
-		}
-		if kind == "tv" {
-			m["name"] = fmt.Sprintf("假榜剧集 %d", i)
-			m["first_air_date"] = "2023-09-01"
-		} else {
-			m["title"] = fmt.Sprintf("假榜电影 %d", i)
-			m["release_date"] = "2024-05-01"
-		}
-		out = append(out, m)
-	}
-	writeJSON(w, map[string]any{"page": 1, "results": out})
 }

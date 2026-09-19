@@ -371,22 +371,6 @@ func ParseDeepLink(raw string) *DeepLink {
 	return &DeepLink{Name: q.last("name"), Block: *block}
 }
 
-// ParseBangumiCode 解析 `linplayer://sync-bangumi?code=...`。
-//
-// ★ 同样不可信:调用方必须先弹确认框再拿去换令牌 ——
-// 否则一个网页就能把用户绑到攻击者的 Bangumi 账号上。
-func ParseBangumiCode(raw string) string {
-	q, ok := deepLinkTarget(raw, "sync-bangumi")
-	if !ok {
-		return ""
-	}
-	c := q.last("code")
-	if c == nil {
-		return ""
-	}
-	return strings.TrimSpace(*c)
-}
-
 // blockFromQuery 优先用结构化参数,否则回退解析 `text` 整段分享文本。
 func blockFromQuery(q queryParams) *Block {
 	if t := q.last("text"); t != nil && strings.TrimSpace(*t) != "" {

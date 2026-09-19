@@ -37,15 +37,11 @@ const backupSettingsKey = "linplayer_settings"
 //   - active 是账号列表的**下标**。导入是合并不是覆盖,合并之后同一个下标
 //     指的不是同一台服务器了。
 type backupSettings struct {
-	Theme                 string          `json:"theme,omitempty"`
-	CompanionEnabled      bool            `json:"companion_enabled"`
-	PluginOfficialEnabled bool            `json:"plugin_official_enabled"`
-	Prefs                 json.RawMessage `json:"prefs,omitempty"`
-	DanmakuSources        json.RawMessage `json:"danmaku_sources,omitempty"`
-	Proxy                 json.RawMessage `json:"proxy,omitempty"`
-	SyncTrakt             json.RawMessage `json:"sync_trakt,omitempty"`
-	SyncBangumi           json.RawMessage `json:"sync_bangumi,omitempty"`
-	PluginSources         json.RawMessage `json:"plugin_sources,omitempty"`
+	Theme            string          `json:"theme,omitempty"`
+	CompanionEnabled bool            `json:"companion_enabled"`
+	Prefs            json.RawMessage `json:"prefs,omitempty"`
+	DanmakuSources   json.RawMessage `json:"danmaku_sources,omitempty"`
+	Proxy            json.RawMessage `json:"proxy,omitempty"`
 }
 
 // EncodeBackup 出一份备份文件的内容。
@@ -60,15 +56,11 @@ func EncodeBackup(c *AppConfig, exportTimeUnix int64, withAccounts, withSettings
 	container := buildContainer(accounts, exportTimeUnix)
 	if withSettings {
 		b, err := json.Marshal(backupSettings{
-			Theme:                 c.Theme,
-			CompanionEnabled:      c.CompanionEnabled,
-			PluginOfficialEnabled: c.PluginOfficialEnabled,
-			Prefs:                 c.Prefs,
-			DanmakuSources:        c.DanmakuSources,
-			Proxy:                 c.Proxy,
-			SyncTrakt:             c.SyncTrakt,
-			SyncBangumi:           c.SyncBangumi,
-			PluginSources:         c.PluginSources,
+			Theme:            c.Theme,
+			CompanionEnabled: c.CompanionEnabled,
+			Prefs:            c.Prefs,
+			DanmakuSources:   c.DanmakuSources,
+			Proxy:            c.Proxy,
 		})
 		if err != nil {
 			return nil, err
@@ -154,7 +146,6 @@ func ApplyBackup(c *AppConfig, container map[string]any, withAccounts, withSetti
 		c.Theme = st.Theme
 	}
 	c.CompanionEnabled = st.CompanionEnabled
-	c.PluginOfficialEnabled = st.PluginOfficialEnabled
 	assign := func(dst *json.RawMessage, src json.RawMessage) {
 		if len(src) > 0 {
 			*dst = src
@@ -162,9 +153,6 @@ func ApplyBackup(c *AppConfig, container map[string]any, withAccounts, withSetti
 	}
 	assign(&c.DanmakuSources, st.DanmakuSources)
 	assign(&c.Proxy, st.Proxy)
-	assign(&c.SyncTrakt, st.SyncTrakt)
-	assign(&c.SyncBangumi, st.SyncBangumi)
-	assign(&c.PluginSources, st.PluginSources)
 	if len(st.Prefs) > 0 {
 		c.Prefs = dropDeadPaths(st.Prefs)
 	}
@@ -174,14 +162,16 @@ func ApplyBackup(c *AppConfig, container map[string]any, withAccounts, withSetti
 // machineLocalPathKeys 偏好里存**这台机器的绝对路径**的那几个键。
 var machineLocalPathKeys = []string{"ui_font", "screenshot_dir", "external_player"}
 
-/* dropDeadPaths 摘掉指向不存在路径的那几个偏好。
+/*
+dropDeadPaths 摘掉指向不存在路径的那几个偏好。
 
-   ☠ 备份跨设备走的时候,这三个键装的是**另一台机器上的路径**。原样还原的表现:
-   界面字体静默回落系统字体(还好)、截图按下去报一个路径错(莫名其妙)、
-   外部播放器点了没反应(最难查,因为设置页上明明写着一个路径)。
+	☠ 备份跨设备走的时候,这三个键装的是**另一台机器上的路径**。原样还原的表现:
+	界面字体静默回落系统字体(还好)、截图按下去报一个路径错(莫名其妙)、
+	外部播放器点了没反应(最难查,因为设置页上明明写着一个路径)。
 
-   ★ 判据是「路径还在不在」而不是「是不是跨设备」:还原到**同一台机器**
-   (备份的主要用途)时路径都在,一个都不摘。 */
+	★ 判据是「路径还在不在」而不是「是不是跨设备」:还原到**同一台机器**
+	(备份的主要用途)时路径都在,一个都不摘。
+*/
 func dropDeadPaths(prefs json.RawMessage) json.RawMessage {
 	var m map[string]json.RawMessage
 	if json.Unmarshal(prefs, &m) != nil {

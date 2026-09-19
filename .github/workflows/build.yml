@@ -136,11 +136,8 @@ jobs:
           LP_VERSION: ${{ needs.version.outputs.version }}
           DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
           DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
-          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           LP_SYNC_PROXY_BASE: ${{ secrets.LP_SYNC_PROXY_BASE }}
           LP_SYNC_PROXY_KEY: ${{ secrets.LP_SYNC_PROXY_KEY }}
-          LP_BANGUMI_REDIRECT_URI: ${{ secrets.LP_BANGUMI_REDIRECT_URI }}
-          LP_AFDIAN_SPONSOR_URL: ${{ secrets.LP_AFDIAN_SPONSOR_URL }}
           LP_ICON_LIBRARY_SOURCES: ${{ secrets.LP_ICON_LIBRARY_SOURCES }}
           LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
           # 崩溃上报地址(scripts/sentry-dsn.sh)
@@ -199,11 +196,8 @@ jobs:
           LP_VERSION: ${{ needs.version.outputs.version }}
           DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
           DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
-          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           LP_SYNC_PROXY_BASE: ${{ secrets.LP_SYNC_PROXY_BASE }}
           LP_SYNC_PROXY_KEY: ${{ secrets.LP_SYNC_PROXY_KEY }}
-          LP_BANGUMI_REDIRECT_URI: ${{ secrets.LP_BANGUMI_REDIRECT_URI }}
-          LP_AFDIAN_SPONSOR_URL: ${{ secrets.LP_AFDIAN_SPONSOR_URL }}
           LP_ICON_LIBRARY_SOURCES: ${{ secrets.LP_ICON_LIBRARY_SOURCES }}
           LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
           # 崩溃上报地址(scripts/sentry-dsn.sh)
@@ -330,11 +324,8 @@ jobs:
           LP_VERSION: ${{ needs.version.outputs.version }}
           DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
           DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
-          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           LP_SYNC_PROXY_BASE: ${{ secrets.LP_SYNC_PROXY_BASE }}
           LP_SYNC_PROXY_KEY: ${{ secrets.LP_SYNC_PROXY_KEY }}
-          LP_BANGUMI_REDIRECT_URI: ${{ secrets.LP_BANGUMI_REDIRECT_URI }}
-          LP_AFDIAN_SPONSOR_URL: ${{ secrets.LP_AFDIAN_SPONSOR_URL }}
           LP_ICON_LIBRARY_SOURCES: ${{ secrets.LP_ICON_LIBRARY_SOURCES }}
           LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
         run: bash scripts/build-core-android.sh arm64-v8a
@@ -391,11 +382,8 @@ jobs:
           LP_VERSION: ${{ needs.version.outputs.version }}
           DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
           DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
-          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           LP_SYNC_PROXY_BASE: ${{ secrets.LP_SYNC_PROXY_BASE }}
           LP_SYNC_PROXY_KEY: ${{ secrets.LP_SYNC_PROXY_KEY }}
-          LP_BANGUMI_REDIRECT_URI: ${{ secrets.LP_BANGUMI_REDIRECT_URI }}
-          LP_AFDIAN_SPONSOR_URL: ${{ secrets.LP_AFDIAN_SPONSOR_URL }}
           LP_ICON_LIBRARY_SOURCES: ${{ secrets.LP_ICON_LIBRARY_SOURCES }}
           LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
           # 崩溃上报地址(scripts/sentry-dsn.sh)
@@ -409,11 +397,8 @@ jobs:
           LP_VERSION: ${{ needs.version.outputs.version }}
           DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
           DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
-          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           LP_SYNC_PROXY_BASE: ${{ secrets.LP_SYNC_PROXY_BASE }}
           LP_SYNC_PROXY_KEY: ${{ secrets.LP_SYNC_PROXY_KEY }}
-          LP_BANGUMI_REDIRECT_URI: ${{ secrets.LP_BANGUMI_REDIRECT_URI }}
-          LP_AFDIAN_SPONSOR_URL: ${{ secrets.LP_AFDIAN_SPONSOR_URL }}
           LP_ICON_LIBRARY_SOURCES: ${{ secrets.LP_ICON_LIBRARY_SOURCES }}
           LP_CF_TEST_URL: ${{ secrets.LP_CF_TEST_URL }}
           # 崩溃上报地址(scripts/sentry-dsn.sh)

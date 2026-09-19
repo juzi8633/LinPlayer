@@ -47,11 +47,6 @@ kAppUserAgent, applyProxyToDio)对真实流**超前**拉取，内存里有界读
 `_maxReadAheadBytes`=128MB,且不超用户视频缓存上限),再**顺序**喂播放器；mpv 自身
 `cache-on-disk` 把读到的落盘到 video_cache。失败返回 null → 调用方回退在线直链。
 
-**为什么不是插件**:沙盒插件无文件系统、不能改播放器读取的 URL,所以只能预热服务端缓存
-(丢弃字节,浪费)。真正"下载到本地磁盘+播放器从本地读"必须在宿主。先前为插件加的
-`ctx.emby.apiRequest` 的 `headers`/`discardBody` 与 `ctx.player.getCacheLimitBytes`
-(plugin_context_bridge.dart)是那条废弃路线的残留,通用但当前无人用。
-
 **接线现状**：三端播放器均已接(各自 `_maybeStartPrefetch` + dispose 里 stop)——
 桌面 desktop_player_screen_state.dart、移动 ui/screens/player/player_screen_state.dart、
 TV tv/screens/player/tv_player_screen.dart。门控=**按服务器白名单**(非全局开关):`multiThreadLoadingServersProvider`(允许的 server id 列表,
@@ -83,8 +78,7 @@ seek 满手旧块+空预取窗口惩罚全暴露。修法=`_Session` 持每代 `
 还可能被 CF 反代改写成 127.0.0.1)。设置页 PrefetchPane 只列 Emby 账号(预取只对直传流生效)。
 **为什么不给全开入口**:它是优化不是功能,对局域网/NAS 本就跑满带宽,多开 Range 只是白占连接。
 
-关联 「cache-architecture」(该条不在本库,多为 Flutter 时代的旧记忆,已作废) 「unified-ua-and-prefs」(该条不在本库,多为 Flutter 时代的旧记忆,已作废) 「plugin-system」(该条不在本库,多为 Flutter 时代的旧记忆,已作废)。
-插件仓库里那个 com.linplayer.multithread-loader 已被本功能取代(仅预热服务端,较弱)。
+关联 「cache-architecture」(该条不在本库,多为 Flutter 时代的旧记忆,已作废) 「unified-ua-and-prefs」(该条不在本库,多为 Flutter 时代的旧记忆,已作废)。
 
 ---
 
@@ -552,7 +546,7 @@ mpv 侧形态:`Stream opened successfully` → duration=0、一帧不出、0 条
 反向注入验证过(摘回 `None` 立刻红)。
 
 **没被证实的**:弹弹Play 排行榜 403 是否同因。反例——本机不带 UA 也能拿到 50 条,
-只有 CI(数据中心 IP)403。见 [Ranking architecture](danmaku-sync.md)。
+只有 CI(数据中心 IP)403。见 [排行榜数据源:弹弹 trending 与 TMDB](plugins.md)。
 
 ---
 

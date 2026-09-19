@@ -914,13 +914,6 @@ episode:item:{itemId}
 - 季名**必须用服务器返回的 `Name`,不要自己拼「第 N 季」**:实测真名是 "全 1 季" / "果宝特攻2" /
   "怪奇物语 4",自己拼在真机上对不上(`emby.rs:1013-1016`)。
 
-### 7-25 插件的 `emby.apiRequest` 必须防 SSRF
-
-- 解析后的 URL 必须仍指向同一 scheme+host+port,否则拒绝 —— 避免 `X-Emby-Token` 外泄
-  (`apps/desktop/src/plugins_host.rs:128-136`)。
-- 权限分两档:`emby.read`(不危险)与 `emby.api`(危险)(`crates/core/src/plugins/permission.rs:27-30`)。
-- `emby.credentials` 权限**已被删除**,宿主不再持久化明文密码给插件(`permission.rs:44-47`)。
-
 ---
 
 ## 8. Go 侧移植要点
@@ -1053,15 +1046,12 @@ episode:item:{itemId}
 4. **`tags` 无法在客户端复筛**:`Item` 不带 `Tags` 字段(`emby.rs:598-600`)。要修得先给 `Item` 加字段。
 5. **DV 判定逻辑有两份**(`emby.rs:325-345` 与 `emby.rs:2156-2173`),目前行为一致但没有测试钉住"两份一致"。
 6. **`Item` 没有 `has_logo` 标志位**,前端只能靠 `<img onError>` 兜底回文字标题(`ui/shared/api.ts:1966-1969`)。
-7. **插件 `emby.apiRequest` 用的是 `account.server`(账号主键)而非 `active_line_url()`**
-   (`plugins_host.rs:105-119`)——与 §1.6 定的口径不一致。**未确认**这是有意还是遗漏:
-   查了 `plugins_host.rs` 全文和 `permission.rs`,没有解释这一选择的注释。
-8. **没有 401 自动重登链路**。`emby.rs` 里对 Emby 本体的 401 不做任何特殊处理,
+7. **没有 401 自动重登链路**。`emby.rs` 里对 Emby 本体的 401 不做任何特殊处理,
    只有账号列表页的三态探测会显示"需重登"(`lib.rs:1069-1076`),用户得自己去点重新登录。
-9. **`ranking.rs` 与 Emby 无关**。全文 `grep emby|Emby|Items|Users/` 零命中 ——
+8. **`ranking.rs` 与 Emby 无关**。全文 `grep emby|Emby|Items|Users/` 零命中 ——
    它是弹弹Play + TMDB 双源排行榜(`ranking.rs:1-6`),本文不涉及。
-10. **`server_batch.rs` 与 Emby 的接触面只有一处**:`build_icon_url`(`server_batch.rs:305-318`)。
+9. **`server_batch.rs` 与 Emby 的接触面只有一处**:`build_icon_url`(`server_batch.rs:305-318`)。
     其余是分享文本解析和深链,与 Emby 协议无关。
-11. **`X-Emby-Authorization` 只发给 7 个端点**这件事,代码里没有任何注释解释为什么是这 7 个。
+10. **`X-Emby-Authorization` 只发给 7 个端点**这件事,代码里没有任何注释解释为什么是这 7 个。
     **未确认**是有意设计还是历史累积;查了 `emby.rs` 全文注释与 `git log` 未覆盖的范围,没有依据。
     Go 版建议**先原样照搬**,想统一发要在真机 A/B 验证过再改。

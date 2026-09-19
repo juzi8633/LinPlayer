@@ -5,8 +5,8 @@
 > **本项目只做 Emby。** 网盘(阿里/百度/115/189/139/夸克/OpenList/飞牛)、
 > 局域网源(SMB/WebDAV/FTP)、Ani-RSS 全部**不做了**,代码已从 Go 与 Rust 两侧删净,
 > `anirss.*` 51 条命令一并下线(命令契约 271 → 218 条)。
-> 资源站(VOD)将来**只以插件形式**出现,走 `plugin:<插件id>/<源id>` 开放键通道 ——
-> 源抽象、插件源后端、通用文件浏览页因此全部保留。
+> 资源站(VOD)将来**只以插件形式**出现(插件系统重做中,见 [`docs/plugin-system/SPEC.md`](../plugin-system/SPEC.md))——
+> 源抽象、通用文件浏览页因此保留。
 > 本机文件夹播放(`local`)保留:它是播放器的基础能力,不算网盘。
 >
 > **下面正文里凡是提到这些源的段落,一律已作废**,只作历史记录保留。
@@ -106,7 +106,7 @@
 按 §3 的映射表逐模块做。顺序按依赖:
 
 ```
-paths → config → http → emby ──┬─► source/* ──► plugins ──► 其余
+paths → config → http → emby ──┬─► source/* ──► 其余
                                └─► net/prefetch ──► player 完整化
 ```
 
@@ -194,7 +194,6 @@ macOS 优先。iOS 只做到"能装",不承诺分发。
 | `source/local.rs` | 247 | `core/source/local` | stdlib | 交 mpv 裸路径;**必须有越狱闸**;安卓侧未做(只有 INTERNET 权限) |
 | `source/feiniu.rs` | 796 | `core/source/feiniu` | `crypto/md5` | authx 签名(拼接顺序敏感)。⚠️ **v0.1 写的「封面/长播 authx 过期是已知待办」已作废——两条都修了**且有反向断言测试(`feiniu.rs:700`:media/range 不能带 authx,静态签名会在长播途中过期导致断流) |
 | `source/anirss.rs` | 1368 | `core/source/anirss` | | 管理接口不在 backend 接口上,要另存具体类型并**共享同一份 token 缓存** |
-| `source/plugin_source.rs` | 578 | `core/source/pluginsrc` | | `$sourceServer` 展开表必须在每次账号变动后同步,否则 fail-closed 发不出请求 |
 
 ### 3.4 网络
 
@@ -217,18 +216,6 @@ macOS 优先。iOS 只做到"能装",不承诺分发。
 | `sync/bangumi.rs` | 534 | `core/sync/bangumi` | 单集写入路径 subject 位必须是字面 `-`;不发 UA 会吃 CF 403(伪装成"AccessToken 无效") |
 | `sync/bangumi_matcher.rs` | 437 | `core/sync/bangumi` | 从不比标题,复用弹幕评分 |
 | `sync/calendar.rs` | 110 | `core/sync/calendar` | 付费墙:通用放送表免登录 |
-
-### 3.6 插件
-
-| Rust | 行数 | Go 包 | 依赖选型 | 坑 |
-|---|---:|---|---|---|
-| `plugins/engine.rs` | 225 | `core/plugins/engine` | `buke/quickjs-go` | 内存 64MB、看门狗 30s、`__lp_call` 前奏逐条对齐 |
-| `plugins/ctx.rs` | 420 | `core/plugins/ctx` | | 宿主 API 语义零改动 |
-| `plugins/manifest.rs` | 488 | `core/plugins/manifest` | | 格式零改动 |
-| `plugins/registry_index.rs` | 434 | `core/plugins/registry` | | 键 snake_case + author 为字符串是**硬契约**;产物必须可复现(无时间戳、强制 LF) |
-| `plugins/permission.rs` | 126 | `core/plugins/permission` | | |
-| `plugins/manager.rs` / `state.rs` / `storage.rs` / `worker.rs` / `installer.rs` / `host.rs` / `convert.rs` / `contributions.rs` / `assets.rs` | 2000 | `core/plugins/*` | | 逃生舱必须是**独立 origin**,否则权限模型是摆设 |
-| `plugins/hello_it.rs` | 433 | 测试夹具 | | |
 
 ### 3.7 其它
 

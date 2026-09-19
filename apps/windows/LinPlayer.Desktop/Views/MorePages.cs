@@ -556,10 +556,6 @@ public sealed class SettingsPage : PageBase
                 var home = await Safe(() => core.PrefsGetHomeSettings(new { }));
                 var writeback = await Safe(() => core.PrefsGetWritebackSettings(new { }));
                 var update = await Safe(() => core.PrefsGetUpdateSettings(new { }));
-                string transErr = "";
-                JsonElement? trans;
-                try { trans = await core.PrefsGetTranslationSettings(new { }); }
-                catch (Exception te) { trans = null; transErr = LibraryPage.Advice(te); }
 
                 Dispatcher.UIThread.Post(() =>
                 {
@@ -604,18 +600,6 @@ public sealed class SettingsPage : PageBase
 
                     // ── 弹幕与字幕:都是「盖在画面上的字」 ──
                     Add(gDanmaku, SettingsSections.Danmaku(core));
-                    /* 翻译设置**拉不到也要出这一组**,只是里面写清楚原因。
-                       静默跳过的表现是「设置页里根本没有字幕翻译」——
-                       用户会以为这个版本没做这个功能,而不是「这次没拉到」。
-                       这条只管「拉不到」,和「整组下线」是两回事:下线时连组都不出。 */
-                    if (Features.On("set.translate"))
-                    {
-                        Add(gDanmaku, trans is { } tr
-                            ? SettingsTranslate.Section(core, tr)
-                            : SettingsTranslate.Unavailable(transErr));
-                    }
-                    if (Features.On("set.whisper") && trans is not null)
-                        Add(gDanmaku, SettingsTranslate.Whisper(core));
 
                     // ── 网络:怎么把字节弄过来。下线的分组一并不画,开关表在 Features.cs ──
                     if (prefetch is { } pf) Add(gNet, SettingsSections.Prefetch(core, pf));

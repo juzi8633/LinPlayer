@@ -16,7 +16,8 @@
 
 这里是把长期记忆整理迁移过来的分域经验库。它替代原来的记忆库,是本仓库「同一个坑别踩第二次」的唯一出处。
 
-**当前 124 条。** 迁移时是 125 条,2026-08-30 删掉 2 条**已被事实推翻**的(见下)。
+**当前 126 条(按下表逐行相加)。** 迁移时是 125 条,2026-08-30 删掉 2 条**已被事实推翻**的(见下);2026-09-19 从已删的影视目录页抢救进 1 条;同日宿主删掉排行榜 / 付费追剧日历 / 字幕翻译 / Trakt·Bangumi 同步,
+`danmaku-sync.md` 里绑着旧宿主的 5 条移出,接口实测按新插件的视角重写成 5 条进 `plugins.md`,总数不变。
 
 > **原则:重新组织,不做摘要。** 每条经验的价值都在细节里(具体的属性名、具体的数字、具体的症状),所以正文一律按原样搬运,没有压缩、没有改写结论。原文里的日期、版本号、文件路径也保持原样 —— 其中不少路径已经被 2026-07-19 的仓库重构作废,这类条目顶部有一行 ⚠️ 提示,但**正文不改**。
 
@@ -36,8 +37,8 @@
 | [`network.md`](network.md) | 预取代理 / 下载 / 线路 / HTTP / 超时 / UA | 14 |
 | [`emby.md`](emby.md) | Emby 协议 / 媒体库 / 图片 / 上报 / fork 差异 | 14 |
 | `sources.md` ⚠️**不入公开库** | 网盘 / 局域网源 / 资源站 / 登录逆向 / 凭据 | 9 |
-| [`danmaku-sync.md`](danmaku-sync.md) | 弹幕 / 弹弹Play / Bangumi / Trakt / 日历 / 排行榜 | 8 |
-| [`plugins.md`](plugins.md) | 插件系统 / 插件市场 / 插件仓库 | 5 |
+| [`danmaku-sync.md`](danmaku-sync.md) | 弹幕 / 弹弹Play | 3 |
+| [`plugins.md`](plugins.md) | 插件运行时 / 宿主契约 / 分发 / 苹果CMS 与 UHD 接口实测 / Bangumi·Trakt·爱发电·排行榜·翻译引擎实测(新系统重做中,见 [SPEC](../plugin-system/SPEC.md)) | 12 |
 | [`ui-desktop.md`](ui-desktop.md) | PC 端 UI | 13 |
 | [`ui-mobile.md`](ui-mobile.md) | 手机端 UI | 7 |
 | [`ui-tv.md`](ui-tv.md) | TV 端 UI / 焦点 | 2 |
@@ -45,9 +46,9 @@
 | [`build-release.md`](build-release.md) | 构建 / CI / 发布 / 版本 / 打包 / 仓库卫生 | 11 |
 | [`methodology.md`](methodology.md) | 工作方法与纪律 | 8 |
 | [`decisions.md`](decisions.md) | 架构决策与端范围 | 3 |
-| **合计** | | **123** |
+| **合计** | | **126** |
 
-另有两份不属于这 124 条的邻居文档,单独维护:
+另有两份不属于这 125 条的邻居文档,单独维护:
 
 - [`red-line-audit.md`](red-line-audit.md) —— 仓库内真实地址泄漏的红线审计
 - [`contradictions-resolved.md`](contradictions-resolved.md) —— 迁移时比对出的 11 组「矛盾」逐条裁决

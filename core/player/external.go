@@ -87,7 +87,7 @@ func registerExternalCommands() {
 	// player.windowOpen —— 存下待播条目,叫壳把播放窗开起来 / 叫醒。
 	//
 	// ★ 核心层**不解析这个信封**,它只是个中转:UI 塞什么,播放窗原样取回去自己分派。
-	//   解析它等于让核心层认识每一种起播来源(Emby / 网盘 / 本地 / 影视目录),
+	//   解析它等于让核心层认识每一种起播来源(Emby / 网盘 / 本地),
 	//   而那正是各端 UI 自己最清楚的事。
 	bus.Register("player.windowOpen", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
 		pendingMu.Lock()

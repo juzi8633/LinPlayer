@@ -22,8 +22,6 @@ type DataPaths struct {
 	Cache     string `json:"cache"`
 	Logs      string `json:"logs"`
 	Downloads string `json:"downloads"`
-	Plugins   string `json:"plugins"`
-	Models    string `json:"models"`
 	ExeDir    string `json:"exe_dir"`
 	Kind      string `json:"kind"`
 }
@@ -106,8 +104,6 @@ func RegisterCommands() {
 			Cache:     paths.CacheDir(),
 			Logs:      paths.LogsDir(),
 			Downloads: paths.DownloadsDir(),
-			Plugins:   paths.PluginsDir(),
-			Models:    paths.ModelsDir(),
 			ExeDir:    filepath.Dir(exe),
 			// ponytail: RootKind(Portable / Overridden / SystemFallback)等 paths 补上。
 			// **SystemFallback 意味着数据没能留在包里,必须显眼告警,不能装没事** ——
@@ -177,12 +173,6 @@ func Capabilities() map[string]any {
 		"platform":  runtime.GOOS,
 		"arch":      runtime.GOARCH,
 		"videoChan": VideoChannel(),
-		// 字幕翻译是桌面独占(COMMANDS.md:translate.* 9 条,安卓 0 条)。
-		// Q6 已定:模型不打进主包,首次使用时下载到 userdata/models/
-		"translate": runtime.GOOS == "windows" || runtime.GOOS == "linux",
-		"pluginUI":  true,
-		// 插件逃生舱要 WebView。Windows 上是 WebView2(§16.4:已从「必需」降为「可选」)
-		"webviewEscape": runtime.GOOS == "windows" || runtime.GOOS == "linux",
 	}
 }
 

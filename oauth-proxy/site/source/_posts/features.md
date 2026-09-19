@@ -32,7 +32,7 @@ LinPlayer 的核心功能一览。
 
 ## 扩展
 
-- **插件系统**：基于 QuickJS 的 JS 插件，独立 isolate 运行。详见 [插件系统](/wiki/plugins/)。
+- **插件系统**：从零重做中，设计见仓库 `docs/plugin-system/SPEC.md`。
 
 ## 各端
 

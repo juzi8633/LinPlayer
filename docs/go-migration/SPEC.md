@@ -5,8 +5,8 @@
 > **本项目只做 Emby。** 网盘(阿里/百度/115/189/139/夸克/OpenList/飞牛)、
 > 局域网源(SMB/WebDAV/FTP)、Ani-RSS 全部**不做了**,代码已从 Go 与 Rust 两侧删净,
 > `anirss.*` 51 条命令一并下线(命令契约 271 → 218 条)。
-> 资源站(VOD)将来**只以插件形式**出现,走 `plugin:<插件id>/<源id>` 开放键通道 ——
-> 源抽象、插件源后端、通用文件浏览页因此全部保留。
+> 资源站(VOD)将来**只以插件形式**出现(插件系统重做中,见 [`docs/plugin-system/SPEC.md`](../plugin-system/SPEC.md))——
+> 源抽象、通用文件浏览页因此保留。
 > 本机文件夹播放(`local`)保留:它是播放器的基础能力,不算网盘。
 >
 > **下面正文里凡是提到这些源的段落,一律已作废**,只作历史记录保留。
@@ -50,7 +50,6 @@
 | G2 | 每个平台的 UI 都是该平台的最优解 | Android 用 Compose,Apple 用 SwiftUI,Windows 用 XAML 生态 |
 | G3 | 视频与 UI 在**同一个顶层窗口内**合成 | **已定走 §7.3 路径 B**。不存在"两个顶层窗口手动对齐几何"这种东西;代价是 Windows 上换掉零拷贝硬解,4K24 核显 CPU 3%→~12% |
 | G4 | Android TV 遥控器焦点由框架提供 | 不再自己实现空间导航算法 |
-| G5 | 插件生态零改动存活 | 现有插件包不重新打包即可运行 |
 
 ### 非目标
 
@@ -110,7 +109,6 @@
 | Windows / Linux | **C# + Avalonia** | .NET 8 / Avalonia 11.1+ |
 | Apple(后置) | **Swift + SwiftUI** | iOS 16 / macOS 13+ |
 | 播放引擎 | **libmpv**(所有平台) | 0.37+ |
-| 插件引擎 | **QuickJS**(经 cgo) | 与现有插件 ABI 一致 |
 
 ### 3.2 核心层为什么必须是 Go / Rust / C++ 三选一
 
@@ -133,7 +131,6 @@
 | 本地预取代理(HTTP server + Range + 环形磁盘缓存 + 并发拉流) | `net/http` + goroutine + `os.File`。Go 的主场 |
 | ~10 个 HTTP 源客户端 | stdlib `net/http`,不需要挑第三方库、不需要管 feature flag |
 | 逆向登录的签名(RSA / secp256k1 / MD5 拼接) | `crypto/rsa`、`math/big`、`decred/dcrd/dcrec/secp256k1` |
-| 插件 JS 引擎 | `buke/quickjs-go`(cgo 绑定 QuickJS,与现有插件同一个引擎) |
 | SMB / WebDAV / FTP | `cloudsoda/go-smb2`、`studio-b12/gowebdav`、`jlaffaye/ftp` |
 | libmpv | cgo。调用频率是 UI 级别(≤60/s),cgo 开销可忽略 |
 | 弹幕 ASS 生成 | 纯字符串处理 |
@@ -165,18 +162,15 @@ core/
 │   ├── backend.go      # MediaSourceBackend 接口
 │   ├── aliyun/ baidu/ pan115/ pan139/ pan189/ quark/ openlist/
 │   ├── smb/ webdav/ ftp/ local/
-│   ├── feiniu/ anirss/
-│   └── pluginsrc/      # 插件提供的源
+│   └── feiniu/ anirss/
 ├── player/         # libmpv 控制(cgo)。见 §7
 ├── danmaku/        # 弹幕拉取、匹配、ASS 生成
-├── plugins/        # QuickJS 宿主、权限、市场、贡献点
 ├── imgcache/       # 封面/剧照两层缓存(内存 128MB + 磁盘 2GB)。§6 的 /img 用
 ├── net/
 │   ├── prefetch/       # 预取代理(环形磁盘缓存)
 │   ├── preload/        # 详情页预热
 │   ├── cf/             # 线路优选
 │   └── localserve/     # 数据通道 HTTP 服务(§6)
-├── sync/           # Trakt / Bangumi / 日历
 ├── download/       # 多线程下载
 ├── history/        # 本地观看记录 + 跨服续播
 ├── update/         # 自更新
@@ -190,7 +184,7 @@ core/
 ### 4.2 生命周期
 
 ```
-lp_init(config_json) ──► 建 App 实例(单例) ──► 起 localserve ──► 起插件管理器
+lp_init(config_json) ──► 建 App 实例(单例) ──► 起 localserve
                                                      │
                           ┌──────────────────────────┘
                           ▼
@@ -198,7 +192,7 @@ lp_init(config_json) ──► 建 App 实例(单例) ──► 起 localserve �
                           │
         宿主任意线程:lp_call(seq, cmd, args) ──► 立即返回 ──► 结果走事件队列
                           │
-lp_shutdown() ──► 停播放 ──► 落盘 ──► 停 localserve ──► 停插件 ──► 事件队列发 EOF
+lp_shutdown() ──► 停播放 ──► 落盘 ──► 停 localserve ──► 事件队列发 EOF
 ```
 
 - **单例。** 一个进程只有一个 Go 运行时,也只有一个 App 实例。主窗口与播放窗口共用同一个实例
@@ -413,7 +407,7 @@ C# `TaskCompletionSource`、Swift `withCheckedContinuation`)。
 | `E_UPSTREAM` | 服务端返回了错误 | 展示 `msg`,记日志 |
 | `E_UNSUPPORTED` | 该源不支持这个能力 | 静默降级,**不弹错** |
 | `E_NOTFOUND` | 条目不存在 | 空态 |
-| `E_PERMISSION` | 插件权限未授予 | 弹权限对话框 |
+| `E_PERMISSION` | 权限不足(核心层目前没有发出方) | 显示「当前账号没有权限」(两端 `CoreClient` 现有文案) |
 | `E_INVALID` | 参数非法 | 这是 bug,记日志 |
 | `E_SHUTDOWN` | 核心已关停 | 忽略 |
 | `E_INTERNAL` | 兜底 | 记日志 + 上报 |
@@ -432,8 +426,6 @@ C# `TaskCompletionSource`、Swift `withCheckedContinuation`)。
 | `download.progress` | 下载任务变化 | id / bytes / speed / state |
 | `prefetch.stats` | 预取代理 1 Hz | cached / upstream / threads |
 | `source.qr` | 扫码登录轮询状态变化 | state / qr_png_url |
-| `plugin.ui` | 插件请求宿主弹 UI | id / kind / descriptor(需 `plugin.uiRespond` 回) |
-| `plugin.toast` | 插件请求提示 | level / msg |
 | `config.changed` | 配置被任意路径改动 | 改了哪个域 |
 | `account.status` | 服务器连通性探测结果 | server_id / state |
 | `update.available` | 检查到新版本 | version / notes |
@@ -455,10 +447,8 @@ C# `TaskCompletionSource`、Swift `withCheckedContinuation`)。
 | 媒体源(浏览型) | ~25 | 登录 / 扫码 / 列目录 / 解析播放 |
 | 影视目录(VOD) | ~8 | 资源站型源 |
 | 弹幕 | ~15 | |
-| 插件 | ~35 | 市场 / 安装 / 权限 / 贡献点 / UI 回调 |
 | 下载 | ~12 | |
 | 设置与偏好 | ~30 | |
-| 同步(Trakt / Bangumi / 日历) | ~18 | |
 | 观看记录 | ~8 | |
 | 系统(更新 / 日志 / 路径 / 诊断) | ~10 | |
 
@@ -471,14 +461,13 @@ C# `TaskCompletionSource`、Swift `withCheckedContinuation`)。
 emby.login        emby.listItems      emby.itemDetail
 source.login      source.listDir      source.resolvePlay
 player.play       player.seek         player.setTrack
-plugin.install    plugin.grant        plugin.uiRespond
 ```
 
 > 这不是洁癖。三端各写一遍绑定时,`views` 这种名字会被三个人理解成三件事。
 
 #### 平台差异
 
-现有 29 条命令桌面有、安卓没有(文件选择器、mpv.conf、翻译 / Whisper、预加载设置、播放窗控制)。
+现有 22 条命令桌面有、安卓没有(文件选择器、mpv.conf、预加载设置、播放窗控制)。
 
 **新契约的规则:命令表全平台一致**,平台不支持的返回 `E_UNSUPPORTED`。
 UI 启动时调一次 `system.capabilities` 拿到本平台支持集,据此隐藏入口。
@@ -493,12 +482,11 @@ UI 启动时调一次 `system.capabilities` 拿到本平台支持集,据此隐�
   "version":  "1.4.2",
   "dataRoot": "D:/LinPlayer/userdata",
   "serve":    { "port": 51873, "token": "…" },   // 数据通道(§6)
-  "unsupported": ["translate.subtitle", "system.pickFile", "…"],
+  "unsupported": ["system.pickFile", "…"],
   "features": {
     "filePicker":     false,   // 有没有系统文件选择器
     "externalPlayer": false,   // 能不能交给外部播放器
     "mpvConf":        false,   // 有没有用户可编辑的 mpv.conf
-    "plugins":        true,    // 装不装插件(TV 为 false)
     "backgroundPlay": true,    // 支不支持后台播放
     "pip":            true
   }
@@ -533,7 +521,6 @@ UI 启动时调一次 `system.capabilities` 拿到本平台支持集,据此隐�
 |---|---|
 | `emby.aggregateSearch` / `aggregateOverview` | 跨 N 台服务器,最慢的那台不该拖住最快的那台 |
 | `source.listDir`(慢协议:SMB / FTP) | 大目录要边列边出 |
-| `plugin.installAll` / 市场刷新 | 逐个反馈进度 |
 | `account.probeAccounts` | 逐台出连通状态 |
 
 > **这条影响被冻结的契约,所以必须现在定。** 现有实现是"`Promise.all` 屏障 + 串行 await",
@@ -573,7 +560,6 @@ UI 会缓存列表。核心层通过事件告诉它什么时候该丢:
 | `library` | 看完一集、标记已看 / 未看、收藏变化 | 该库的网格重取(未看数角标 -1 就靠它) |
 | `item` | 单条目详情变化 | 该条目的详情页重取 |
 | `accounts` | 账号 / 线路增删改 | 服务器列表重取 |
-| `plugins` | 插件装 / 卸 / 启停 | 插件页重取 |
 | `all` | 导入配置、切换用户 | 全丢 |
 
 > 不定义这个的后果是三端各写各的失效时机,而"看完一集角标不减"这类 bug
@@ -630,7 +616,6 @@ Rust 版靠 `Result<T,E>` 把这类错误逼到类型系统里,Go 没有这个�
 | **命令的执行** | **投给 `lp_init` 建立的 worker 池**,worker 顶层 `defer recover()` → 转成 `{"ok":false,"err":{"code":"E_INTERNAL"}}` 正常回给该 `seq`。**不许 `go func(){…}()` 现开** |
 | mpv 事件线程的回调 | 同上。这条线程死了 = 播放状态永远不再更新,而画面还在动,最难查 |
 | `localserve` 的每个 handler | `net/http` 自带 per-connection recover,**但它只保护连接不保护你的清理逻辑** —— 仍要自己 recover 并回 500 |
-| 插件宿主 goroutine | 同上。一个坏插件不许带走宿主 |
 | 下载 / 预取 / 同步的后台 goroutine | 同上,recover 后写日志并让该任务转 `failed`,不重启整条流水线 |
 
 **唯一允许崩的地方:`lp_init` 之前的包级初始化。** 那时候还没有可以回报错误的通道,
@@ -665,7 +650,7 @@ recover 之后必须做三件事,少一件这条契约就白写:
 | `result` / `partial` | **永不丢**。队列满则阻塞产生方 | 丢一条 = 某个 `seq` 永远没有回音 = UI 上一个转不完的圈。产生方是 goroutine,阻塞是安全的 |
 | 高频状态事件(`player.status`、`prefetch.stats`、`download.progress`) | **合并**:队列里已有同 `name`(+同 id)的未消费事件就**原地替换**,不追加 | 这类事件只有最新值有意义。UI 卡 2 秒之后收到 8 条陈旧的播放位置,还不如收到 1 条最新的 |
 | `log` | **可丢**。丢弃计数累加,在下一条 `log` 里带 `dropped:N` | 日志重要但不值得为它阻塞播放。**丢了必须说**,静默丢弃会让人误判"这段时间没事发生" |
-| 其余(`config.changed`、`data.invalidate`、`plugin.ui`…) | 同 `result`,不丢 | 丢 `data.invalidate` = 界面显示过期数据且永不自愈 |
+| 其余(`config.changed`、`data.invalidate`…) | 同 `result`,不丢 | 丢 `data.invalidate` = 界面显示过期数据且永不自愈 |
 
 其余硬性规定:
 
@@ -688,7 +673,6 @@ recover 之后必须做三件事,少一件这条契约就白写:
 |---|---|---|
 | `/img?src=<url>&w=<px>` | 图片代理 + 磁盘缓存 + 尺寸参数 | 三端图片加载器 |
 | `/icon/<id>` | 服务器图标 / 本地图标库 | 同上 |
-| `/plugin/<id>/*` | 插件静态资源(逃生舱 WebView 的内容) | 各端 WebView |
 | `/sub/<id>.ass` | 生成的弹幕 ASS / 外挂字幕 | libmpv 直接吃 |
 | `/stream/*` | 预取代理 | libmpv 直接吃 |
 
@@ -706,7 +690,7 @@ recover 之后必须做三件事,少一件这条契约就白写:
 
 | 消费者 | 路由 | 鉴权方式 |
 |---|---|---|
-| 三端图片加载器、WebView | `/img` `/icon` `/plugin/*` | 请求头 `X-LP-Token` |
+| 三端图片加载器、WebView | `/img` `/icon` | 请求头 `X-LP-Token` |
 | **libmpv** | `/stream/*` `/sub/*` | **URL 路径段**:`/stream/<token>/...` |
 
 理由:给 mpv 加请求头只能改 `http-header-fields`,而那是一个**全局粘连属性** ——
@@ -1144,11 +1128,9 @@ Go 侧用 `encoding/xml` 标准库,零新依赖,但有两条硬要求:
 | 文件浏览(网盘 / SMB / WebDAV / FTP / 本地) | ✅ | ✅ | ✅ | TV 只有本机文件夹 / U 盘(`UI_TV.md` §7.14,【用户定 2026-09-14】) |
 | 影视目录(VOD 资源站) | ✅ | ✅ | ❌ | 与文件浏览是**两套页面**,不复用;VOD 只以插件形式出现,TV 不做插件 |
 | 下载 | ✅ | ✅ | ✅ | |
-| 插件市场 / 已装 / 设置 | ✅ | ✅ | ❌ | TV 不做插件 |
-| 排行榜 | ✅ | ✅ | ✅ | |
-| 追剧日历 | ✅ | ✅ | ✅ | TV 和排行榜并成导航轨上的「发现」,放送表免登录也能看【用户定 2026-09-14】 |
+| ~~排行榜 / 追剧日历~~ | — | — | — | 2026-09-19 从宿主删除,改做官方插件(`docs/plugin-system/SPEC.md` 第 125、198 条) |
 | Ani-RSS 管理 | ✅ | ✅ | ❌ | |
-| 设置 | ✅ | ✅ | ✅ | 桌面 4 组 14 项(见 `UI_PC.md` §7.15) |
+| 设置 | ✅ | ✅ | ✅ | 桌面 4 组 12 项(见 `UI_PC.md` §7.15) |
 | 人物详情 | ✅ | ✅ | ❌ | |
 | 图标库 | ✅ | ✅ | ❌ | |
 
@@ -1256,55 +1238,7 @@ Go 侧用 `encoding/xml` 标准库,零新依赖,但有两条硬要求:
 
 ## 9. 插件系统
 
-### 9.1 兼容性承诺
-
-**现有插件包不重新打包即可运行。** 插件 ABI 是 JS,与宿主语言无关。
-
-| 组成 | 迁移影响 |
-|---|---|
-| 插件 JS 代码 | **零改动** |
-| `manifest.json` 格式 | **零改动** |
-| registry 索引格式 | **零改动**(snake_case 键、author 为字符串是硬契约) |
-| `ctx.*` 宿主 API | 语义零改动,实现从 rquickjs 换成 quickjs-go |
-| 声明式 UI 贡献点 | 语义零改动,三端各写一个渲染器 |
-| 逃生舱 WebView | 需要各端提供一个 WebView(见下) |
-
-### 9.2 引擎
-
-`buke/quickjs-go`。每插件一个 Runtime + Context,内存上限 64 MB,空转看门狗 30 s。
-与现有 `plugins/engine.rs` 的约束**逐条对齐**。
-
-> 备选 `dop251/goja`(纯 Go,免 cgo)。**否掉**:插件大量使用 async/await 与 Promise,
-> goja 的支持面与 QuickJS 有差异,而差异会表现为"某个插件在新版本上莫名其妙不工作"。
-> 既然已经因为 libmpv 用了 cgo,再多一个 cgo 依赖不增加边际成本。
-
-#### 🔴【实测 · 2026-08-31 · SPIKE-3】三条不写就偶发出错的宿主约束
-
-三个真插件 3/3 跑通(报告:[`spikes/SPIKE-3-quickjs-plugins.md`](spikes/SPIKE-3-quickjs-plugins.md)),
-§9.1 那条「不重新打包即可运行」成立。**但下面三条不做,表现全是「偶发,而且错得像插件的锅」:**
-
-| # | 约束 | 不做会怎样 |
-|---|---|---|
-| ① | **跑 JS 的线程必须 `runtime.LockOSThread()`** | QuickJS 用「栈指针 vs 创建时的栈基址」查栈溢出,Go 会把 goroutine 在 OS 线程间搬 → 误报 `RangeError: Maximum call stack size exceeded`。实测**锁线程 5/5 全绿,不锁 5/5 全败**,每次失败的项还不一样 |
-| ② | **异步结果必须投回 JS 线程再造值** | 在非 owner goroutine 上 `NewObject()` 造的值是无效的,JS 侧拿到 `undefined` 且**不报错**。`NewNull()` 这类常量 tag 不受影响 —— 所以 `ctx.sleep` 一直是好的,一换成返回对象的 `ctx.http` 就坏,**最容易漏测的形态** |
-| ③ | **回调注册放在 JS 侧,不要在 Go 里存** | `Value.Set` 接管引用,而回调参数是**借来的** → 同一引用释放两次 → `JS_FreeValue` 段错误。quickjs-go 没有 `Dup`/`Retain` 可补 |
-
-**看门狗的两条:** 中断处理器只在 JS **正在执行**时被调用,所以 `await` 期间不会误杀
-(这是 S3.4 能成立的机制);但 `await` 恢复后插件还要接着干活,
-**deadline 必须在每次泵作业时重置**,否则那段活会被立刻杀掉。
-
-### 9.3 逃生舱
-
-插件的自定义 UI 走**独立 origin** 的 WebView(不能是宿主 UI 的一部分,否则权限模型是摆设)。
-
-| 平台 | 组件 |
-|---|---|
-| Android | `android.webkit.WebView` |
-| Windows | WebView2(Avalonia 社区控件,或 `NativeControlHost` 直接挂) |
-| Linux | WebKitGTK |
-| Apple | `WKWebView` |
-
-内容由数据通道 `/plugin/<id>/*` 提供。
+旧插件系统已随代码删除,新系统从零重做中,设计正本 [`docs/plugin-system/SPEC.md`](../plugin-system/SPEC.md)。
 
 ---
 
@@ -1334,9 +1268,6 @@ userdata/
 ├── cache/
 │   ├── img/             # 图片缓存
 │   └── prefetch/        # 预取环形缓存(占用恒 = 上限)
-├── plugins/
-│   ├── installed/
-│   └── storage/         # 每插件的 KV
 └── shaders/
 ```
 
@@ -1480,7 +1411,6 @@ Rust 版是**黄金实现**。Go 版每个模块完成后,用同一份输入喂�
 |---|---|---|---|---|
 | R1 | Windows / Linux 纹理互操作走不通 | 推翻 Avalonia 选型 | **Windows 侧已闭环**:mpv 渲进纹理 FBO(SPIKE-1a/1b)+ **Avalonia 侧四条判据全过**(S1.2,`spikes/SPIKE-1c-avalonia-path-b.md`)。Linux 侧仍未跑(S1.4 / S1.4b) | 🟢 Windows 已解除 / 🔴 Linux 未验 |
 | R2 | cgo + NDK 交叉编译链路复杂 | 拖慢一切 | SPIKE-2 先跑通并固化进 CI | 🔴 未验证 |
-| R3 | quickjs-go 跑不了现有插件 | 插件生态断代 | SPIKE-3 拿现存全部插件当验收语料 | 🔴 未验证 |
 | R4 | Compose TV 焦点不如预期 | TV 端要自己写空间导航 | SPIKE-4 用最复杂的页面(EpisodePage)验证 | 🔴 未验证 |
 | R5 | Go 二进制体积 / 启动时间 | APK 变大、冷启动变慢 | 测量;`-ldflags "-s -w"`;可接受上限写死进门禁 | 🟡 待测 |
 | R6 | 三端 UI 行为漂移 | 同一功能三种表现 | 功能集合表(§8.1)+ 逐端验收清单 | 🟡 持续 |
@@ -1511,7 +1441,7 @@ Rust 版是**黄金实现**。Go 版每个模块完成后,用同一份输入喂�
 |---|---|:--:|
 | 访问 Emby(含 mpv 直连取流) | `LinPlayer/{版本}` | 开 |
 | 多线程加载 / 预取代理拉上游 | `LinPlayerPreload/{版本}` | **关** |
-| 第三方公开 API(Bangumi / Trakt / 弹弹Play / 翻译 / 排行) | `LinPlayer/{版本} (+<项目地址>)` | 开 |
+| 第三方公开 API(弹弹Play / Bangumi 等) | `LinPlayer/{版本} (+<项目地址>)` | 开 |
 
 - **分开的理由是服务端视角:** 预取代理是我们替 mpv 提前拉流的旁路请求,和用户真正在看的
   那一路在服主的日志与风控里必须分得开。糊成一个 UA,服主看到的是"一个客户端同时开了
@@ -1587,7 +1517,6 @@ JSON 或 0 字节,**表现是"重开 App 账号全没了"**。
 | 图片内存层(L1) | **128 MB** | LRU,按最后使用序号;满了删到 90% |
 | `logs/` | 7 天 **且** 总量 ≤ 64 MB | 按天滚动,先按量再按天 |
 | 下载目录 | 不限(用户的资产) | 不淘汰,但要在设置页显示占用 |
-| `plugins/storage/` | 每插件 ≤ 16 MB | 超了让插件的写操作失败,**不静默丢** |
 
 > ★ 图片这两档是**用户 2026-07-15 亲自定的**(磁盘 2 GB —— 旧栈是 6 GB,他选了更省盘的一档;
 > 内存 128 MB —— 原话「也得给一点去内存 128MB内存去缓存各种各样的图片」),
@@ -2085,7 +2014,7 @@ MPRIS 在 Linux 上的价值比 Windows 那半大得多 —— 它是桌面环�
 (或只按"可执行位"过滤)。
 
 > 这条要泛化:**任何"按扩展名做的事"都要问一遍在 Linux 上成不成立。**
-> 插件包(`.ipk` / `.zip`)、视频文件、字幕文件这些**有**扩展名,不受影响;
+> 插件包(`.lpplugin`)、视频文件、字幕文件这些**有**扩展名,不受影响;
 > 受影响的是"程序"这一类。
 
 #### 字幕字体
@@ -2117,9 +2046,9 @@ Linux 靠 **fontconfig** 做字体回退,libmpv 直接用,**不需要我们指�
 
 > 老版本的下限被 WebKitGTK 钉在 Ubuntu 22.04 / Debian 12。
 > **新架构(Avalonia)不再需要 WebKitGTK 做主 UI**,下限有机会往下走 ——
-> 但插件逃生舱(§9.3)仍要一个 WebView。
-> **【待验证 + 决策】** 逃生舱的 WebView 能否做成**可选依赖**(用到才加载,
-> 没有就禁用插件自定义 UI 并说明原因)。能的话,基础发行包的下限会显著放宽。
+> 但新插件系统的 WebView 嗅探([`docs/plugin-system/SPEC.md`](../plugin-system/SPEC.md) D24)仍要一个 WebView。
+> **【待验证 + 决策】** 这个 WebView 能否做成**可选依赖**(用到才加载,
+> 没有就禁用依赖它的插件功能并说明原因)。能的话,基础发行包的下限会显著放宽。
 
 #### 打包格式:两端都是 zip
 
@@ -2274,7 +2203,7 @@ is_writable(dir):
 | 暗道 | 现状 | 规定 |
 |---|---|---|
 | 进程临时目录 | 已按住:启动时把 `TEMP` / `TMP` / `TMPDIR` 指进数据根 | 保留 |
-| **WebView2 profile** | 已按住:显式给 `data_directory`。不给它就自己在 `%LOCALAPPDATA%` 下建,**实测 126 MB,而且含 localStorage** | 保留,见 §16.4。新架构下它只服务插件逃生舱 |
+| **WebView2 profile** | 已按住:显式给 `data_directory`。不给它就自己在 `%LOCALAPPDATA%` 下建,**实测 126 MB,而且含 localStorage** | 保留,见 §16.4。新架构下只有插件的 WebView 嗅探([`docs/plugin-system/SPEC.md`](../plugin-system/SPEC.md) D24)会用到它 |
 | **libmpv 的 shader cache** | **旧栈已经踩过**:不显式给 `gpu-shader-cache-dir`,libmpv 自己找地方写 | 显式指到 `userdata/cache/shaders`。**换播放器内核 / 换 libmpv 构建时要重新确认** |
 | **libmpv 的 config-dir / watch-later** | mpv 默认往用户配置目录写 | 显式指到数据根。注意 `config=no` 只挡配置读取,**挡不住 watch-later 之类的写** |
 | **.NET 单文件解包目录** | 新栈引入 | single-file 发布默认解到 `%TEMP%`。要么**不用 single-file**,要么显式设 `DOTNET_BUNDLE_EXTRACT_BASE_DIR` 到数据根 |
@@ -2364,16 +2293,16 @@ is_writable(dir):
 **现状是致命依赖:** 主 UI 本身就跑在 WebView2 里,而**代码里没有任何运行时缺失检测**。
 用户机器上没有 WebView2 运行时 = 整个 App 起不来,而且不会有任何有用的提示。
 
-**新架构改变了这件事**:主 UI 是 Avalonia,WebView2 **只服务插件逃生舱**(§9.3)。
+**新架构改变了这件事**:主 UI 是 Avalonia,WebView2 **只服务插件的 WebView 嗅探**([`docs/plugin-system/SPEC.md`](../plugin-system/SPEC.md) D24)。
 所以它从"必需"降成"可选",这是新架构白送的一个稳健性提升 —— **但必须显式做,不会自动发生**:
 
 | 规定 | 内容 |
 |---|---|
 | 启动时**不**加载 WebView2 | 主 UI 一行都不依赖它。启动路径上碰它 = 又变回必需依赖 |
-| 用到时才检测 | 打开插件自定义 UI 之前检测运行时是否存在 |
+| 用到时才检测 | 用到 WebView 的插件功能之前检测运行时是否存在 |
 | **缺失时禁用该功能并说明原因** | 不是崩,也不是空白页。给一句人话 + 一个"怎么装"的去处 |
 | profile 必须显式指定 | 指到数据根下的 WebView2 目录。不指定它就自己去 `%LOCALAPPDATA%` 建(实测 126 MB) |
-| `system.capabilities` 要如实反映 | 检测不到运行时 ⇒ 对应的插件 UI 能力标成不支持,UI 据此隐藏入口(§5.6) |
+| `system.capabilities` 要如实反映 | 检测不到运行时 ⇒ 对应的插件能力标成不支持,UI 据此隐藏入口(§5.6) |
 
 > 这条也解释了为什么**主 UI 不能顺手用 WebView 做**:那等于把一个可选依赖重新变成必需依赖,
 > 而且是在一个已经把它降级了的架构上。

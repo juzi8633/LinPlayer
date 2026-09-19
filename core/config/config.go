@@ -1,6 +1,7 @@
 // Package config 读写 AppConfig。
 //
 // ★★ 这个包存在的**全部理由**是一条真故障:
+//
 //	Rust 版有三个字段没标 serde(default) —— 配置文件里少任意一个,整份 JSON
 //	反序列化失败 → load() 的 .ok() 把错误吞掉 → unwrap_or_default() 退回空配置
 //	→ **用户所有服务器账号一次性消失,而且不报错。**
@@ -41,8 +42,7 @@ type AppConfig struct {
 	   (用户 2026-09-12)。见 system.RepairShortcutsIfMoved。 */
 	LastExePath string `json:"last_exe_path,omitempty"`
 
-	CompanionEnabled      bool `json:"companion_enabled"`
-	PluginOfficialEnabled bool `json:"plugin_official_enabled"`
+	CompanionEnabled bool `json:"companion_enabled"`
 
 	// AccountList 服务器账号表。**已接强类型**,但每条账号内部没接的键仍原样透传
 	// (见 account.go 的 Account.rest)。
@@ -52,9 +52,6 @@ type AppConfig struct {
 	Prefs          json.RawMessage `json:"prefs,omitempty"`
 	DanmakuSources json.RawMessage `json:"danmaku_sources,omitempty"`
 	Proxy          json.RawMessage `json:"proxy,omitempty"`
-	SyncTrakt      json.RawMessage `json:"sync_trakt,omitempty"`
-	SyncBangumi    json.RawMessage `json:"sync_bangumi,omitempty"`
-	PluginSources  json.RawMessage `json:"plugin_sources,omitempty"`
 
 	// 未知字段的兜底。加载时把整份 JSON 也存一份,保存时合并回去 ——
 	// 这样即使上面漏了某个键,也不会在保存时把它抹掉。
@@ -72,9 +69,8 @@ var (
 
 func defaults() *AppConfig {
 	return &AppConfig{
-		CompanionEnabled:      true, // 默认开:关着的话「遥控器」每次要先在电视上打开,等于没有
-		PluginOfficialEnabled: true, // 可禁不可删:删掉之后新用户开箱即空
-		unknown:               map[string]json.RawMessage{},
+		CompanionEnabled: true, // 默认开:关着的话「遥控器」每次要先在电视上打开,等于没有
+		unknown:          map[string]json.RawMessage{},
 	}
 }
 

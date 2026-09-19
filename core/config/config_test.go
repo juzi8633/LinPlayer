@@ -48,8 +48,8 @@ func TestLoad_文件不存在时返回空配置且不报错(t *testing.T) {
 	if err != nil {
 		t.Fatalf("新装应当无错,得到 %v", err)
 	}
-	if !c.CompanionEnabled || !c.PluginOfficialEnabled {
-		t.Fatalf("两个默认开的开关应当是 true")
+	if !c.CompanionEnabled {
+		t.Fatalf("默认开的开关应当是 true")
 	}
 }
 

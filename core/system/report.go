@@ -7,16 +7,53 @@ package system
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"regexp"
 	"runtime"
 	"strings"
 
 	"linplayer/core/bus"
+	"linplayer/core/httpx"
 	"linplayer/core/paths"
-	"linplayer/core/sync"
 )
+
+// 自建代理(oauth-proxy)的地址和共享密钥,由 `-ldflags -X` 注入(见 core/cmd/sealsecrets)。
+// 两者都不进提交:地址是我们自己的中转,密钥拿到就能刷代理。空 = 这个构建没配。
+var (
+	proxyBase string
+	proxyKey  string
+)
+
+// postProxy 往自建代理 POST 一段 JSON,原样交回状态码和响应体。
+func postProxy(ctx context.Context, path string, body any) (int, []byte, error) {
+	base := strings.TrimRight(strings.TrimSpace(proxyBase), "/")
+	if base == "" {
+		return 0, nil, fmt.Errorf("这个构建没有配反馈服务(需要在构建环境里提供 LP_SYNC_PROXY_BASE)")
+	}
+	b, err := json.Marshal(body)
+	if err != nil {
+		return 0, nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+path, strings.NewReader(string(b)))
+	if err != nil {
+		return 0, nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if proxyKey != "" {
+		req.Header.Set("X-LinPlayer-Key", proxyKey)
+	}
+	resp, err := httpx.Client().Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	out, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	return resp.StatusCode, out, err
+}
 
 // maxLogBytes 日志只带尾部。TG 单文件上限 50MB,这里卡小是为了国内慢链路也发得出去。
 const maxLogBytes = 256 << 10
@@ -39,7 +76,7 @@ func registerReportCommands() {
 			return fmt.Sprintf("LinPlayer %s · %s · %s\n\n%s\n\n== 崩溃 ==\n%s\n\n== 日志 ==\n%s",
 				r.Kind, r.Version, r.Platform, r.Text, r.Crash, r.Log), nil
 		}
-		code, body, err := sync.PostProxy(ctx, "/report", r)
+		code, body, err := postProxy(ctx, "/report", r)
 		if err != nil {
 			return nil, bus.NewErr(bus.ENetwork, "发送失败: %v", err)
 		}

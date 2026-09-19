@@ -82,7 +82,7 @@ public static class Smooth
     ///
     /// <para>隧道阶段是从外往里走的,而滚动的正确归属是从里往外 —— 鼠标停在内嵌
     /// 列表上,该滚的是那个列表不是整页。不判这一下的话,页面里但凡有一处内嵌
-    /// 滚动区(日历、聚合、影视目录),它就永远滚不动了,而外层会代它滚。
+    /// 滚动区(聚合、选集),它就永远滚不动了,而外层会代它滚。
     /// 判据是「从事件源往上找,第一个在这个方向上滚得动的 ScrollViewer」。</para>
     /// </summary>
     private static bool Innermost(ScrollViewer sv, Visual? source, Vector delta)

@@ -12,20 +12,7 @@ import (
 	"linplayer/core/paths"
 )
 
-// afdianSponsorURL 赞助地址。
-//
-// ★★ **它只能有一份,而且必须在核心层。**
-// 2026-07-19 就栽在这:UI 里写死了一个凭空猜的主页,功能看着完全正常,
-// **赞助收益却是零**。收款地址是那种「错了也不会报错」的东西。
-//
-// ★ 由构建期注入(和同步代理一套机制):它是账号地址,不该出现在提交里。
-var afdianSponsorURL string
-
 func registerMiscCommands() {
-	bus.Register("system.afdianSponsorUrl", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
-		return afdianSponsorURL, nil
-	})
-
 	// system.openDataDir —— 在系统文件管理器里打开数据目录。
 	//
 	// ★ sub 只认**白名单**里那几个:直接把用户传的路径拼上去等于给了一个

@@ -13,7 +13,7 @@ tags: [介绍, Emby]
 
 - 连接你的 Emby 服务器，浏览媒体库、续播、上报观看进度。
 - 内置成熟的播放内核，支持复杂字幕（ASS/SSA、PGS/SUP）与高码率视频。
-- 提供插件系统，可用 JavaScript 扩展能力。
+- 插件系统从零重做中（设计见仓库 `docs/plugin-system/SPEC.md`）。
 
 ## 支持的平台
 

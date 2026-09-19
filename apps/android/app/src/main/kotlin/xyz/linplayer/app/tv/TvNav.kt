@@ -24,15 +24,14 @@ sealed interface TvRoute {
     /** 没带库 id = 选库;当前源是本机文件夹时这一项进的是文件夹浏览(§7.14)。 */
     data class Library(val viewId: String? = null, val title: String = "") : TvRoute { override val rail = 2 }
     data object Favorites : TvRoute { override val rail = 3 }
-    data object Discover : TvRoute { override val rail = 4 }
-    data object Downloads : TvRoute { override val rail = 5 }
-    data object Servers : TvRoute { override val rail = 6 }
-    data object Settings : TvRoute { override val rail = 7 }
+    data object Downloads : TvRoute { override val rail = 4 }
+    data object Servers : TvRoute { override val rail = 5 }
+    data object Settings : TvRoute { override val rail = 6 }
 
     // ☠ 下面这些是**下钻,必须入栈**:线路管理、带库 id 的媒体库当平级处理的话,按一下返回就退出应用
-    data class Lines(val serverId: String, val name: String) : TvRoute { override val rail = 6 }
-    data object AddServer : TvRoute { override val rail = 6 }
-    data object LocalPicker : TvRoute { override val rail = 6 }
+    data class Lines(val serverId: String, val name: String) : TvRoute { override val rail = 5 }
+    data object AddServer : TvRoute { override val rail = 5 }
+    data object LocalPicker : TvRoute { override val rail = 5 }
     data class LocalDir(val dirId: String, val trail: List<Pair<String?, String>>) : TvRoute { override val rail = 2 }
     data class Detail(val itemId: String, val type: String) : TvRoute { override val rail = -1 }
     data class Episode(val itemId: String) : TvRoute { override val rail = -1 }
@@ -54,7 +53,7 @@ sealed interface TvRoute {
 /** 轨上第 i 项对应的平级页。 */
 fun railRoute(i: Int): TvRoute = when (i) {
     0 -> TvRoute.Search; 1 -> TvRoute.Home; 2 -> TvRoute.Library(); 3 -> TvRoute.Favorites
-    4 -> TvRoute.Discover; 5 -> TvRoute.Downloads; 6 -> TvRoute.Servers; else -> TvRoute.Settings
+    4 -> TvRoute.Downloads; 5 -> TvRoute.Servers; else -> TvRoute.Settings
 }
 
 /**

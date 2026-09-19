@@ -46,8 +46,7 @@ Go 版回放 diff。单测只证明 Go 版自洽,证明不了它和 Rust 版一�
 **迁移期 Rust 版功能必须冻结**——允许它继续加功能是所有重写项目的头号死因。
 
 现有代码盘点(2026-08-30):crates 41.7k 行 Rust / apps 16.5k / ui 47.4k TS+CSS;
-桌面注册 266 条命令、安卓 249(差 29 条);19 个源后端;插件引擎是 rquickjs(QuickJS)
-→ Go 侧对应 `buke/quickjs-go`,**插件包零改动存活**(ABI 是 JS)。
+桌面注册 266 条命令、安卓 249(差 29 条);19 个源后端。
 
 相关:[仓库结构(2026-07重构后)](build-release.md) [重构决策(已定+PoC已验)](decisions.md) [端范围已定](decisions.md)
 [PC 播放页独立窗口](player-mpv.md) [TV 端 UI 选型](ui-tv.md) [测试必须先红](methodology.md)
@@ -74,7 +73,6 @@ Go 版回放 diff。单测只证明 Go 版自洽,证明不了它和 Rust 版一�
 - 后端/核心 = **Rust**(单核,原生无运行时最省体积,交叉编译桌面+安卓两吃;socket钉IP+SNI/mpv是主场)
 - 视频 = **libmpv-rs 驱动原生子窗口**,垫在透明webview下(**视频永不进webview**,同 Jellyfin Media Player/Plex 的 QtWebEngine+mpv 架构,可参考其壳兜底)→ 结构性免闪
 - 安卓/TV UI 待定(留Flutter走flutter_rust_bridge 或 webview走uniffi),Rust核复用
-- 插件系统用 **rquickjs**(Rust绑QuickJS)重建,JS插件API保留「plugin-system」(该条不在本库,多为 Flutter 时代的旧记忆,已作废)
 
 **Phase 0 PoC 已跑通并验证(2026-07-14)**,工程在 `native-poc/`(Tauri v2 + React/TS + Rust,手写 libmpv FFI)。已证:Rust核Emby登录/浏览/播放(走PlaybackInfo取DirectStreamUrl,别用野拼的/Videos/{id}/stream会404)、原生mpv画面+声音、**透明React UI叠mpv不闪**、release包小可跑。
 
@@ -96,8 +94,6 @@ Go 版回放 diff。单测只证明 Go 版自洽,证明不了它和 Rust 版一�
 - **Phase 6 ✅ 同步/周边(功能全落)**:核 `ranking`(弹弹动漫榜+TMDB影视榜双源;13分类;dandan复用danmaku::signature;TMDB用AES-256-CBC/PKCS7解TMDB_API_KEY_ENC;凭据编译期option_env注入,PoC无凭据→分类空honest;6h文件缓存)、`sync`(基座:CF oauth-proxy常量<自建 oauth-proxy 域名>/api+共享密钥头+XOR混淆解client_id;SyncAccount令牌模型;**afdian_verify付费软锁走代理运行时可跑**)、`sync/trakt`(设备码登录+刷新+scrobble start/pause/stop+追剧日历,走已部署代理)、`sync/bangumi`(授权码登录+收藏/单集进度+追番日历,默认国内加速反代)、`sync/calendar`(CalendarEntry+civil_from_days免chrono)。config持久化sync_trakt/sync_bangumi。命令齐全。单测23过。**⚠️尾巴3项待**:①backup_crypto(GCM+PBKDF2,legacy-import低值)②配置迁移扫码(CommonConfig AES+gzip)③凭据加固keyring(Linux无头/安卓Keystore适配代价,一直推迟)。**播放期自动同步已接**:emby::fetch_scrobble_info抓ProviderIds+SeriesName/季/集/首播日;play→Trakt scrobble start(有外部id才发),stop→Trakt stop + Bangumi(progress≥80%触发bangumi_matcher反查subject/episode→收藏在看→单集看过,先收藏后更集)。**配置迁移扫码已落**(config_transfer:Richasy CommonConfig容器AES-256-CBC+gzip+base64url前缀LPSYNC1:,命令config_export_qr/import_qr,载荷不含明文token)。bangumi_matcher纯在线(搜番+±180天日期择优+续集链+按集号取ep)。ranking/calendar归组逻辑留前端TS。**刻意不港(非遗漏)**:backup_crypto GCM(Dart标注legacy仅向后兼容导入,新Rust端无H12历史可导→YAGNI)、keyring加固(原方案既定推迟,平台适配代价)。
 
 - **凭据加密注入 + Trakt钩子 + 官方弹幕(2026-07-14补)**:`crates/core/build.rs`编译期读GH环境变量`DANDANPLAY_APP_SECRET`/`TMDB_API_KEY`→内置口令AES-256-CBC加密注入密文(`DANDAN_APP_SECRET_ENC`/`TMDB_API_KEY_ENC`),`DANDANPLAY_APP_ID`公开明文;`crate::secrets`运行时解密。**明文密钥不进二进制**已实证(release里明文各0命中)。弹弹签名按官方规范核对无误。Trakt播放期自动scrobble已接(`emby::fetch_scrobble_info`抓ProviderIds→play上报start/stop上报stop);Bangumi自动收藏仍缺集数matcher(命令可手动调)。官方弹幕源:有凭据回落官方弹弹Play。**⚠️构建约定**:build.rs读的是环境变量,本地/CI构建native-poc前须`export DANDANPLAY_APP_ID/APP_SECRET/TMDB_API_KEY`(缺则honest回退未配置);PoC暂无CI,接Phase8打包时把这仨env喂给cargo/tauri构建步骤即可。单测25过。
-
-- **Phase 7 ◑ 插件系统(Rust 引擎+命令已证死,React 宿主UI待接)**:QuickJS 从 flutter_qjs 迁到 **rquickjs**,并借机**重写实现形态**(用户明确要更好的形态,非照抄):不再走 Dart 那套 `__lp_host(channel,method,argsJson)` 字符串编组(那是跨 isolate 只能传简单类型逼出来的)——改为**Rust async 函数原生绑进 ctx 返回真 Promise**(`Async(fn)`+自定义 `JsOut` 在 `into_js` 里 `Exception::throw_message` 抛真 Error),插件回调用 `Persistent<Function>` 存下直接调。**引导脚本 227 行→1 行**(只剩 `__lp_call` 包 Promise)。核 `plugins/`:manifest/permission/storage(5MB)/extensions(注册表)/host(平台缝 trait,单一 `call(channel,method,args)`)/convert(js↔json+函数抽 handler 标记)/state(权限门控+HTTPS白名单+**空转看门狗**:interrupt 只在 JS 真跑时触发,等宿主 await 期不触发=天然区分等待与死循环)/ctx(原生绑全能力,host路由类收敛到一个 `host_fn`)/engine(AsyncRuntime+内存限64MB+Drop 清 Persistent 防 abort)/installer(.ipk=zip)/**worker(专用线程 actor:QuickJS 单线程,引擎钉线程永不跨线程,manager 只持 Send 命令通道——正是 Dart isolate-per-plugin 模型;`parallel` 特性无用因 Persistent 含裸指针非 Send)**/manager(Send+Sync 门面)。**只支持 runtime:js**(data/addon 是 iOS App Store 合规专用,无 Apple 已砍,manifest 直接拒绝)。src-tauri:`DesktopPluginHost`(player→mpv/emby→当前账号/ui→事件+oneshot待回/cfproxy最小)+10 个 `plugin_*` 命令+play/stop 钩 onPlay/onPlayEnd。**证死**:单测 39 过(+8:**真 hello 插件逐字不改跑通全生命周期**——引擎启动/ctx.log/storage读写/extensions动态注册函数handler/ui.showForm宿主/manifest静态settingsPages具名handler/onEnable+权限拒绝),app release 绿。**⚠️待接(下一步)**:React 宿主 UI(渲染 showForm/showDialog/showList/showProgress 并调 `plugin_ui_respond` 回填;渲染 homeStats/sidebarItems/settingsPages 扩展点;插件管理页+权限弹窗);getCredentials 因 PoC 不存密码返 Err;cfproxy 重活未接(命令壳在)。**现有 JS 插件全兼容不用改**。
 
 - **Phase 8 ◑ 安卓交叉编译已证死(Linux 待 Linux 机)**:`cargo ndk -t arm64-v8a build --release -p linplayer-core` 产 `liblinplayer_core.rlib`(8.6MB,readobj 验 EM_AARCH64),**整核含 rustls/tokio/数据源/网络/QuickJS 插件全套**都过。可复现脚本 **`native-poc/scripts/build-android.sh`**(全新环境+清 bindgen 缓存 exit=0 实证)。Windows 宿主 bindgen 坑(脚本已封):①reqwest 切 **rustls-tls**(default-features=false)去 openssl-sys——桌面亦通用,CF `.resolve()` 钉IP在 rustls 照常,`cargo test -p linplayer-core` 39 过+`app` release 绿无回归;②rquickjs-sys 无 android bindings→`[target.'cfg(target_os="android")']` 开 `bindgen`,经 proc-macro `rquickjs-macro`(编 host)传导 **host+android 两 bindgen 都要喂**;③需**带 libclang.dll 的 NDK**(30.x 有/27.x 无);libclang 当 DLL 加载 InstalledDir 空→显式 `-resource-dir` 补 stdbool,host(msvc)从 vcvars64 灌 `%INCLUDE%` 补 stdio,预置 `BINDGEN_EXTRA_CLANG_ARGS_<triple>` 后 cargo-ndk 不补 sysroot 故自带 `--sysroot`。**⚠️坑复盘**:脚本变量别叫 `TMP`(Windows 临时目录env,覆盖成文件→link.exe LNK1104);`export VAR-带横杠` bash 拒→用 `env` 前缀;vswhere 默认不列 BuildTools→直接 glob vcvars64.bat;`%INCLUDE%` 在 `cmd /c` 解析期就展开(空)→必须临时 .bat 逐行运行取。**⬜ 真出 .so 需 cdylib 绑定壳(core 是 rlib)+定安卓 UI**;⬜ Linux GL 子窗口合成需 webkit2gtk+Linux target,Win 上无法验。
 
@@ -123,7 +119,7 @@ Go 版回放 diff。单测只证明 Go 版自洽,证明不了它和 Rust 版一�
 2. **`searchTerm` 小写被服务端静默忽略** → 原实现**一直在吐全库前 50 条冒充搜索结果**(`TotalRecordCount=25596`)。必须 `SearchTerm` 大写。这是只有实测才抓得到的真 bug。
 3. **服务端过滤是假的**:`Genres`/`GenreIds`/`Years`/`MinCommunityRating` 全被忽略(total 与不筛完全一致)→ 必须客户端复筛兜底。且 **`/Items/Filters` 在这台(Emby 4.9.3)404**,`/Years` `/Tags` `/OfficialRatings` 也 404(**旧 Dart 的年份/标签分面其实一直是空的**),只有 `/Genres` `/Studios` 通。
 
-**How to apply:** Phase1-6「跑通」+Phase7 Rust侧证死+Phase8 安卓交叉编译证死(共27+ commit直推main)。**但「跑通」≠「能力搬全」,见上。**核模块:`http/emby/config/config_transfer/media/danmaku/download/ranking/secrets/sync(trakt|bangumi|bangumi_matcher|calendar)/net(prefetch|cf)/source(×5)/plugins(engine|ctx|host|worker|manager|manifest|permission|storage|extensions|convert|installer)`。单测39过。**别重港已完成的/别重搭workspace/别港已决定不港的(backup GCM/keyring)**。下一步:**Phase7 React 宿主UI**(接 `plugin://ui-request` 事件+`plugin_ui_respond` 命令,渲染扩展点+管理页,管道已铺好)+ 用户要自己动手做 PC 端 UI;安卓 UI/Linux 合成留后。别再论证要不要迁/用什么栈——已定并验证。
+**How to apply:** Phase1-6「跑通」+Phase8 安卓交叉编译证死(共27+ commit直推main)。**但「跑通」≠「能力搬全」,见上。**核模块:`http/emby/config/config_transfer/media/danmaku/download/ranking/secrets/sync(trakt|bangumi|bangumi_matcher|calendar)/net(prefetch|cf)/source(×5)`。单测39过。**别重港已完成的/别重搭workspace/别港已决定不港的(backup GCM/keyring)**。下一步:用户要自己动手做 PC 端 UI;安卓 UI/Linux 合成留后。别再论证要不要迁/用什么栈——已定并验证。
 
 ---
 

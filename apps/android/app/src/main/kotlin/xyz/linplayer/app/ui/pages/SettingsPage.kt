@@ -136,8 +136,6 @@ fun SettingsPage(nav: NavController) {
                         nav.navigate(Route.SettingsSub("backup"))
                     }
                     Hairline()
-                    LpCell("插件", icon = LpIcons.plugin) { nav.navigate(Route.Plugins) }
-                    Hairline()
                     LpCell("文件浏览", icon = LpIcons.folder) { nav.navigate(Route.Browse) }
                     Hairline()
                     LpCell("存储与数据目录", icon = LpIcons.file) { nav.navigate(Route.SettingsSub("storage")) }

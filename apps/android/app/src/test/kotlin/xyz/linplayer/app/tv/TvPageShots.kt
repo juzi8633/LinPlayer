@@ -38,7 +38,7 @@ import xyz.linplayer.app.data.UiPrefs
  * → `app/build/tvpages/<草稿序号>-<名字>.png`。截图不进仓库;对照脚本把同序号的草稿拼在左边。
  *
  * ★ 只替掉核心层([FakeCore]),页面、焦点、面板、返回栈全是真代码;按键走 `performKeyInput`,和遥控器同一条分发路径。
- * ★ 草稿里的 03 / 04 / 05 / 36(组件表、系统态拼图)没有对应页面:它们画的就是 tv/kit 本身,
+ * ★ 草稿里的 03 / 04 / 05 / 34(组件表、系统态拼图)没有对应页面:它们画的就是 tv/kit 本身,
  *   由 [xyz.linplayer.app.TvDraftShots] 的逐像素回归守着(组件库挪进正式包前后 45 张图一致)。
  */
 @RunWith(ParameterizedRobolectricTestRunner::class)
@@ -157,11 +157,9 @@ internal val cases = listOf(
     TvPageShots.Case(27, "lines", { servers() }, after = { r, _ -> press(r, Key.Enter) }) { Shell(TvRoute.Lines("http://emby-a.invalid", "服务器 A")) },
     TvPageShots.Case(28, "settings-playback", { settings() }) { PageCache.put("tv.settings.cat", 1); Shell(TvRoute.Settings) },
     TvPageShots.Case(29, "settings-general", { settings() }) { PageCache.put("tv.settings.cat", 0); Shell(TvRoute.Settings) },
-    TvPageShots.Case(30, "discover-ranking", { discover() }) { Shell(TvRoute.Discover) },
-    TvPageShots.Case(31, "discover-calendar", { discover() }) { PageCache.put("tv.discover.tab", 1); Shell(TvRoute.Discover) },
-    TvPageShots.Case(32, "favorites", { favorites() }) { Shell(TvRoute.Favorites) },
-    TvPageShots.Case(33, "downloads", { downloads() }, waitMs = 1200) { Shell(TvRoute.Downloads) },
-    TvPageShots.Case(34, "local-picker", before = {
+    TvPageShots.Case(30, "favorites", { favorites() }) { Shell(TvRoute.Favorites) },
+    TvPageShots.Case(31, "downloads", { downloads() }, waitMs = 1200) { Shell(TvRoute.Downloads) },
+    TvPageShots.Case(32, "local-picker", before = {
         val ctx = ApplicationProvider.getApplicationContext<Application>()
         org.robolectric.Shadows.shadowOf(ctx).grantPermissions(android.Manifest.permission.READ_MEDIA_VIDEO)
         // JVM 上没有存储卷:照草稿造三个,可用空间走 StatFs 的影子
@@ -175,15 +173,15 @@ internal val cases = listOf(
             org.robolectric.shadows.ShadowStatFs.registerStats(dir.path, blocks(total), blocks(free), blocks(free))
         }
     }) { Shell(TvRoute.LocalPicker) },
-    TvPageShots.Case(35, "local-browse", { local() }) {
+    TvPageShots.Case(33, "local-browse", { local() }) {
         Shell(TvRoute.LocalDir("dir-2024", listOf(null to "U 盘 · SanDisk", "dir-movie" to "电影", "dir-2024" to "2024")))
     },
-    TvPageShots.Case(37, "card-menu", {
+    TvPageShots.Case(35, "card-menu", {
         ret("emby.itemDetail", buildJsonObject { put("is_favorite", false) })
         ret("emby.permissions", buildJsonObject { put("can_download", true) })
         ret("emby.blockedList", arr())
     }, after = { r, _ ->
         press(r, Key.DirectionDown, Key.DirectionDown, Key.DirectionDown, Key.DirectionUp, Key.DirectionUp, Key.Menu)
     }) { Shell(TvRoute.Home) },
-    TvPageShots.Case(38, "rail-expanded", after = { r, _ -> press(r, Key.DirectionLeft, Key.DirectionDown) }) { Shell(TvRoute.Home) },
+    TvPageShots.Case(36, "rail-expanded", after = { r, _ -> press(r, Key.DirectionLeft, Key.DirectionDown) }) { Shell(TvRoute.Home) },
 )

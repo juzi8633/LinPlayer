@@ -75,7 +75,7 @@ func PreloadUA() string {
 	return AppName + "Preload/" + version
 }
 
-// APIUA 第三方公开 API(Bangumi / Trakt / 弹弹Play / 翻译 / 排行榜)用的 User-Agent。
+// APIUA 第三方公开 API(弹弹Play / Bangumi 等)用的 User-Agent。
 func APIUA() string {
 	mu.RLock()
 	defer mu.RUnlock()

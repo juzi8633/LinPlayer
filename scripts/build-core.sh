@@ -24,12 +24,12 @@ case "$(go env GOOS)" in
   *)       LIB="liblpcore.so" ;;
 esac
 
-# 编译期凭据(弹弹Play / TMDB)。**只有密文进 ldflags** —— 明文会原样出现在
+# 编译期凭据(弹弹Play / 反馈代理 / 图标源 / CF 测速)。**只有密文进 ldflags** —— 明文会原样出现在
 # 构建日志和进程命令行里。一个都没配时 SEAL 是空串,本地构建照常出得来,
 # 对应功能会明说「此构建没有凭据」(honest,不是装作没数据)。
 SEAL="$( cd "$ROOT/core" && go run ./cmd/sealsecrets )"
 # ★★ 打印**注入了哪几个**(只打变量名,不打值)。
-#   没这一行的时候,「排行榜空白」到底是 CI 漏配、sealsecrets 封错,
+#   没这一行的时候,「弹幕搜不到」到底是 CI 漏配、sealsecrets 封错,
 #   还是运行时解不开,**三者在日志里长得一模一样**(都是一片安静)。
 #   这行把第一种当场排掉。值绝不能打 —— CI 日志是公开的。
 echo "编译期凭据: $(sed -E 's/=[^ ]*//g; s/-X //g' <<< "$SEAL" | tr ' ' '\n' | sed 's/.*\.//' | paste -sd' ' -)"

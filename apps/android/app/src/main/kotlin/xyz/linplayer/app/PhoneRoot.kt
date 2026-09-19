@@ -41,8 +41,6 @@ import xyz.linplayer.app.ui.components.LongShotButton
 import xyz.linplayer.app.ui.components.LpTabBar
 import xyz.linplayer.app.ui.components.Skeleton
 import xyz.linplayer.app.ui.pages.AggregatePage
-import xyz.linplayer.app.ui.pages.CalendarPage
-import xyz.linplayer.app.ui.pages.CatalogPage
 import xyz.linplayer.app.ui.pages.DetailPage
 import xyz.linplayer.app.ui.pages.DownloadsPage
 import xyz.linplayer.app.ui.pages.FacetPage
@@ -52,8 +50,6 @@ import xyz.linplayer.app.ui.pages.HomePage
 import xyz.linplayer.app.ui.pages.LibraryPage
 import xyz.linplayer.app.ui.pages.LinesPage
 import xyz.linplayer.app.ui.pages.BrowsePage
-import xyz.linplayer.app.ui.pages.PluginsPage
-import xyz.linplayer.app.ui.pages.RankingPage
 import xyz.linplayer.app.ui.pages.SearchPage
 import xyz.linplayer.app.ui.pages.ServersPage
 import xyz.linplayer.app.ui.pages.SettingsPage
@@ -140,12 +136,8 @@ private fun MainShell() {
             "search" -> nav.navigate(Route.Search())
             "favorites" -> nav.navigate(Route.Favorites)
             "downloads" -> nav.navigate(Route.Downloads)
-            "plugins" -> nav.navigate(Route.Plugins)
-            "ranking" -> nav.navigate(Route.Ranking)
-            "calendar" -> nav.navigate(Route.Calendar)
             "settings" -> nav.navigate(Route.Settings)
             "browse" -> nav.navigate(Route.Browse)
-            "catalog" -> nav.navigate(Route.Catalog)
             "addServer" -> nav.navigate(Route.AddServer)
             "library" -> nav.navigate(Route.Library(parts.getOrElse(1) { "" }, parts.getOrElse(2) { "媒体库" }))
             "detail" -> nav.navigate(Route.Detail(parts.getOrElse(1) { "" }, parts.getOrElse(2) { "Series" }))
@@ -189,11 +181,7 @@ private fun MainShell() {
                 composable<Route.Facet> { FacetPage(nav, it) }
                 composable<Route.Lines> { LinesPage(nav, it) }
                 composable<Route.Browse> { BrowsePage(nav) }
-                composable<Route.Catalog> { CatalogPage(nav) }
                 composable<Route.Downloads> { DownloadsPage(nav) }
-                composable<Route.Plugins> { PluginsPage(nav) }
-                composable<Route.Ranking> { RankingPage(nav) }
-                composable<Route.Calendar> { CalendarPage(nav) }
                 composable<Route.Settings> { SettingsPage(nav) }
                 composable<Route.SettingsSub> { SettingsSubPage(nav, it) }
                 /* ☠ 加完服务器**必须重取一次会话**。只 popBackStack 的话:

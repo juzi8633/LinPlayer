@@ -80,7 +80,7 @@ It also works on Windows (`LinPlayer.exe`); read the output through a redirect o
 
 ## Features
 
-Business logic (Emby protocol, networking, playback control, danmaku, sync, downloads, plugins) lives in a **single Go core shared by every platform**,
+Business logic (Emby protocol, networking, playback control, danmaku, downloads) lives in a **single Go core shared by every platform**,
 built as the `lpcore` shared library; each platform only writes its own UI. So a ⬜ below does not mean "not built" — it means **the core has it, but that platform's UI is not wired up yet**.
 
 | Feature | Notes | Windows | Linux | Phone / tablet | TV |
@@ -91,15 +91,10 @@ built as the `lpcore` shared library; each platform only writes its own UI. So a
 | **Danmaku** | DanDanPlay and other sources, smart episode matching, block words and display settings | ✅ | ✅ | ✅ | ✅ |
 | **Subtitles** | Embedded / external Emby subtitles; track switching, delay, styling; full libass effects | ✅ | ✅ | ✅ | ✅ |
 | **Progress reporting & cross-server resume** | Emby progress reporting; the furthest position across servers wins | ✅ | ✅ | ✅ | ✅ |
-| **Rankings** | DanDanPlay anime chart + TMDB movie/TV chart | ✅ | ✅ | ✅ | ✅ |
-| **Airing calendar** | Trakt / Bangumi schedules (phone currently has Bangumi only) | ✅ | ✅ | ✅ | ✅ |
 | **Downloads** | Custom multi-threaded ranged downloads, whole-season download | ✅ | ✅ | ✅ | ✅ |
 | **Multi-threaded loading** | Local prefetch proxy feeding the player with concurrent ranged reads | ✅ | ✅ | ✅ | ✅ |
 | **Local folder playback** | Pick a local directory and browse / play it | ✅ | ✅ | ✅ | ✅ |
 | **In-app updates** | Dual channel, picks the right package per platform and ABI | ✅ | ✅ | ✅ | ✅ |
-| **Plugins** | QuickJS engine, plugin market, per-plugin permissions and isolation | ✅ | ✅ | ✅ | ⬜ |
-| **Trakt / Bangumi accounts** | Log in, view account and schedules | ⬜ | ⬜ | ⬜ | ✅ |
-| **Watch-history sync** | Trakt scrobbling / Bangumi episode marking | ⬜ | ⬜ | ⬜ | ⬜ |
 | **Custom network proxy** | | ⬜ | ⬜ | ⬜ | ✅ |
 | **Cloudflare best-IP speed test** | Samples Cloudflare edge nodes and measures them | ✅ | ✅ | ⬜ | ⬜ |
 | **Bulk server import** | Paste multi-line configs and import them in one pass | ✅ | ✅ | ⬜ | ⬜ |
@@ -112,7 +107,7 @@ built as the `lpcore` shared library; each platform only writes its own UI. So a
 
 > **Out of scope** (decided 2026-09-04): cloud drives (Aliyun, Baidu, 115, 189, 139, Quark, OpenList, Feiniu),
 > LAN sources (SMB / WebDAV / FTP) and Ani-RSS are all dropped and their code removed.
-> Video-resource sites will only ever come back as **plugins**. Local folder playback stays — it is table stakes for a player.
+> Video-resource sites will only ever come back as **plugins** — the plugin system is being rebuilt from scratch, see [`plugin-system/SPEC.md`](plugin-system/SPEC.md) (Chinese). Local folder playback stays — it is table stakes for a player.
 
 ## Screenshots
 
@@ -150,8 +145,6 @@ built as the `lpcore` shared library; each platform only writes its own UI. So a
   </tr>
   <tr>
     <td><img src="images/screenshots/tablet-player.jpg" width="100%" alt="Player"><br><sub><b>Player</b></sub></td>
-    <td><img src="images/screenshots/tablet-rankings.jpg" width="100%" alt="Rankings"><br><sub><b>Rankings</b></sub></td>
-    <td><img src="images/screenshots/tablet-calendar.jpg" width="100%" alt="Calendar"><br><sub><b>Airing Calendar</b></sub></td>
   </tr>
 </table>
 
@@ -165,12 +158,10 @@ built as the `lpcore` shared library; each platform only writes its own UI. So a
   </tr>
   <tr>
     <td width="33%"><img src="images/screenshots/phone-home.jpg" width="100%" alt="Home"><br><sub><b>Home</b></sub></td>
-    <td width="33%"><img src="images/screenshots/phone-aggregate.jpg" width="100%" alt="Aggregate"><br><sub><b>Aggregate View</b> — favorites, downloads, rankings and calendar across servers</sub></td>
-    <td width="33%"><img src="images/screenshots/phone-rankings.jpg" width="100%" alt="Rankings"><br><sub><b>Rankings</b></sub></td>
+    <td width="33%"><img src="images/screenshots/phone-aggregate.jpg" width="100%" alt="Aggregate"><br><sub><b>Aggregate View</b> — favorites and downloads across servers</sub></td>
   </tr>
   <tr>
     <td><img src="images/screenshots/phone-series-detail.jpg" width="100%" alt="Series detail"><br><sub><b>Series Detail</b></sub></td>
-    <td><img src="images/screenshots/phone-calendar.jpg" width="100%" alt="Calendar"><br><sub><b>Airing Calendar</b></sub></td>
     <td><img src="images/screenshots/phone-settings.jpg" width="100%" alt="Settings"><br><sub><b>Settings</b></sub></td>
   </tr>
 </table>
@@ -237,10 +228,8 @@ LinPlayer stands on the shoulders of these open-source projects, media services 
 ### Services & Data Sources
 
 - [Emby](https://emby.media/) — media server
-- [DanDanPlay](https://www.dandanplay.com/) — danmaku and anime ranking data
-- [TMDB](https://www.themoviedb.org/) — movie/TV ranking data
-- [Bangumi (bgm.tv)](https://bgm.tv/) — anime schedules and collections
-- [Trakt](https://trakt.tv/) — movie/TV schedules and watch history
+- [DanDanPlay](https://www.dandanplay.com/) — danmaku data
+- [Bangumi (bgm.tv)](https://bgm.tv/) — anime titles (used for danmaku matching)
 
 ### Emby Servers
 
@@ -253,9 +242,8 @@ Thanks to the following Emby servers for providing UI demos and long-term suppor
 ### Network & Tools
 
 - [CloudflareSpeedTest](https://github.com/XIU2/CloudflareSpeedTest) — the Cloudflare best-IP feature was inspired by XIU2's project
-- [QuickJS](https://bellard.org/quickjs/) — plugin script engine
 
-> Content from TMDB and DanDanPlay remains the copyright of its respective owners; this project only aggregates and displays it, and does not store or distribute copyrighted media.
+> Content from DanDanPlay remains the copyright of its respective owners; this project only aggregates and displays it, and does not store or distribute copyrighted media.
 
 ## Star History
 

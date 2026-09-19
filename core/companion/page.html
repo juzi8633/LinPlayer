@@ -176,12 +176,6 @@ button.pri:disabled{opacity:.5}
     <div class="row"><div class="g"><div class="n">缓存占用</div><div class="m" id="s-cache">统计中…</div></div>
       <button id="s-clear">清空</button></div>
 
-    <h2>Bangumi</h2>
-    <div class="hint" id="s-bgm">读取中…</div>
-    <label>Bangumi 个人访问令牌</label>
-    <input id="s-bgm-token" autocapitalize="off" autocomplete="off" spellcheck="false">
-    <button class="pri" id="s-bgm-go">连接 Bangumi</button>
-
     <h2>弹幕屏蔽词</h2>
     <label>一行一个</label>
     <textarea id="s-words" autocapitalize="off" spellcheck="false"></textarea>
@@ -463,9 +457,6 @@ async function loadSettings() {
       $("s-pport").value = proxy.port || "";
     }),
     api("system.cacheSize", {}).then((c) => { $("s-cache").textContent = human(c.bytes || 0); }),
-    api("sync.bangumiAccount", {}).then((a) => {
-      $("s-bgm").textContent = a ? "已连接:" + (a.username || "Bangumi 账号") : "还没有连接 Bangumi";
-    }),
     api("danmaku.getBlockwords", {}).then((b) => { $("s-words").value = (b.words || []).join("\n"); }),
   ];
   // 各块各自出结果,一块读失败不拖住其它块
@@ -485,14 +476,6 @@ $("s-clear").onclick = () => {
     toast("已清空"); $("s-cache").textContent = human(c.bytes || 0);
   }).catch(fail);
 };
-$("s-bgm-go").onclick = () => busy($("s-bgm-go"), "连接中…", async () => {
-  try {
-    const a = await api("sync.bangumiLoginToken", { token: $("s-bgm-token").value.trim() });
-    $("s-bgm-token").value = "";
-    $("s-bgm").textContent = "已连接:" + ((a && a.username) || "Bangumi 账号");
-    toast("Bangumi 已连接");
-  } catch (e) { fail(e); }
-});
 $("s-save-words").onclick = () => busy($("s-save-words"), "保存中…", () =>
   api("danmaku.setBlockwords", {
     words: $("s-words").value.split("\n").map((s) => s.trim()).filter(Boolean),

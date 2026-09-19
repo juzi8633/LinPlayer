@@ -139,8 +139,6 @@ func play(ctx context.Context, s *emby.Session, itemID string, resumeSecs float6
 
 	/* ponytail: 下面这几段等对应子系统移植后接上,**缺了各自的后果**:
 	   · 预加载取消        —— 起播那一刻预热还在拉,和播放器抢带宽,反倒更慢
-	   · Trakt/Bangumi     —— 播放期同步不发 start
-	   · 插件 onPlay 事件  —— 插件收不到「开始播放」
 	   这些**都不影响本次能不能播出来**,所以先把主链路打通;
 	   但它们各自都是「功能静默不工作」,别当成可选项忘掉。 */
 

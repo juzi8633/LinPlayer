@@ -28,7 +28,6 @@ func Test事件分级(t *testing.T) {
 		{Event{T: "event", Name: "download.progress"}, clMerge, "同上"},
 		{Event{T: "event", Name: "config.changed"}, clNeverDrop, "丢了界面显示过期数据且永不自愈"},
 		{Event{T: "event", Name: "data.invalidate"}, clNeverDrop, "同上"},
-		{Event{T: "event", Name: "plugin.ui"}, clNeverDrop, "丢了插件的弹窗永远不出现"},
 	} {
 		if got := classOf(&c.e); got != c.want {
 			t.Errorf("%s/%s 分到了 %v,应为 %v —— %s", c.e.T, c.e.Name, got, c.want, c.why)

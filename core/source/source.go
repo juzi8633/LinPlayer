@@ -1,12 +1,6 @@
-// Package source 是文件浏览型数据源的后端抽象(网盘 / 局域网 / 聚合 / 资源站)。
+// Package source 是文件浏览型数据源的后端抽象。
 //
-// **Rust 版是黄金实现。**
 // 三件事:列目录 / 搜索(可降级)/ 把文件解析成可播 URL(含逐流 headers)。
-//
-// ★★ **网盘是文件树,资源站是影视目录,这是两种东西。**
-// 文件树一行只要「名字 + 是不是文件夹 + 多大」;影视目录一张卡要海报、标题、
-// 「更新至 17 集」、年份、评分,还要分类和无限翻页。所以是两套类型、两套页面,
-// `Entry` 一个字段都不为影视目录让路。
 package source
 
 import (
@@ -141,81 +135,6 @@ func Simple(url, title string, headers map[string]string) ResolvedPlay {
 }
 
 // ---------------------------------------------------------------------------
-// 影视目录能力(catalog)—— 可选,只有资源站这类源实现
-// ---------------------------------------------------------------------------
-
-// UnsupportedPrefix 「不支持这个能力」的稳定前缀。
-//
-// ★ 命令层把错误拍成字符串交给前端,前端只能靠文案判断 ——
-// 靠中文提示语判断会在改文案时**静默失效**,所以给个机器认得的标记。
-const UnsupportedPrefix = "__LP_UNSUPPORTED__"
-
-// MediaCategory 分类。资源站的分类树只有两级,再深也照收,前端自己决定画几级。
-type MediaCategory struct {
-	ID       string          `json:"id"`
-	Name     string          `json:"name"`
-	Children []MediaCategory `json:"children"`
-}
-
-// MediaCard 目录里的一张卡。
-type MediaCard struct {
-	ID     string  `json:"id"`
-	Title  string  `json:"title"`
-	Poster *string `json:"poster"`
-	// Badge 右下角角标:资源站的 vod_remarks(「更新至17集」/「HD」/「全24集」)。
-	//
-	// ★ 它必须是**独立字段**。没有它的时候只能拼进标题,卡片下面就变成
-	//   「神之水滴 · 更新至17集 · 2026」—— 那不是标题,是把三样东西塞进一个格子。
-	Badge    *string `json:"badge"`
-	Year     *string `json:"year"`
-	Score    *string `json:"score"`
-	IsSeries bool    `json:"is_series"`
-}
-
-// MediaPage 目录的一页。
-//
-// ★ HasMore 决定前端还要不要继续往下拉 —— 「下一页」不该是列表里的一个条目,
-// 那是把翻页伪装成内容。
-type MediaPage struct {
-	Items   []MediaCard `json:"items"`
-	Page    uint32      `json:"page"`
-	HasMore bool        `json:"has_more"`
-	Total   *uint32     `json:"total"`
-}
-
-// MediaEpisode 一集。Raw 原样回传给 ResolvePlay,所以播放链路一行都不用改。
-type MediaEpisode struct {
-	ID   string          `json:"id"`
-	Name string          `json:"name"`
-	Raw  json.RawMessage `json:"raw"`
-}
-
-// MediaLine 一条播放线路。
-type MediaLine struct {
-	ID       string         `json:"id"`
-	Name     string         `json:"name"`
-	Episodes []MediaEpisode `json:"episodes"`
-}
-
-// MediaDetail 一部片的详情页数据。
-type MediaDetail struct {
-	ID       string      `json:"id"`
-	Title    string      `json:"title"`
-	Poster   *string     `json:"poster"`
-	Badge    *string     `json:"badge"`
-	Year     *string     `json:"year"`
-	Area     *string     `json:"area"`
-	Lang     *string     `json:"lang"`
-	Genre    *string     `json:"genre"`
-	Score    *string     `json:"score"`
-	Overview *string     `json:"overview"`
-	Actors   *string     `json:"actors"`
-	Director *string     `json:"director"`
-	Lines    []MediaLine `json:"lines"`
-}
-
-// ---------------------------------------------------------------------------
-//
 // 错误
 // ---------------------------------------------------------------------------
 
@@ -246,26 +165,10 @@ func Auth(format string, a ...any) *Error {
 // Unsupported 「这个源不支持搜索」。
 func Unsupported() *Error { return &Error{Message: "该源不支持搜索", Unsupported: true} }
 
-// UnsupportedFeature 「这个源没有这个能力」。
-//
-// 带稳定前缀,前端据此**静默退回**另一条路径,而不是把它当成一条真错误弹给用户。
-func UnsupportedFeature(what string) *Error {
-	return &Error{Message: UnsupportedPrefix + what, Unsupported: true}
-}
-
 // IsUnsupported 是不是「没这个能力」。
-//
-// ★ 先看**结构位**;文案前缀只作为跨语言兼容的兜底 ——
-// 插件贡献的源是从 JS 那边把错误对象拍过来的,它只有文案这一条路。
 func IsUnsupported(err error) bool {
-	if err == nil {
-		return false
-	}
 	var e *Error
-	if errors.As(err, &e) && e.Unsupported {
-		return true
-	}
-	return strings.Contains(err.Error(), UnsupportedPrefix)
+	return errors.As(err, &e) && e.Unsupported
 }
 
 // IsAuthErr 是不是鉴权失效。
@@ -292,10 +195,6 @@ type Server struct {
 }
 
 // Backend 文件浏览型源后端的最小抽象(三端复用,纯逻辑)。
-//
-// ★ 影视目录那三个方法(Categories / Catalog / MediaDetail)是**可选能力**:
-// 用单独的接口表达,不实现就是没有。硬塞进本接口会让十几个网盘后端
-// 全得写三个「返回不支持」的空方法。
 type Backend interface {
 	Kind() Kind
 
@@ -330,13 +229,6 @@ type ProgressReporter interface {
 // Server.Extra 后存盘。
 type CredentialRotator interface {
 	TakeRotatedCredentials(serverID string) map[string]string
-}
-
-// Cataloger 影视目录能力。只有资源站这类源实现。
-type Cataloger interface {
-	Categories(ctx context.Context, c *http.Client, s *Server) ([]MediaCategory, error)
-	Catalog(ctx context.Context, c *http.Client, s *Server, categoryID, keyword string, page uint32) (*MediaPage, error)
-	MediaDetailOf(ctx context.Context, c *http.Client, s *Server, id string) (*MediaDetail, error)
 }
 
 // ---------------------------------------------------------------------------
@@ -374,38 +266,4 @@ func SortEntries(entries []Entry) {
 // NormalizeBaseURL 去掉首尾空白与结尾斜杠。
 func NormalizeBaseURL(raw string) string {
 	return strings.TrimRight(strings.TrimSpace(raw), "/")
-}
-
-// ProbeBackend 「添加服务器」时验证这个源确实能用。
-//
-// ★★ **不能只试 ListDir。** 影视目录型的源(资源站)根本不实现它 —— 它有分类、
-// 有分页、有分集,不是文件树。只探 ListDir 的话那一整类源在添加这一步就被判死,
-// 报的还是一句莫名其妙的话,完全看不出是探测方式选错了(2026-08-01 真踩到:
-// 插件装好了、目录也能列,就是加不进服务器表)。
-//
-// 两条能力通任意一条,就算这个源能用。
-//
-// ★ 放在核心层而不是各端命令里:桌面和安卓的 source.login 曾是两份手工拷贝,
-// 这种「探测口径」放在两边迟早只改一边。
-func ProbeBackend(ctx context.Context, b Backend, c *http.Client, s *Server) error {
-	filesErr := func() error {
-		_, err := b.ListDir(ctx, c, s, "")
-		return err
-	}()
-	if filesErr == nil {
-		return nil
-	}
-	cat, ok := b.(Cataloger)
-	if !ok {
-		return filesErr
-	}
-	if _, err := cat.Categories(ctx, c, s); err == nil {
-		return nil
-	} else if IsUnsupported(err) {
-		// 两条都不通:报**文件树**那条的错。用户填错地址时那句通常更具体
-		// (「返回的不是采集接口 JSON」之类),而目录那条往往只是句「不支持」。
-		return filesErr
-	} else {
-		return err
-	}
 }

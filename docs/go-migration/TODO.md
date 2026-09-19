@@ -5,8 +5,16 @@
 > **本项目只做 Emby。** 网盘(阿里/百度/115/189/139/夸克/OpenList/飞牛)、
 > 局域网源(SMB/WebDAV/FTP)、Ani-RSS 全部**不做了**,代码已从 Go 与 Rust 两侧删净,
 > `anirss.*` 51 条命令一并下线(命令契约 271 → 218 条)。
-> 资源站(VOD)将来**只以插件形式**出现,走 `plugin:<插件id>/<源id>` 开放键通道 ——
-> 源抽象、插件源后端、通用文件浏览页因此全部保留。
+> 资源站(VOD)将来**只以插件形式**出现,走 `plugin:<作者/名字>/<源id>` 开放键通道 ——
+> 源抽象、开放键分派表、通用文件浏览页因此保留。
+>
+> **2026-09-19 影视目录页删除**:数据源页面改由官方按 Emby 那套 UI 画,
+> 旧影视目录页(Windows / 安卓)与 `source.Cataloger` 抽象、`source.categories/catalog/mediaDetail`
+> 3 条命令一并下线;接口随新数据源设计重写。
+>
+> **2026-09-19 旧插件系统整体删除**(不兼容、不迁移):`core/plugin` `core/plugincmd`
+> `core/source/pluginsrc`、`plugin.*` 22 条命令、Windows 插件页、安卓插件页一并下线。
+> 新插件系统另起炉灶,设计见 `docs/plugin-system/SPEC.md`。
 > 本机文件夹播放(`local`)保留:它是播放器的基础能力,不算网盘。
 >
 > **下面正文里凡是提到这些源的段落,一律已作废**,只作历史记录保留。
@@ -73,15 +81,16 @@
 | `emby.*` | **40 / 40** | — |
 | `player.*` | **39 / 39** | — |
 | `prefs.*` | **25 / 25** | — |
-| `plugin.*` | **22 / 22** | — |
 | `account.*` | **21 / 21** | — |
-| `sync.*` | **15 / 15** | — |
 | `source.*` | **14 / 14** | — |
 | `danmaku.*` | **14 / 14** | — |
 | `system.*` | **13 / 13** | — |
-| `translate.*` | **9 / 9** | — |
 | `download.*` | **8 / 8** | — |
 | `anirss.*` | 0 / 51 | **按 C24b 不做**(范围已砍:只做播放,已作为媒体源落地) |
+
+> 2026-09-19:排行榜(`emby.ranking*`)、付费追剧日历(`system.afdian*`)、字幕翻译(`translate.*` 9 条 +
+> `prefs.get/setTranslationSettings`)、Trakt / Bangumi 同步(`sync.*` 15 条)从宿主删除,
+> 以后做成官方插件(`docs/plugin-system/SPEC.md` 第 125、198 条)。命令表现为 200 条。
 
 ★ **在范围内的命令一条不缺。** 剩下那 51 条是 Ani-RSS 管理台,
 C24b 已决定不移植 —— 播放那半已经作为 `core/source/anirss` 落地了。
@@ -103,7 +112,7 @@ Ani-RSS 管理台(同 C24b)。
 
 | 类 | 含义 | 条目 |
 |---|---|---|
-| **甲 · 会自动消失** | 根因是当前架构(两份手工拷贝的命令层 / WebView / 双顶层窗) | N3 N4 N5 N9 N10 N11 N14 |
+| **甲 · 会自动消失** | 根因是当前架构(两份手工拷贝的命令层 / WebView / 双顶层窗) | N3 N4 N5 N9 N10 N14 |
 | **乙 · 不会自动消失,Go 版必须主动做进去** | 是缺失的功能或防护,换语言不产生它 | **N1 N2 N12 N15 N16 N17** |
 | **丙 · 是测试/护栏缺口,新栈同样需要** | 换语言后同样要写这些测试 | N6 N7 N8 N13 |
 
@@ -208,15 +217,7 @@ Ani-RSS 管理台(同 C24b)。
 - **后果:** 飞牛等有服务端观看记录的源,安卓上看的进度不回传
 - [ ] **N10.1** 接上该通道
 
-### 🟡 N11 · 安卓插件源授权可能是死代码(待确认)
-
-- **状态:** `sync_plugin_source_grants` 桌面 4 处、安卓 2 处 —— **数量少但不为零**。
-  调研 agent 称「插件源在 `source_backend` 就被拦死」,**我只验到了调用次数差异,
-  没验到那个拦截点**。归类为待确认,不是已确认
-- [ ] **N11.1** 确认安卓上插件提供的媒体源能否真正进入浏览流程
-- [ ] **N11.2** 若确为死代码,补齐
-
-> **N9 / N10 / N11 的共同根因:** 桌面与安卓是**两份手工拷贝的命令层**
+> **N9 / N10 的共同根因:** 桌面与安卓是**两份手工拷贝的命令层**
 > (`apps/desktop/src/lib.rs` 5900 行 vs `apps/android/src/lib.rs`)。
 > 仓库里贴了两处「改这里要同步改那里」的警告 —— **警告没拦住,因为它靠人眼**。
 > 核层唯一做对的示范是 `probe_backend`:口径下沉到 core,两端只调。
@@ -468,34 +469,6 @@ Ani-RSS 管理台(同 C24b)。
   - 判据:每 ABI 的 `.so` 体积;`lp_init` 到首个事件的耗时(目标 < 200ms)
 - [ ] **S2.6** (Apple 可后置)`c-archive` → xcframework → Swift 调通
 
-### 🔴 SPIKE-3 · quickjs-go 跑现有插件
-
-- [x] **S3.1** ✅ **已结题 2026-08-31** —— `ctx.*` 子集实现(log/util/errors/sleep/http/
-  storage/ui/emby/extensions/sources),**权限门控是真的**(没声明就不注入)
-  - 语料的 `onEnable` 里 HTTP 调用数都是 0,所以**单独补了异步链路测试**:
-    本地 httptest 服务器,验 `ctx.sleep` 真等够 + `ctx.http.get` 拿到 200 +
-    响应体解析 + storage 往返 + **出网带了我们的 UA**
-- [x] **S3.2** ✅ **3/3 全过** —— `m3u` / `uhdnow` / `vod` 全部加载并 onEnable 成功,
-  **没有一个因为 JS 语言特性失败**;`m3u`、`vod` 都真的注册了数据源
-  - 🔴 产出三条改契约的宿主约束(已写进 `SPEC.md` §9.2):
-    ① 必须 `runtime.LockOSThread()`(不锁 5/5 全败,报 `Maximum call stack size exceeded`)
-    ② 异步结果必须投回 JS 线程再造值(goroutine 里造的对象是 `undefined` 且不报错)
-    ③ 回调注册放 JS 侧(Go 侧存 = 借用引用被释放两次 = 段错误)
-- [x] **S3.3** ✅ 内存上限 + 看门狗
-  - 32MB 上限拦住 128MB 分配(`out of memory`),宿主存活
-  - 死循环 2.0s 被中断(阈值 2.0s),宿主存活。**阈值用 2s 只是让测试跑得快,
-    机制与 30s 一致**;30s 是产品取值不是机制
-- [x] **S3.4** ✅ `await` 一个等 3s 的 UI 不被 2s 看门狗杀掉,返回 `survived`
-  - 关键:**deadline 必须在每次泵作业时重置**。反向注入去掉它 → 「被看门狗中断」
-- [ ] **S3.5** 补齐语料:本次只跑了绿色包里带的 3 个,**不是「现存全部插件」**
-  - 判据:插件仓库里的其余插件逐个跑一遍,出同样的通过/失败表
-- [ ] **S3.6** 测数据源的三个函数(`listDir` / `search` / `resolvePlay`)
-  - 判据:返回值形状与 `MediaSourceBackend` 对齐;这才是插件真正干活的地方
-- [ ] **S3.7** 一个插件崩了之后,**同进程里其它插件**还能不能正常工作
-
-> 若 S3.2 失败率高:备选是把插件引擎留在一个独立进程里(仍用 QuickJS,走 IPC),
-> 或评估 `goja`。**不接受**"让插件作者改代码"这个选项。
-
 ### 🟠 SPIKE-5 · `osd-overlay` 能不能撑住平滑滚动弹幕
 
 新增(2026-08-30)。背景与论证见 `SPEC.md` §7.5 与 `knowledge/DANMAKU_CARRIER.md`。
@@ -585,7 +558,7 @@ Ani-RSS 管理台(同 C24b)。
 - [x] **B1.2** ✅ `core/bus`:命令**注册表** + 分派 + 事件队列
   - 判据达成:`system.ping` 往返 ✓;未注册的命令返回 **`E_INVALID`** 不 panic ✓
   - 注册表而不是大 switch:命令归属跟着实现走。现有 Rust 版最痛的一处正是
-    「桌面与安卓两份手工拷贝的命令层」(N9/N10/N11 的共同根因)
+    「桌面与安卓两份手工拷贝的命令层」(N9/N10 的共同根因)
 - [x] **B1.3** ✅ `lp_cancel` 真取消 —— 发出 `debug.slow` 后立即 cancel,收到 `ok=false`
 - [x] **B1.4** ✅ 内存所有权压测 —— **100 万次** `lp_call`+`lp_free`:
   分配 1000020 / 释放 1000020 / **未释放 0**
@@ -919,7 +892,7 @@ Ani-RSS 管理台(同 C24b)。
 
 - [~] **C5** `core/emby` 主体 —— **36 / 40 条命令**(2026-08-31)
   - 还差 4 条,每条都压着一个没移植的模块:
-    `rankingCategories` / `rankingFetch`(等 C10)、
+    ~~`rankingCategories` / `rankingFetch`(等 C10)~~ 2026-09-19 随排行榜删除、
     `watchHistoryRestoreCandidate` / `watchHistoryScanRestore`(等跨服续播那半)
 - [x] **C6** ✅ `core/media`:版本 / 音轨 / 字幕正则筛选(2026-08-31)
   - 判据:**核心层返回 preferred 标记** ✅ `emby/mediainfo.go` 的 `Preferred` 字段;
@@ -936,8 +909,7 @@ Ani-RSS 管理台(同 C24b)。
   - 对账用例 `emby.resume.01-只靠seriesId命中` / `emby.resume.02-跨服靠名字命中`
   - ⚠️ 还差:`account.getCrossServerResume` / `account.setCrossServerResume` 没注册
 - [ ] **C9** `core/serverbatch` + 深链
-- [ ] **C10** `core/ranking`
-  - 判据:fetch 错误不吞,以 `E_UPSTREAM` 上抛
+- ~~**C10** `core/ranking`~~ —— 2026-09-19 从宿主删除,改做官方插件(接口实测见 `docs/lessons/plugins.md`)
 
 ### 4.3 源
 
@@ -985,8 +957,6 @@ Ani-RSS 管理台(同 C24b)。
   - 判据:`COMMANDS.md` 里 `anirss.*` 只保留播放路径需要的那几条,其余标注「本次不做」
   - 连带影响:**N16**(Ani-RSS 一整块功能域未接)自动作废 —— 本来就不做了;
     **N17**(`anirss_proxy_image_url` 做好没用上)降级为「封面需要时再说」
-- [ ] **C25** `core/source/pluginsrc`
-  - 判据:`$sourceServer` 展开表在账号变动后同步;未同步时 fail-closed
 
 ### 4.4 网络(收益最大的一块)
 
@@ -1047,8 +1017,8 @@ Ani-RSS 管理台(同 C24b)。
     (CF IP 段抽样 + 延迟/丢包筛选 + HTTPS 下载测速)。没有它的话优选 IP 得用户手填,
     功能是残的。留作下一批
 - [~] **C29** `core/net/localserve` —— 只有 `/img` 那条路由(见 B1.7)
-  - ⚠️ 其余路由(逃生舱资源 `/plugin/<id>/*`、SMB 本地 Range 桥、companion 网页)
-    都还没有 —— 它们各自等着 C44 / C13 / C30
+  - ⚠️ 其余路由(SMB 本地 Range 桥、companion 网页)
+    都还没有 —— 它们各自等着 C13 / C30
 - [x] **C30** `core/companion` —— 2026-09-15 落地(`f5e53bd0`):命令 `companion.start/status/setEnabled/setNowPlaying`,
   事件 `companion.key/open/status`;手机页只放行 20 条命令的白名单,地址带随机令牌
 
@@ -1082,25 +1052,12 @@ Ani-RSS 管理台(同 C24b)。
   - 判据:插值**带倍速**;颜色按 BGR;走 `secondary-sid`
 - [ ] **C34** `core/danmaku/proxy`
   - 判据:路径穿越测试不拿环境当断言
-- [ ] **C35** `core/sync/trakt`
-- [ ] **C36** `core/sync/bangumi` + matcher
-  - 判据:单集写入 subject 位是字面 `-`;请求带 UA(不带会吃 CF 403)
-- [ ] **C37** `core/sync/calendar`
+- ~~**C35** `core/sync/trakt` / **C36** `core/sync/bangumi` + matcher / **C37** `core/sync/calendar`~~ ——
+  2026-09-19 从宿主删除,改做官方插件(接口实测见 `docs/lessons/plugins.md`)
 
 ### 4.7 插件
 
-- [ ] **C38** `core/plugins/engine`(quickjs-go) 🔴 · 依赖 SPIKE-3
-- [ ] **C39** `core/plugins/ctx` 宿主 API 全量
-- [ ] **C40** `core/plugins/manifest` + `registry`
-  - 判据:registry 键 snake_case、author 为字符串;产物可复现(无时间戳、强制 LF)
-- [ ] **C41** `core/plugins/permission` + 授权流
-- [ ] **C42** `core/plugins/manager` / `state` / `storage` / `worker` / `installer`
-- [ ] **C43** `core/plugins/contributions` + 声明式 UI 描述
-  - 判据:描述格式冻结并写进 `COMMANDS.md`,三端渲染器按同一份实现
-- [ ] **C44** 逃生舱资源服务(`/plugin/<id>/*`)
-  - 判据:独立 origin;跨 origin 拿不到宿主上下文
-- [ ] **C45** 全量插件回归
-  - 判据:SPIKE-3 的语料再跑一遍,通过率 100%
+旧插件系统已于 2026-09-19 整体删除;新插件系统的设计与任务见 `docs/plugin-system/SPEC.md`。
 
 ### 4.8 其余
 
@@ -1178,12 +1135,8 @@ Ani-RSS 管理台(同 C24b)。
   - 状态点 `down` 与 `unknown` **写成文字**(手机没有悬停可以区分)
   - 改账号密码走 `emby.relogin` 不是 `emby.login`
 - [x] **U1.10** 文件浏览页 —— 列表行不是网格;流式列目录;本页不自己起播
-- [x] **U1.11** 影视目录页 —— **与文件浏览是两套页面**;横条分类;首屏预抓两页
 - [x] **U1.12** 下载页 —— 「清除已完成」只清记录不删文件;并发数只读不灌
-- [x] **U1.13** 插件市场 / 已装 / 源订阅(三个 Tab)
-  - ⚠️ 插件的「整页」自定义 UI 本轮不做(不引 WebView),见 B3
-- [x] **U1.14** 排行榜 / 日历
-  - 排行榜取数失败**向上报错不吞成空表**;赞助地址来自 `system.afdianSponsorUrl`
+- ~~**U1.14** 排行榜 / 日历~~ —— 2026-09-19 页面、路由、入口随宿主功能一起删除
 - [x] **U1.15** 设置页 —— 一级列表 + 二级页;改完即生效零保存按钮;失败回滚
 - [ ] **U1.16** TV 形态 —— 规格 [`UI_TV.md`](UI_TV.md),草稿 `apps/android/.../ui/drafts/tv/`(38 张,Roborazzi 出图)
   - 2026-09-14:规格与草稿写完,评审拍板完毕,**可以落页面代码**
@@ -1278,7 +1231,7 @@ Ani-RSS 管理台(同 C24b)。
   - **已落 11 页**(2026-08-31,全部挂真核心层截图验过):首登闸口 / 首页 /
     媒体库总览 / 库内网格(排序七档 + 类型年份筛选 + 滚到底翻页)/ 详情(电影和剧两种版式)/
     搜索 / 收藏 / 聚合视界 / 观看历史 / 服务器管理 / 设置 / 播放。
-    还差:文件浏览、影视目录、下载、插件市场、排行榜、日历、Ani-RSS ——
+    还差:文件浏览、下载、插件市场、排行榜、日历、Ani-RSS ——
     **这些的核心层命令本身还没移植**,不是 UI 欠的
 - [x] **U2.16** 右键菜单 / 卡片悬停动作 / 看完打勾 / 未看数角标 ✅ 2026-08-31
   - 右键三项(标记已看 / 收藏 / 屏蔽)做成 `CardActions` **一处实现所有卡片共用**;
@@ -1287,7 +1240,7 @@ Ani-RSS 管理台(同 C24b)。
 - [~] **U2.17** 快捷键 + 按键提示层
   - 播放页快捷键已落:空格|K 暂停、←→ ±10 秒、↑↓ 音量、M 静音、F|Enter 全屏、Esc。
     **按键提示层还没做**
-- [~] **U2.18** 设置页 **4 组 14 项**(`UI_PC.md` §7.15)
+- [~] **U2.18** 设置页 **4 组 12 项**(`UI_PC.md` §7.15;字幕翻译与 Trakt·Bangumi 两项 2026-09-19 删除)
   - 已落八组:选轨偏好 / 播放 / 多线程加载 / 预加载 / 跨服务器进度 / 更新 /
     已屏蔽的内容 / 存储。**分组横向铺开(卡 620 宽两列)**,最大化下八组一屏看全
   - 判据:全页零二次确认(现有设计如此,不要顺手加)—— 只有「删除服务器」是例外(不可逆)
@@ -1317,8 +1270,7 @@ Ani-RSS 管理台(同 C24b)。
     新架构要在退出路径上显式关掉每个窗口 + 兜底超时
 - [ ] **U2.25** 单实例 + 第二次启动把参数转交给已有实例
   - 判据:双击深链时不起第二个进程(第二个进程会抢同一份 `userdata/`)
-- [ ] **U2.26** OAuth 回调落地(Trakt / Bangumi)
-  - 判据:回调既可走本地 HTTP 端点也可走深链;两条路都测
+- ~~**U2.26** OAuth 回调落地(Trakt / Bangumi)~~ —— 2026-09-19 同步改做官方插件,回调随插件做
 
 ### 5.3a Windows 专项(`SPEC.md` §16)
 

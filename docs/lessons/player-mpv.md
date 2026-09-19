@@ -302,7 +302,7 @@ CDP 截图只截得到 webview,截不到那个独立窗口 —— 这类问题�
 子播放列表(2777s 的片、2s 一段 ≈1400 条)**30s 都下不完**,是站点慢,不是客户端。
 
 相关:[PC 播放页独立窗口](player-mpv.md)、[播放窗标题栏 + 换片黑屏](player-mpv.md)、
-[VOD 资源站插件](plugins.md)、[挂真机 CDP 调试](methodology.md)、[测试必须先红](methodology.md)、
+[苹果CMS 采集接口实测](plugins.md)、[挂真机 CDP 调试](methodology.md)、[测试必须先红](methodology.md)、
 [媒体库屏蔽](emby.md)
 
 ---

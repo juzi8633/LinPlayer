@@ -50,8 +50,6 @@ var allowed = map[string]bool{
 	"prefs.setProxy":          true,
 	"system.cacheSize":        true,
 	"system.clearCache":       true,
-	"sync.bangumiAccount":     true,
-	"sync.bangumiLoginToken":  true,
 	"danmaku.getBlockwords":   true,
 	"danmaku.setBlockwords":   true,
 }

@@ -21,14 +21,13 @@ import (
 	"linplayer/core/paths"
 )
 
-// adoptFiles 值得搬的东西:账号(含 token)、观看进度、插件启用态。
+// adoptFiles 值得搬的东西:账号(含 token)、观看进度。
 //
 // ★ 缓存、日志、下载**不搬**:前两个能重建,最后一个可能有几十 GB,
 // 而升级这一刻用户正在等启动。
 var adoptFiles = []string{
 	"config.json",
 	"history.json",
-	filepath.Join("plugins", "state.json"),
 }
 
 // AdoptPreviousInstall 在数据根还是空的时候,从同级目录里的上一份安装搬一次数据。

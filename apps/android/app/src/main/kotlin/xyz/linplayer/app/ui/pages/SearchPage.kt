@@ -80,7 +80,7 @@ fun SearchPage(nav: NavController, entry: NavBackStackEntry) {
     val app = LocalApp.current
     val scope = rememberCoroutineScope()
 
-    // 带 q 进来的(排行榜点条目)直接预填,不用用户再打一遍
+    // 带 q 进来的直接预填,不用用户再打一遍
     var q by remember { mutableStateOf(route.q.orEmpty()) }
     var includeEpisodes by remember { mutableStateOf(false) }
     var aggregate by remember { mutableStateOf(false) }

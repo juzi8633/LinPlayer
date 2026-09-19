@@ -9,9 +9,9 @@
 
 **LinPlayer** —— 第三方媒体播放器。**只做 Emby**(2026-09-04 定的范围):
 网盘、局域网源(SMB/WebDAV/FTP)、Ani-RSS 全部不做,已从代码里删净;
-资源站(VOD)将来只以**插件**形式出现,走 `plugin:<插件id>/<源id>` 开放键通道。
+资源站(VOD)将来只以**插件**形式出现。
 本机文件夹播放(`local`)保留 —— 它是播放器的基础能力,不算网盘。
-自带插件市场、弹幕、追番、下载、跨服续播。
+自带弹幕、下载、跨服续播(排行榜 / 追剧日历 / 字幕翻译 / Trakt·Bangumi 同步 2026-09-19 从宿主删除,改做官方插件)。插件系统从零重做中,设计正本 `docs/plugin-system/SPEC.md`。
 
 覆盖端:**Windows / Linux / Android 手机 / Android TV**。苹果全线暂不做。
 
@@ -34,7 +34,7 @@
 ## 1. 仓库结构
 
 ```
-core/              ★ Go 核心层。业务全在这:emby / player / plugin / net / danmaku / sync …
+core/              ★ Go 核心层。业务全在这:emby / player / net / danmaku / history …
                      出库为 lpcore.dll(c-shared),三通道见 SPEC §5
 apps/
   windows/         C# + Avalonia 的 Windows 外壳(唯一还活着的端)
@@ -218,7 +218,7 @@ VERSION            ★ 版本号唯一权威,见 docs/VERSIONING.md
 
 ### CI
 - 构建 job 漏传编译期凭据 = 功能静默残废而 CI 全绿。已在 `check-workflows.sh` 设闸门
-  (它认 `pack-win.sh` / `build-core.sh` 步骤,9 个变量一个都不能少)
+  (它认 `pack-win.sh` / `build-core.sh` 步骤,6 个变量一个都不能少)
 - **版本号唯一权威是仓库根的 `VERSION`**,见 `docs/VERSIONING.md`。
   写死字面量害过三次 —— 版本一退,更新检查判「已是最新」并**静默**卡死所有老用户
 
@@ -238,7 +238,7 @@ VERSION            ★ 版本号唯一权威,见 docs/VERSIONING.md
 | 网络 / 预取 / 下载 / 线路 | `docs/lessons/network.md` |
 | Emby / 媒体库 | `docs/lessons/emby.md` |
 | 媒体源 / 网盘 / 登录 | `docs/lessons/sources.md` ⚠️**仅本地,不入公开库** |
-| 弹幕 / 追番 / 同步 | `docs/lessons/danmaku-sync.md` |
+| 弹幕 / 弹弹Play | `docs/lessons/danmaku-sync.md` |
 | 插件系统 | `docs/lessons/plugins.md` |
 | UI · 桌面 / 手机 / TV | `docs/lessons/ui-desktop.md` / `ui-mobile.md` / `ui-tv.md` |
 | 安卓平台 | `docs/lessons/android.md` |
@@ -257,7 +257,7 @@ VERSION            ★ 版本号唯一权威,见 docs/VERSIONING.md
 | 超分 / Anime4K / 画质 | `docs/go-migration/knowledge/UPSCALING.md` |
 | 网络层 / 预取代理 | `docs/go-migration/knowledge/NETWORK.md` |
 | 媒体源 / 登录逆向 | `docs/go-migration/knowledge/SOURCES.md` ⚠️**仅本地,不入公开库** |
-| 插件系统宿主契约 | `docs/go-migration/knowledge/PLUGINS.md` |
+| 插件系统(重做中) | `docs/plugin-system/SPEC.md` |
 | 前端经验甄别(A/B/C 三类) | `docs/go-migration/knowledge/UI_LESSONS.md` |
 | 目标架构 | `docs/go-migration/SPEC.md` |
 | 命令契约(266 条) | `docs/go-migration/COMMANDS.md` |

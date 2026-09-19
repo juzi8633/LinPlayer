@@ -240,12 +240,12 @@ func Call(seq int64, cmd, argsJSON string) error {
 
 // Invoke 在**当前 goroutine 上**同步跑一条已注册命令,结果直接返回,不进事件队列。
 //
-// 只给核心层内部的跨模块转发用(插件的 ctx.player / ctx.emby 就是靠它落到
+// 只给核心层内部的跨模块转发用(companion 的手机页就是靠它落到
 // 已有的 player.* / emby.* 实现上)。**不要**拿它当宿主入口 —— 宿主必须走
 // Call,那条路才有 seq / 取消 / worker 池那套保障。
 //
 // ★ 复用已注册的 handler 而不是另写一份:另写一份的后果是同一个能力在
-// 命令层和插件层慢慢长成两个行为,而差异只有用户会撞见。
+// 命令层和转发层慢慢长成两个行为,而差异只有用户会撞见。
 func Invoke(ctx context.Context, cmd string, args map[string]any) (out any, err error) {
 	h, ok := lookup(cmd)
 	if !ok {

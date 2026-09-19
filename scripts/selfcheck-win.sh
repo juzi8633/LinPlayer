@@ -8,10 +8,6 @@
 #   bash scripts/selfcheck-win.sh [截图名] [落到哪一页] [起播用的视频]
 #
 # 几个跑得最多的:
-#   bash scripts/selfcheck-win.sh plugins       plugins        插件市场(市场 tab)
-#   bash scripts/selfcheck-win.sh plugins-inst  plugins:1      已装 tab
-#   bash scripts/selfcheck-win.sh plugin-dev    "plugindev:$PWD/scripts/fixtures/selfcheck-plugin"
-#                                                              装一个真插件跑起来
 #   LP_SHADER=ak_sharp LP_DRILL=1 bash scripts/selfcheck-win.sh quality player <片子>
 #                                                              画质档位面板(真选下拉项)
 #   LP_INTERP=drba_2 LP_CORELOG=1 LP_WAIT=60 bash scripts/selfcheck-win.sh interp player <片子>
@@ -43,10 +39,6 @@
 #   LP_PREFETCH=1 LP_THUMB=1 LP_AVSYNC=1 LP_WAIT=45 bash scripts/selfcheck-win.sh th play:mv-1 <片子>
 #                                                              缩略图(服务端 BIF)+ 音画同步
 #                                                              反注入:再跑一遍加 LP_BLOCK_FOR_TARGET_TIME=0
-#   LP_CATDETAIL=1 bash scripts/selfcheck-win.sh catalog #       "plugincatalog:$PWD/scripts/fixtures/selfcheck-plugin"
-#                                                              影视目录 + 详情盖层
-#     ↑ 这条走的是**最长的一条链**:JS 引擎 → 贡献点 → 源分派表 →
-#       source.categories/catalog → 影视目录页渲染。只截市场页的话它一次都没被走过。
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SHOT="${1:-selfcheck}"
@@ -204,7 +196,6 @@ cat > "$BIN/userdata/config.json" <<JSON
   "active": 0,
   "theme": "dark",
   "companion_enabled": true,
-  "plugin_official_enabled": true,
   "prefs": {
     "watched_threshold_percent": ${LP_WATCHED:-90},
     "prefetch_cache_bytes": ${LP_RING:-67108864},
@@ -289,22 +280,10 @@ if [ -n "${LP_PANEL:-}" ]; then
 fi
 
 echo "== 5/5 起 exe 截图 =="
-# ★ 排行榜的两个上游也指到假服务器上(它顺带假扮弹弹Play / TMDB)。
-#   没有这一步的话,排行榜只验得到「没凭据」那一半 —— 而**有数据时长什么样**
-#   才是会出 bug 的那一半(图床白名单、id 数字/字符串两种、名次角标)。
-export LP_RANKING_BASE_DANDAN="http://127.0.0.1:$PORT"
-export LP_RANKING_BASE_TMDB="http://127.0.0.1:$PORT"
-export LP_RANKING_BASE_TMDBIMG="http://127.0.0.1:$PORT"
-# 追剧日历的上游同理(假服务器兼职 Bangumi)
-export LP_BANGUMI_API="http://127.0.0.1:$PORT"
 # 图标库的聚合源(假服务器兼职图床)。
 # ★ 真实构建里这个是 -ldflags 注入的,源码里没有 —— 自检走环境变量那条覆盖。
 export LP_ICON_LIBRARY_SOURCES="http://127.0.0.1:$PORT/icons.json"
-# 插件市场的官方源(假服务器兼职插件仓库)。同上:真实构建里是硬编的公开地址。
-# ★ 不指过去的话,市场页在没网的机器上只验得到「拉取失败」那一半 ——
-#   而**有插件时长什么样**(第三方徽章、跳过数提示、版本取最大)才是会出 bug 的那半。
-export LP_PLUGIN_OFFICIAL_REGISTRY="http://127.0.0.1:$PORT/plugins/registry.json"
-LP_CORELOG="${LP_CORELOG:-}" LP_SELFCHECK=1 LP_SELFCHECK_MENU="${LP_MENU:-}" LP_SELFCHECK_COUNT="${LP_COUNT:-}" LP_SELFCHECK_BOOM="${LP_BOOM:-}" LP_SELFCHECK_VERSION="${LP_VER:-}" LP_SELFCHECK_REPAINT="${LP_REPAINT:-}" LP_SELFCHECK_HERO="${LP_HERO:-}" LP_SELFCHECK_NAVHOVER="${LP_NAVHOVER:-}" LP_SELFCHECK_GLYPH="${LP_GLYPH:-}" LP_SELFCHECK_COLLAPSE="${LP_COLLAPSE:-}" LP_SELFCHECK_FILL="${LP_FILL:-}" LP_SELFCHECK_SIDEBAR="${LP_SIDEBAR:-}" LP_SELFCHECK_SRVMENU="${LP_SRVMENU:-}" LP_SELFCHECK_RAIL="${LP_RAIL:-}" LP_SELFCHECK_RAILSTRESS="${LP_RAILSTRESS:-}" LP_SELFCHECK_EPVIEW="${LP_EPVIEW:-}" LP_SELFCHECK_HEROBAND="${LP_BAND:-}" LP_SELFCHECK_FILTERCHIPS="${LP_CHIPS:-}" LP_SELFCHECK_VIEW="${LP_VIEW:-}" LP_SELFCHECK_CHROME="${LP_CHROME:-}" LP_SELFCHECK_OSDFADE="${LP_OSDFADE:-}" LP_SELFCHECK_RESUME="${LP_RESUME:-}" LP_SELFCHECK_RECLICK="${LP_RECLICK:-}" LP_SELFCHECK_SRVICON="${LP_SRVICON:-}" LP_SELFCHECK_THUMB="${LP_THUMB:-}" LP_SELFCHECK_AVSYNC="${LP_AVSYNC:-}" LP_SELFCHECK_STUTTER="${LP_STUTTER:-}" LP_SELFCHECK_PICK="${LP_PICK:-}" LP_SELFCHECK_HOVERLAYOUT="${LP_HOVERLAYOUT:-}" LP_SELFCHECK_PAUSE="${LP_PAUSEAT:-}" LP_SELFCHECK_PANEL="${LP_PANEL:-}" LP_SELFCHECK_DOWNLOAD="${LP_DL:-}" LP_SELFCHECK_TOAST="${LP_TOAST:-}" LP_SELFCHECK_KEYS="${LP_KEYS:-}" LP_SELFCHECK_HOME="${LP_HOME:-}" LP_SELFCHECK_HOMESET="${LP_HOMESET:-}" LP_SELFCHECK_WATCHED="${LP_WATCHED:-}" LP_SELFCHECK_PAGE="$PAGE" LP_SELFCHECK_MAXIMIZE="${LP_MAX:-}" LP_SELFCHECK_PLAYER_DRILL="${LP_DRILL:-}" LP_SELFCHECK_SCROLL="${LP_SCROLL:-}" LP_SELFCHECK_SOURCE="${LP_SRCKIND:-}" LP_SELFCHECK_CATALOG_DETAIL="${LP_CATDETAIL:-}" LP_SELFCHECK_SHADER="${LP_SHADER:-}" LP_SELFCHECK_INTERP="${LP_INTERP:-}" LP_SELFCHECK_INTERP_TRT="${LP_INTERP_TRT:-}" LP_SELFCHECK_REORDER="${LP_REORDER:-}" LP_SELFCHECK_PLAYERUI="${LP_PLAYERUI:-}" LP_SELFCHECK_RANKFAKE="${LP_RANKFAKE:-}" "$BIN/LinPlayer.exe" > "$ROOT/build/app.log" 2>&1 &
+LP_CORELOG="${LP_CORELOG:-}" LP_SELFCHECK=1 LP_SELFCHECK_MENU="${LP_MENU:-}" LP_SELFCHECK_COUNT="${LP_COUNT:-}" LP_SELFCHECK_BOOM="${LP_BOOM:-}" LP_SELFCHECK_VERSION="${LP_VER:-}" LP_SELFCHECK_REPAINT="${LP_REPAINT:-}" LP_SELFCHECK_HERO="${LP_HERO:-}" LP_SELFCHECK_NAVHOVER="${LP_NAVHOVER:-}" LP_SELFCHECK_GLYPH="${LP_GLYPH:-}" LP_SELFCHECK_COLLAPSE="${LP_COLLAPSE:-}" LP_SELFCHECK_FILL="${LP_FILL:-}" LP_SELFCHECK_SIDEBAR="${LP_SIDEBAR:-}" LP_SELFCHECK_SRVMENU="${LP_SRVMENU:-}" LP_SELFCHECK_RAIL="${LP_RAIL:-}" LP_SELFCHECK_RAILSTRESS="${LP_RAILSTRESS:-}" LP_SELFCHECK_EPVIEW="${LP_EPVIEW:-}" LP_SELFCHECK_HEROBAND="${LP_BAND:-}" LP_SELFCHECK_FILTERCHIPS="${LP_CHIPS:-}" LP_SELFCHECK_VIEW="${LP_VIEW:-}" LP_SELFCHECK_CHROME="${LP_CHROME:-}" LP_SELFCHECK_OSDFADE="${LP_OSDFADE:-}" LP_SELFCHECK_RESUME="${LP_RESUME:-}" LP_SELFCHECK_RECLICK="${LP_RECLICK:-}" LP_SELFCHECK_SRVICON="${LP_SRVICON:-}" LP_SELFCHECK_THUMB="${LP_THUMB:-}" LP_SELFCHECK_AVSYNC="${LP_AVSYNC:-}" LP_SELFCHECK_STUTTER="${LP_STUTTER:-}" LP_SELFCHECK_PICK="${LP_PICK:-}" LP_SELFCHECK_HOVERLAYOUT="${LP_HOVERLAYOUT:-}" LP_SELFCHECK_PAUSE="${LP_PAUSEAT:-}" LP_SELFCHECK_PANEL="${LP_PANEL:-}" LP_SELFCHECK_DOWNLOAD="${LP_DL:-}" LP_SELFCHECK_TOAST="${LP_TOAST:-}" LP_SELFCHECK_KEYS="${LP_KEYS:-}" LP_SELFCHECK_HOME="${LP_HOME:-}" LP_SELFCHECK_HOMESET="${LP_HOMESET:-}" LP_SELFCHECK_WATCHED="${LP_WATCHED:-}" LP_SELFCHECK_PAGE="$PAGE" LP_SELFCHECK_MAXIMIZE="${LP_MAX:-}" LP_SELFCHECK_PLAYER_DRILL="${LP_DRILL:-}" LP_SELFCHECK_SCROLL="${LP_SCROLL:-}" LP_SELFCHECK_SOURCE="${LP_SRCKIND:-}" LP_SELFCHECK_SHADER="${LP_SHADER:-}" LP_SELFCHECK_INTERP="${LP_INTERP:-}" LP_SELFCHECK_INTERP_TRT="${LP_INTERP_TRT:-}" LP_SELFCHECK_REORDER="${LP_REORDER:-}" LP_SELFCHECK_PLAYERUI="${LP_PLAYERUI:-}" "$BIN/LinPlayer.exe" > "$ROOT/build/app.log" 2>&1 &
 # 播放页要等起播 + 解码,别的页 6 秒够
 # LP_SHADER=all 要把 28 档挨个挂一遍(每档要等真渲染一帧才编译),得多给点时间
 # LP_WAIT=秒 覆盖等待时长(滚动扫描这类要跑几秒的自检用)

@@ -369,7 +369,7 @@ CI(`cat VERSION`)、C#(`dotnet publish -p:Version=`)、Go(`-ldflags -X …system
 **同族教训**:错误不许吞成空集合。原 `fetch_dandan` 有 6 条 `return vec![]`
 (缺凭据/请求失败/非 JSON/success=false/缺字段),五种成因长得一模一样。
 已改成 `Result<_, String>` 并带上 errorCode/errorMessage/HTTP 状态/缺哪个环境变量。
-见 [测试必须先红](methodology.md)、[Ranking architecture](danmaku-sync.md)。
+见 [测试必须先红](methodology.md)、[排行榜数据源:弹弹 trending 与 TMDB](plugins.md)。
 
 ---
 
@@ -386,17 +386,17 @@ CI(`cat VERSION`)、C#(`dotnet publish -p:Version=`)、Go(`-ldflags -X …system
 
 | 资产 | 通道 | 备注 |
 |---|---|---|
-| 插件 `.ipk` 包 | **GitHub raw** | 保持现状，别动 |
-| `registry.json` | **GitHub raw** | 同上 |
-| 插件图标 | **构建时压成 data URI 内联进 registry.json** | 绕开一切网络问题；SVG 1–3KB，几十个插件也就几十 KB |
-| 市场网站 | Cloudflare Pages | 不变。网站可达性不影响 App —— App 只读 registry 和包 |
+| 插件包 | **GitHub** | 别挪 CF |
+| 插件市场索引 | **GitHub raw** | 同上 |
+| 插件图标 | **构建时压成 data URI 内联进市场索引** | 绕开一切网络问题；SVG 1–3KB，几十个插件也就几十 KB |
+| 市场网站 | Cloudflare Pages | 不变。网站可达性不影响 App —— App 只读索引和包 |
 
 **Why:** 「国内访问 GitHub 慢/不通」是个过时的刻板印象，会导致把工作量花在反方向的"优化"上，
 还可能把本来能用的通道换成实际更差的。这类可达性判断**必须问用户实测口径，不要凭常识推断**。
 
 **How to apply:** 以后凡是决定资产托管在哪（图标、安装包、更新源、字体、CDN），先问，别默认"CF 更快"。
 静态资源能内联就内联，内联是唯一不受任何网络环境影响的方案。
-插件系统的完整规划见 `git show rust-final:docs/PLUGINS_V2_PLAN.md` 的 D9 和 6.4 节；相关见 「cf-proxy-architecture」(该条不在本库,多为 Flutter 时代的旧记忆,已作废)、Stremio 插件协议源(本地 sources.md,未入公开库)。
+插件市场的新设计见 [`docs/plugin-system/SPEC.md`](../plugin-system/SPEC.md) D28(重做中)。
 
 ---
 
@@ -675,14 +675,14 @@ APK 装上去「聚合世界」的排行榜仍然说「这个构建没带凭据�
 用户报的是「每次更新软件就把用户数据覆盖了」。**根因不是我们写坏了文件,
 是数据根跟着 exe 走**:绿色包的承诺是「数据全在 exe 同级 `userdata/`」,
 而更新的实际动作往往是「把新包解压到另一个文件夹」—— 新目录下的 `userdata/`
-是空的,于是服务器、进度、插件状态全不见了,而且不报错。
+是空的,于是服务器、进度全不见了,而且不报错。
 
 Rust 版有过这一段(`migrate_legacy`),Go 重写时没跟过来。现在是
 `config.AdoptPreviousInstall()`:数据根里**没有 `config.json` 时**,
 去安装目录的同级找 `*/userdata/config.json`,取最新的那一份,
-搬 `config.json` / `history.json` / `plugins/state.json`。
+搬 `config.json` / `history.json`。
 
-- **只搬这三样。** 缓存和日志能重建,`downloads/` 可能有几十 GB,
+- **只搬这两样。** 缓存和日志能重建,`downloads/` 可能有几十 GB,
   而升级这一刻用户正在等启动。
 - **只找一层。** 往上再翻会扫到整个下载目录,扫到别人的文件是另一类事故。
 - **已经有配置就一个字都不动。** 覆盖用户现有账号比不接管坏得多。

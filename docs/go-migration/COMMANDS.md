@@ -22,7 +22,7 @@
   `views` 这种无前缀的名字会被三个人理解成三件事。
 - **命令表全平台一致。** 「安卓已注册」列标 ❌ 的,在新契约里**仍然存在**,
   只是在该平台返回 `E_UNSUPPORTED`。UI 启动时调 `system.capabilities` 拿支持集来隐藏入口。
-  > 现状是安卓少注册 29 条(文件选择器 / mpv.conf / 翻译 / 预加载设置 / 播放窗控制)。
+  > 现状是安卓少注册 22 条(文件选择器 / mpv.conf / 预加载设置 / 播放窗控制)。
   > 两份不同的命令表 = 两份不同的契约测试,而漏的那份就是「安卓上点了没反应」。
 - 参数与返回类型列的是**现有 Rust 签名**,是移植时的对账基准,**不是**新契约的最终类型。
   新契约的 JSON 形状在各模块移植时定稿并回填。
@@ -41,19 +41,16 @@
 <!-- BEGIN GENERATED -->
 | 域 | 前缀 | 条数 | 安卓已有 |
 |---|---|--:|--:|
-| Emby 浏览与详情 | `emby.*` | 41 | 38 |
+| Emby 浏览与详情 | `emby.*` | 42 | 38 |
 | 账号与线路 | `account.*` | 21 | 21 |
-| 播放器 | `player.*` | 40 | 32 |
-| 媒体源(浏览型 / 影视目录) | `source.*` | 9 | 9 |
-| 弹幕 | `danmaku.*` | 14 | 14 |
-| 插件 | `plugin.*` | 22 | 20 |
+| 播放器 | `player.*` | 52 | 40 |
+| 媒体源(浏览型) | `source.*` | 7 | 7 |
+| 弹幕 | `danmaku.*` | 17 | 17 |
 | 下载 | `download.*` | 9 | 8 |
-| 同步(Trakt / Bangumi / 日历) | `sync.*` | 15 | 15 |
-| 字幕翻译 / Whisper(桌面独占) | `translate.*` | 9 | 0 |
-| 设置与偏好 | `prefs.*` | 28 | 20 |
-| 系统 | `system.*` | 15 | 6 |
+| 设置与偏好 | `prefs.*` | 30 | 21 |
+| 系统 | `system.*` | 18 | 8 |
 | 手机扫码遥控(电视端) | `companion.*` | 4 | 0 |
-| **合计** | | **223** | **181** |
+| **合计** | | **200** | **160** |
 
 ### Emby 浏览与详情 · `emby.*` — 42 条
 
@@ -82,8 +79,6 @@
 | [x] | `emby.logout` | **新增** | `server, token, user_id, device_id` | `{ server_ok: bool }` | — | <!-- 服务端登出。尽力而为:某 fork 该端点 404 且 token 仍可用,失败不挡本地删账号 -->
 | [x] | `emby.personDetail` | `person_detail` | `person_id: String` | `Result<emby::PersonDetail, String>` | ✅ |
 | [x] | `emby.personItems` | `person_items` | `person_id: String, limit: Option<u32>` | `Result<Vec<Item>, String>` | ✅ |
-| [x] | `emby.rankingCategories` | `ranking_categories` | `—` | `Vec<ranking::Category>` | ✅ |
-| [x] | `emby.rankingFetch` | `ranking_fetch` | `category_id: String, force_refresh: Option<bool>` | `Result<Vec<ranking::Entry>, String>` | ✅ |
 | [x] | `emby.permissions` | **新增** | `—` | `{is_admin, can_download}` | ✅ | <!-- 一次请求同时回答「是不是管理员」和「能不能下载」;缺字段一律判否 -->
 | [x] | `emby.refreshItem` | `refresh_item` | `item_id: String, full: bool` | `Result<(), String>` | ✅ |
 | [x] | `emby.relogin` | `relogin` | `server_id: String, username: String, password: String` | `Result<(), String>` | ✅ |
@@ -130,7 +125,7 @@
 | [x] | `account.testConnection` | `test_connection` | `server: String, username: String, password: String` | `Result<account::TestResult, String>` | ✅ |
 | [x] | `account.updateAccount` | `update_account` | `server_id: String, name: Option<String>, remark: Option<String>, icon_url: Option<String>, allow_insecure_tls: Option<bool>, password: Option<String>` | `Result<Vec<Info>, String>` | ✅ |
 
-### 播放器 · `player.*` — 43 条
+### 播放器 · `player.*` — 52 条
 
 | 移植 | 新命令名 | 现有名 | 参数 | 返回 | 安卓已注册 |
 |:--:|---|---|---|---|:--:|
@@ -187,22 +182,19 @@
 | [x] | `player.windowClose` | `player_window_close` | `—` | `Result<(), String>` | ❌ |
 | [x] | `player.windowOpen` | `player_window_open` | `payload: serde_json::Value` | `Result<(), String>` | ❌ |
 
-### 媒体源(浏览型 / 影视目录) · `source.*` — 9 条
+### 媒体源(浏览型) · `source.*` — 7 条
 
 | 移植 | 新命令名 | 现有名 | 参数 | 返回 | 安卓已注册 |
 |:--:|---|---|---|---|:--:|
-| [x] | `source.catalog` | `source_catalog` | `category_id: Option<String>, keyword: Option<String>, page: u32` | `Result<linplayer_core::source::MediaPage, String>` | ✅ |
-| [x] | `source.categories` | `source_categories` | `—` | `Result<Vec<linplayer_core::source::MediaCategory>, String>` | ✅ |
 | [x] | `source.currentSource` | `current_source` | `—` | `CurrentSource` | ✅ |
 | [x] | `source.listDir` | `source_list_dir` | `dir_id: Option<String>` | `Entry` | ✅ |
 | [x] | `source.login` | `source_login` | `kind: SourceKind, base_url: String, username: String, password: String, cookie: Option<String>, // 令牌系源用它带 refresh_token(也可走 cookie)与可选的 oplist 地址/driver 覆盖。 // additive:老调用不传即空, 行为不变。 extra: Option<HashMap<String, String>>` | `Result<(), String>` | ✅ |
 | [x] | `source.formSchema` | **新增** | `—` | `Vec<sourcecmd::SourceForm>` | ✅ | <!-- 源类型与登录表单的唯一声明。三端各写渲染器,不许再各自硬编源类型表 -->
-| [x] | `source.mediaDetail` | `source_media_detail` | `id: String` | `Result<linplayer_core::source::MediaDetail, String>` | ✅ |
 | [x] | `source.play` | `source_play` | `entry_id: String, entry_name: String, resume_secs: f64, raw: Option<serde_json::Value>` | `Result<f64, String>` | ✅ |
 | [x] | `source.search` | `source_search` | `query: String` | `Entry` | ✅ |
 | [x] | `source.watchdog` | `source_watchdog` | `pos: f64` | `Result<bool, String>` | ✅ |
 
-### 弹幕 · `danmaku.*` — 16 条
+### 弹幕 · `danmaku.*` — 17 条
 
 | 移植 | 新命令名 | 现有名 | 参数 | 返回 | 安卓已注册 |
 |:--:|---|---|---|---|:--:|
@@ -224,33 +216,6 @@
 | [x] | `danmaku.getBlockwords` | **新增** | `—` | `Blocklist` | ✅ | <!-- 落库的屏蔽词与屏蔽用户。autoLoad/filter 无条件并进来,不靠调用方传 -->
 | [x] | `danmaku.setBlockwords` | **新增** | `words: Vec<String>, users: Vec<String>` | `Blocklist` | ✅ | <!-- 只传要改的那一半,另一半原样留着 -->
 
-### 插件 · `plugin.*` — 22 条
-
-| 移植 | 新命令名 | 现有名 | 参数 | 返回 | 安卓已注册 |
-|:--:|---|---|---|---|:--:|
-| [x] | `plugin.devPoll` | `plugin_dev_poll` | `—` | `Result<Vec<String>, String>` | ✅ |
-| [x] | `plugin.disable` | `plugin_disable` | `id: String` | `Result<(), String>` | ✅ |
-| [x] | `plugin.enable` | `plugin_enable` | `id: String` | `Result<(), String>` | ✅ |
-| [x] | `plugin.extensions` | `plugin_extensions` | `type_id: String` | `Result<Vec<serde_json::Value>, String>` | ✅ |
-| [x] | `plugin.install` | `plugin_install` | `path: String` | `Result<serde_json::Value, String>` | ✅ |
-| [x] | `plugin.invokeField` | `plugin_invoke_field` | `plugin_id: String, type_id: String, ext_id: String, field: String, args: Option<serde_json::Value>` | `Result<serde_json::Value, String>` | ✅ |
-| [x] | `plugin.list` | `plugin_list` | `—` | `Result<Vec<serde_json::Value>, String>` | ✅ |
-| [x] | `plugin.marketAddSource` | `plugin_market_add_source` | `name: String, url: String` | `Result<Vec<PluginSource>, String>` | ✅ |
-| [x] | `plugin.marketInstall` | `plugin_market_install` | `id: String, version: Option<String>` | `Result<Json, String>` | ✅ |
-| [x] | `plugin.marketList` | `plugin_market_list` | `refresh: Option<bool>` | `Result<Json, String>` | ✅ |
-| [x] | `plugin.marketRemoveSource` | `plugin_market_remove_source` | `id: String` | `Result<Vec<PluginSource>, String>` | ✅ |
-| [x] | `plugin.marketSources` | `plugin_market_sources` | `—` | `Source` | ✅ |
-| [x] | `plugin.marketToggleSource` | `plugin_market_toggle_source` | `id: String, enabled: bool` | `Result<Vec<PluginSource>, String>` | ✅ |
-| [x] | `plugin.panels` | `plugin_panels` | `slot: String` | `Result<Vec<serde_json::Value>, String>` | ✅ |
-| [x] | `plugin.permissionCatalog` | `plugin_permission_catalog` | `—` | `Vec<Json>` | ✅ |
-| [x] | `plugin.pickDevDir` | `plugin_pick_dev_dir` | `—` | `Result<Option<serde_json::Value>, String>` | ❌ |
-| [x] | `plugin.pickInstall` | `plugin_pick_install` | `—` | `Result<Option<serde_json::Value>, String>` | ❌ |
-| [x] | `plugin.reload` | `plugin_reload` | `id: String` | `Result<(), String>` | ✅ |
-| [x] | `plugin.sources` | `plugin_sources` | `—` | `Result<Vec<serde_json::Value>, String>` | ✅ |
-| [x] | `plugin.trigger` | `plugin_trigger` | `plugin_id: String, type_id: String, ext_id: String, args: Option<serde_json::Value>` | `Result<serde_json::Value, String>` | ✅ |
-| [x] | `plugin.uiRespond` | `plugin_ui_respond` | `id: u64, value: Option<serde_json::Value>` | `()` | ✅ |
-| [x] | `plugin.uninstall` | `plugin_uninstall` | `id: String` | `Result<(), String>` | ✅ |
-
 ### 下载 · `download.*` — 9 条
 
 | 移植 | 新命令名 | 现有名 | 参数 | 返回 | 安卓已注册 |
@@ -265,41 +230,7 @@
 | [x] | `download.resume` | `download_resume` | `id: String` | `()` | ✅ |
 | [x] | `download.setThreads` | `download_set_threads` | `threads: usize` | `ThreadsReply` | ✅ |
 
-### 同步(Trakt / Bangumi / 日历) · `sync.*` — 15 条
-
-| 移植 | 新命令名 | 现有名 | 参数 | 返回 | 安卓已注册 |
-|:--:|---|---|---|---|:--:|
-| [x] | `sync.bangumiAccount` | `bangumi_account` | `—` | `Option<linplayer_core::sync::SyncAccount>` | ✅ |
-| [x] | `sync.bangumiAuthorizeUrl` | `bangumi_authorize_url` | `redirect_uri: Option<String>` | `String` | ✅ |
-| [x] | `sync.bangumiCalendar` | `bangumi_calendar` | `only_mine: Option<bool>` | `Result<Vec<linplayer_core::sync::calendar::CalendarEntry>, String>` | ✅ |
-| [x] | `sync.bangumiExchange` | `bangumi_exchange` | `code: String, redirect_uri: Option<String>` | `Result<linplayer_core::sync::SyncAccount, String>` | ✅ |
-| [x] | `sync.bangumiLoginToken` | `bangumi_login_token` | `token: String` | `Result<linplayer_core::sync::SyncAccount, String>` | ✅ |
-| [x] | `sync.bangumiLogout` | `bangumi_logout` | `—` | `()` | ✅ |
-| [x] | `sync.bangumiSetCollection` | `bangumi_set_collection` | `subject_id: i64, type_: i32` | `Result<bool, String>` | ✅ |
-| [x] | `sync.bangumiSummary` | `bangumi_summary` | `subject_id: i64` | `Result<Option<String>, String>` | ✅ |
-| [x] | `sync.bangumiUpdateEpisode` | `bangumi_update_episode` | `subject_id: i64, episode_id: i64, type_: Option<i32>` | `Result<bool, String>` | ✅ |
-| [x] | `sync.traktAccount` | `trakt_account` | `—` | `Option<linplayer_core::sync::SyncAccount>` | ✅ |
-| [x] | `sync.traktCalendar` | `trakt_calendar` | `only_mine: Option<bool>` | `Result<Vec<linplayer_core::sync::calendar::CalendarEntry>, String>` | ✅ |
-| [x] | `sync.traktDeviceCode` | `trakt_device_code` | `—` | `Result<trakt::TraktDeviceCode, String>` | ✅ |
-| [x] | `sync.traktLogout` | `trakt_logout` | `—` | `()` | ✅ |
-| [x] | `sync.traktPoll` | `trakt_poll` | `device_code: String` | `Result<trakt::TraktPollResult, String>` | ✅ |
-| [x] | `sync.traktScrobble` | `trakt_scrobble` | `type_: String, ids: serde_json::Value, progress: f64, action: String` | `Result<bool, String>` | ✅ |
-
-### 字幕翻译 / Whisper(桌面独占) · `translate.*` — 9 条
-
-| 移植 | 新命令名 | 现有名 | 参数 | 返回 | 安卓已注册 |
-|:--:|---|---|---|---|:--:|
-| [x] | `translate.liveStart` | `translate_live_start` | `source_lang: Option<String>` | `Result<(), String>` | ❌ |
-| [x] | `translate.liveStop` | `translate_live_stop` | `—` | `()` | ❌ |
-| [x] | `translate.subtitle` | `translate_subtitle` | `item_id: String, media_source_id: String, index: i64, delivery_url: Option<String>, source_lang: Option<String>, secondary: Option<bool>` | `Result<String, String>` | ❌ |
-| [x] | `translate.translationEngineStatus` | `translation_engine_status` | `—` | `HashMap<String, bool>` | ❌ |
-| [x] | `translate.whisperDelete` | `whisper_delete` | `model: String` | `Result<(), String>` | ❌ |
-| [x] | `translate.whisperDeps` | `whisper_deps` | `—` | `WhisperDeps` | ❌ |
-| [x] | `translate.whisperDownload` | `whisper_download` | `model: String` | `Result<String, String>` | ❌ |
-| [x] | `translate.whisperDownloadFfmpeg` | `whisper_download_ffmpeg` | `—` | `Result<String, String>` | ❌ |
-| [x] | `translate.whisperModels` | `whisper_models` | `—` | `Vec<WhisperModelInfo>` | ❌ |
-
-### 设置与偏好 · `prefs.*` — 28 条
+### 设置与偏好 · `prefs.*` — 30 条
 
 | 移植 | 新命令名 | 现有名 | 参数 | 返回 | 安卓已注册 |
 |:--:|---|---|---|---|:--:|
@@ -318,7 +249,6 @@
 | [x] | `prefs.getPrefs` | `get_prefs` | `—` | `Prefs` | ✅ |
 | [x] | `prefs.getPreloadSettings` | `get_preload_settings` | `—` | `PreloadSettings` | ❌ |
 | [x] | `prefs.getProxy` | `get_proxy` | `—` | `linplayer_core::ProxyConfig` | ✅ |
-| [x] | `prefs.getTranslationSettings` | `get_translation_settings` | `—` | `tr::TranslationSettings` | ❌ |
 | [x] | `prefs.getUpdateSettings` | `get_update_settings` | `—` | `UpdateSettings` | ✅ |
 | [x] | `prefs.getWritebackSettings` | `get_writeback_settings` | `—` | `WritebackSettings` | ✅ |
 | [x] | `prefs.iconLibrary` | `icon_library` | `—` | `IconLibraryReply` | ✅ |
@@ -332,16 +262,13 @@
 | [x] | `prefs.pushSearch` | **新增** | `query: String` | `SearchHistory` | ✅ | <!-- 记一次搜索。去重/置顶/封顶都在核心层 —— 三端各写一遍的话「同一个词搜两次会不会出两条」迟早分叉 -->
 | [x] | `prefs.setPreloadSettings` | `set_preload_settings` | `settings: PreloadSettings` | `Result<(), String>` | ❌ |
 | [x] | `prefs.setProxy` | `set_proxy` | `config: linplayer_core::ProxyConfig` | `Result<(), String>` | ✅ |
-| [x] | `prefs.setTranslationSettings` | `set_translation_settings` | `settings: tr::TranslationSettings` | `Result<(), String>` | ❌ |
 | [x] | `prefs.setUpdateSettings` | `set_update_settings` | `channel: String, auto_check: bool, proxy: String` | `Result<(), String>` | ✅ |
 | [x] | `prefs.setWritebackSettings` | `set_writeback_settings` | `settings: WritebackSettings` | `Result<(), String>` | ✅ |
 
-### 系统 · `system.*` — 19 条
+### 系统 · `system.*` — 18 条
 
 | 移植 | 新命令名 | 现有名 | 参数 | 返回 | 安卓已注册 |
 |:--:|---|---|---|---|:--:|
-| [x] | `system.afdianSponsorUrl` | `afdian_sponsor_url` | `—` | `String` | ✅ |
-| [x] | `system.afdianVerify` | `afdian_verify` | `order_no: String` | `Result<linplayer_core::sync::AfdianVerifyResult, String>` | ✅ |
 | [x] | `system.cacheSize` | `cache_size` | `—` | `Result<CacheSize, String>` | ✅ |
 | [x] | `system.cancelUpdate` | **新增** | `-` | `Result<system::UpdateProgress, String>` | ✅ | <!-- 掐掉在跑的更新下载 -->
 | [x] | `system.capabilities` | **新增** | `-` | `{ commands: string[], ... }` | — | <!-- 本平台支持哪些命令。UI 启动时拿它隐藏入口(SPEC 5.6) -->

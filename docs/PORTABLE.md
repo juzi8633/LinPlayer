@@ -16,9 +16,8 @@ LinPlayer/
 ├─ libmpv-2.dll             ← 完整版 libmpv(含 PGS/SUP 图形字幕解码器)
 └─ userdata/                ← 你的全部身家 ★更新时保留★,删掉它=卸载干净
    ├─ config.json           ← 设置 / 服务器列表 / 凭据
-   ├─ translation.json
-   ├─ data/                 ← 用户数据:删了真会丢东西(观看记录、插件、whisper 模型)
-   ├─ cache/                ← 纯缓存:随便删,能重建(封面、shader-cache、翻译)
+   ├─ data/                 ← 用户数据:删了真会丢东西(观看记录)
+   ├─ cache/                ← 纯缓存:随便删,能重建(封面、shader-cache)
    ├─ temp/                 ← 进程 TEMP/TMP 重定向到这里(连第三方库的临时文件也跑不掉)
    ├─ logs/
    └─ downloads/            ← 应用内下载
@@ -40,7 +39,7 @@ LinPlayer/
    把新版解压**覆盖**到旧目录即可,配置不丢。应用内更新走的也是同一条路。
    > ★ 解压到**旁边的新目录**也不会丢账号(2026-09-11):首次启动发现自己的
    > `userdata/` 里没有 `config.json` 时,会去同级目录找上一份安装,
-   > 把账号 / 观看进度 / 插件启用态搬过来。见 `core/config/adopt.go`。
+   > 把账号 / 观看进度搬过来。见 `core/config/adopt.go`。
    > 已经有配置的目录**一个字都不动**。
 
 ## 平台前提

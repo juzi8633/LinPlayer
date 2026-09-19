@@ -83,8 +83,6 @@ val tvDrafts: List<TvDraft> = listOf(
     TvDraft("线路管理", 6) { DraftLines() },
     TvDraft("设置 · 播放", 6, alsoA = true) { DraftSettings(companion = false) },
     TvDraft("设置 · 通用(手机遥控)", 6) { DraftSettings(companion = true) },
-    TvDraft("发现 · 排行榜", 7) { DraftDiscover(calendar = false) },
-    TvDraft("发现 · 放送表", 7) { DraftDiscover(calendar = true) },
     TvDraft("收藏", 7) { DraftFavorites() },
     TvDraft("下载", 7) { DraftDownloads() },
     TvDraft("本机文件夹 · 挑选", 7) { DraftLocal(picker = true) },

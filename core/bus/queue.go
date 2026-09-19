@@ -62,7 +62,7 @@ type Event struct {
 type evClass int
 
 const (
-	clNeverDrop evClass = iota // result / partial / config.changed / plugin.ui …
+	clNeverDrop evClass = iota // result / partial / config.changed …
 	clMerge                    // 高频状态事件:队列里已有同键的未消费事件就原地替换
 	clDroppable                // log
 )

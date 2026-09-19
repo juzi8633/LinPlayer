@@ -19,7 +19,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -29,7 +28,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -63,7 +61,7 @@ import xyz.linplayer.app.ui.pages.jsonArrayOf
 import xyz.linplayer.app.ui.player.DanmakuStyle
 import xyz.linplayer.app.ui.player.SubStyle
 
-private val Cats = listOf("通用", "播放", "跳过片头片尾", "字幕与音轨", "弹幕", "网络", "同步", "存储", "关于")
+private val Cats = listOf("通用", "播放", "跳过片头片尾", "字幕与音轨", "弹幕", "网络", "存储", "关于")
 
 /** 语言 17 项【继承旧 TV】。核心层收 Emby 的三字母码;「自动」传 **null**,不许传空串。 */
 private val Langs = listOf(
@@ -106,8 +104,7 @@ fun SettingsPage() {
                             3 -> item { SubAudioGroup(overlay) }
                             4 -> item { DanmakuGroup(overlay) }
                             5 -> item { NetworkGroup(overlay) }
-                            6 -> item { SyncGroup(overlay) }
-                            7 -> item { StorageGroup(overlay) }
+                            6 -> item { StorageGroup(overlay) }
                             else -> item { AboutGroup(overlay) }
                         }
                     }
@@ -471,103 +468,6 @@ private fun ProxyField(label: String, value: String, key: String, number: Boolea
         TvText(label, tvType.body, TvC.fg2, Modifier.weight(1f))
         TvTextField(text, { text = it }, "", 200.dp, Modifier.memo(key), number = number, password = password,
             onSubmit = { if (it != value) onSubmit(it) })
-    }
-}
-
-// ---------------------------------------------------------------- 同步
-
-@Composable
-private fun SyncGroup(overlay: Overlay) {
-    val app = LocalApp.current
-    val scope = rememberCoroutineScope()
-    val t = tvType
-    // null = 还没问到;不许画成「未连接」(否则每次进页闪一下)
-    var trakt by remember { mutableStateOf<JsonElement?>(null) }
-    var bangumi by remember { mutableStateOf<JsonElement?>(null) }
-    var reload by remember { mutableIntStateOf(0) }
-    var device by remember { mutableStateOf<JsonObject?>(null) }
-    var bgmToken by remember { mutableStateOf("") }
-    var bgmUrl by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(reload) {
-        launch { trakt = runCatching { app.call("sync.traktAccount") }.getOrElse { JsonNull } }
-        launch { bangumi = runCatching { app.call("sync.bangumiAccount") }.getOrElse { JsonNull } }
-        launch { bgmUrl = runCatching { app.call("sync.bangumiAuthorizeUrl") }.getOrNull().let { (it as? JsonPrimitive)?.content ?: it.obj().str("url") } }
-    }
-    // Trakt 设备码轮询:**间隔听服务端的 interval**,自己拍更短会被限流(「码是对的但一直连不上」)
-    LaunchedEffect(device) {
-        val d = device ?: return@LaunchedEffect
-        var interval = (d.long("interval") ?: 5L) * 1000
-        while (true) {
-            delay(interval)
-            val r = runCatching { app.call("sync.traktPoll", args("device_code" to (d.str("device_code") ?: ""))) }.getOrNull().obj()
-            when (r.str("state")) {
-                "pending" -> Unit
-                "slowDown" -> interval += 5000
-                "authorized" -> { device = null; reload++; app.toast("Trakt 已连接", ToastKind.Ok); return@LaunchedEffect }
-                "expired" -> { device = null; app.toast("设备码过期了,再点一次连接", ToastKind.Error); return@LaunchedEffect }
-                "denied" -> { device = null; app.toast("在手机上被拒绝了", ToastKind.Error); return@LaunchedEffect }
-                else -> { device = null; app.toast("Trakt 连接失败", ToastKind.Error); return@LaunchedEffect }
-            }
-        }
-    }
-    fun logout(name: String, cmd: String) {
-        overlay.open {
-            TvConfirm("断开 $name?", "断开后不再同步观看记录。之后可以重新连接。", "断开", onCancel = { overlay.close() }, onConfirm = {
-                scope.launch { runCatching { app.call(cmd) }.onSuccess { overlay.close(); reload++ }.onFailure { app.report(it) } }
-            })
-        }
-    }
-    Column {
-        Group("Trakt")
-        val tr = trakt
-        when {
-            tr == null -> SkelRows(1)
-            tr is JsonObject && tr.isNotEmpty() -> {
-                PanelItem("Trakt", value = tr.str("username") ?: "已连接", enabled = false)
-                PanelItem("断开 Trakt", danger = true, modifier = Modifier.memo("set.trakt.out"), onClick = { logout("Trakt", "sync.traktLogout") })
-            }
-            else -> {
-                PanelItem("连接 Trakt", sub = "电视上出一个码,在手机上输入", chevron = true, modifier = Modifier.memo("set.trakt.in"), onClick = {
-                    scope.launch {
-                        runCatching { app.call("sync.traktDeviceCode") }.onSuccess { device = it.obj() }.onFailure { app.report(it) }
-                    }
-                })
-                device?.let { d ->
-                    Column(Modifier.padding(start = TvSp.x16, top = TvSp.x8, bottom = TvSp.x8)) {
-                        TvText("在手机上打开 ${d.str("verification_url") ?: ""}", t.body, TvC.fg2, maxLines = 2)
-                        Spacer(Modifier.height(TvSp.x6))
-                        TvText((d.str("user_code") ?: "").toCharArray().joinToString(" "), t.numeral, TvC.acc, weight = TvW.bold)
-                    }
-                }
-            }
-        }
-        Group("Bangumi")
-        val bg = bangumi
-        when {
-            bg == null -> SkelRows(1)
-            bg is JsonObject && bg.isNotEmpty() -> {
-                PanelItem("Bangumi", value = bg.str("username") ?: "已连接", enabled = false)
-                PanelItem("断开 Bangumi", danger = true, modifier = Modifier.memo("set.bgm.out"), onClick = { logout("Bangumi", "sync.bangumiLogout") })
-            }
-            else -> {
-                // 主推 Access Token:授权码 30+ 字符区分大小写,遥控器敲一次好几分钟;令牌也可以用手机遥控页填过来
-                Row(Modifier.fillMaxWidth().height(t.rowH).padding(horizontal = TvSp.x16), verticalAlignment = Alignment.CenterVertically) {
-                    TvText("粘贴令牌", t.body, TvC.fg2, Modifier.weight(1f))
-                    TvTextField(bgmToken, { bgmToken = it }, "Access Token", 200.dp, Modifier.memo("set.bgm.token"), onSubmit = { tok ->
-                        if (tok.isBlank()) return@TvTextField
-                        scope.launch {
-                            runCatching { app.call("sync.bangumiLoginToken", args("token" to tok.trim())) }
-                                .onSuccess { bgmToken = ""; reload++; app.toast("Bangumi 已连接", ToastKind.Ok) }
-                                .onFailure { app.report(it) }
-                        }
-                    })
-                }
-                // 授权链接**常驻显示在行下**,不用 Toast:几十上百字符,3 秒没了抄不完
-                bgmUrl?.takeIf { it.isNotBlank() }?.let {
-                    TvText("在手机上打开 $it 生成令牌", t.meta, TvC.fg3, Modifier.padding(start = TvSp.x16), maxLines = 3)
-                }
-            }
-        }
     }
 }
 

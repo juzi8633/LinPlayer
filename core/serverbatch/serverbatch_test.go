@@ -275,18 +275,3 @@ func TestParseDeepLink_垃圾链接一律不接(t *testing.T) {
 		t.Fatalf("显式空 user 应当是空串:%v", d)
 	}
 }
-
-func TestParseBangumiCode(t *testing.T) {
-	if got := ParseBangumiCode("linplayer://sync-bangumi?code=%20abc%20"); got != "abc" {
-		t.Fatalf("%q", got)
-	}
-	for _, u := range []string{
-		"linplayer://sync-bangumi?code=", // 空授权码不能拿去换令牌
-		"linplayer://sync-bangumi",
-		"linplayer://add-server?code=x",
-	} {
-		if got := ParseBangumiCode(u); got != "" {
-			t.Fatalf("%q 不该解出授权码,实得 %q", u, got)
-		}
-	}
-}

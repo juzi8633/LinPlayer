@@ -485,7 +485,6 @@ PC 端(desktop/pages/sources/sourceForms.tsx)一直是加完补一刀 `update_ac
 - [起播不露视频窗](player-mpv.md) — 手机端起播后只 back() 不导航到播放页 = 只有声音
 - [正则筛选前端接线](ui-desktop.md) — 手机端「高级筛选规则」保存从没落库
 - 首登闸口+源表单共用(本地 sources.md,未入公开库) — 登录闸口复用 PC 的 sourceForms,不抄第二份
-- [VOD 资源站插件](plugins.md) — 手机端网盘/插件源用户进不去浏览页的宿主 bug
 
 ---
 
@@ -636,7 +635,7 @@ PC 端(desktop/pages/sources/sourceForms.tsx)一直是加完补一刀 `update_ac
 而真正的错误一个字都不显示。
 
 **空表**(= 本地构建没凭据)和**取不到**(= 命令失败,要显示核心层那句话 + 重试)
-必须分开。同一条规矩在 `ranking.go` 的注释里已经写过一遍:
+必须分开。同一条规矩在(已删的)`core/ranking/ranking.go` 的注释里写过一遍,现存于 [排行榜数据源:弹弹 trending 与 TMDB](plugins.md):
 「错误必须说人话地冒出去,不许吞成空数组」—— 那次是核心层吞,这次是 UI 吞。
 
 配套:`build-core*.sh` 现在会打印**这次注入了哪几个凭据的变量名**(不打值,CI 日志是公开的)。

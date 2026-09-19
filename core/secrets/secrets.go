@@ -19,16 +19,16 @@ import (
 	"strings"
 )
 
-// 这四个由 `-ldflags -X linplayer/core/secrets.xxx=...` 在链接期灌进来。
+// 这两个由 `-ldflags -X linplayer/core/secrets.xxx=...` 在链接期灌进来。
 // 不注入时是空串 —— 那是**合法状态**(本地构建),对应的功能应当明说「此构建没有凭据」,
 // 而不是装作没数据。
 var (
 	dandanAppID     string
 	dandanSecretEnc string
-	tmdbKeyEnc      string
 )
 
 // obfKey 与 core/cmd/sealsecrets 的同名常量必须逐字节一致。
+// 字面量里的 tmdb-ranking 是历史名字(那两个功能已删),改它 = CI 里的弹弹密文全部解不开。
 const obfKey = "LinPlayer-tmdb-ranking-key-v1!!!"
 
 // decrypt 解一段 base64(AES-256-CBC(明文))。任何一步不对都返回空串 ——
@@ -105,17 +105,6 @@ func DandanCreds() (string, string, bool) {
 	}
 	return id, sec, true
 }
-
-// TMDBKey TMDB 密钥(密文注入)。空 = 未配置。
-func TMDBKey() string { return decrypt(tmdbKeyEnc) }
-
-// TMDBConfigured 这个构建带没带 TMDB 密钥。
-//
-// ★ 这是**有意偏离黄金实现**的一处(Rust 侧判的是「密文非空」)。
-// 判据改成**解得出明文**,是因为—— 密文非空但解不开时,
-// Rust 侧那句 `option_env!(...).is_some()` 会说「配了」,然后请求带着空 key 出去,
-// 拿回一句 TMDB 的鉴权失败。这里收紧成解得出才算配了。
-func TMDBConfigured() bool { return TMDBKey() != "" }
 
 // DandanConfigured 这个构建带没带弹弹Play 凭据。
 func DandanConfigured() bool { _, _, ok := DandanCreds(); return ok }

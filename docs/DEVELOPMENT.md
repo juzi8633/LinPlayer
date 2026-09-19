@@ -7,7 +7,7 @@
 
 | 层 | 用什么 | 说明 |
 |---|---|---|
-| 核心层 | [Go](https://go.dev) | 业务全在这:Emby 协议 / 播放控制 / 网络 / 插件 / 弹幕 / 同步 / 下载。编成 `lpcore` 动态库(`c-shared`),经 C ABI 供各端调用 |
+| 核心层 | [Go](https://go.dev) | 业务全在这:Emby 协议 / 播放控制 / 网络 / 弹幕 / 同步 / 下载。编成 `lpcore` 动态库(`c-shared`),经 C ABI 供各端调用 |
 | 播放内核 | [libmpv](https://mpv.io) | 核心层 cgo 直接调。不是子进程,是进程内库 |
 | 桌面外壳 | C# / .NET 10 + [Avalonia 11](https://avaloniaui.net) | 窗口、UI、把核心层的命令接到界面上。**Windows 与 Linux 同一份代码** |
 | 安卓外壳 | Kotlin + Jetpack Compose / Compose for TV | 手机、平板与 TV 同一个工程,按形态分流 |
@@ -99,12 +99,12 @@ Rust 栈删除后数据源没了 —— Go 的 handler 是 `map[string]any -> an
 
 ## 编译期凭据
 
-弹幕、排行榜、OAuth 代理等 9 个变量在构建时注入(`core/cmd/sealsecrets`),
+弹幕、反馈代理、图标源、CF 测速这 6 个变量在构建时注入(`core/cmd/sealsecrets`),
 明文不进二进制、不进构建日志。全表与「漏配之后用户看到什么」见
 [`go-migration/BUILD-SECRETS.md`](go-migration/BUILD-SECRETS.md)。
 
 一个都不配也编得出来 —— 对应功能会**明说「这个构建没配」**,不会崩、也不会假装成功。
-但发行版九个全都要配:漏了用户看到的是「弹幕搜不到 / 排行榜空白 / Trakt 登不上」,
+但发行版六个全都要配:漏了用户看到的是「弹幕搜不到 / 反馈发不出去 / 图标库只能传本地图」,
 而 CI 全绿。`check-workflows.sh` 的凭据闸门盯着这件事。
 
 ## 版本号

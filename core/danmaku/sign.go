@@ -1,5 +1,4 @@
-// Package danmaku 弹幕。本文件先只放**签名** —— 排行榜和弹幕搜索共用它。
-//
+// Package danmaku 弹幕。本文件先只放**签名** —— 弹幕搜索与匹配共用它。
 package danmaku
 
 import (

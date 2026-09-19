@@ -1,331 +1,414 @@
-# 插件系统 / 插件市场 / 插件仓库
+# 插件系统:运行时 / 宿主契约 / 分发
+
+> 旧插件系统(QuickJS → goja,`core/plugin/`)已整体删除,新系统从零重做,
+> 设计正本见 [`docs/plugin-system/SPEC.md`](../plugin-system/SPEC.md)。
+> 本页只留**新系统照样会踩**的坑;只和旧设计(权限弹窗、`httpAllowedHosts` 白名单、
+> 旧 `ctx.*` 形状、四类贡献点、`.ipk` / `registry.json`)绑定的条目已删。
+> 2026-09-19 宿主的排行榜 / 付费追剧日历 / 字幕翻译 / Trakt·Bangumi 同步整体删除(改做官方插件),
+> 它们的接口实测搬到本页末尾五条。
 
 **这个领域最容易踩的坑:**
-1. **`httpAllowedHosts` 是 fail-closed**:空/缺省 = 拒绝所有主机;而 resolve 出来的是动态 CDN host,穷举白名单必漏,要用通配子域。
-2. **registry 的两条硬契约(键 snake_case、`author` 是字符串)一违反就整条插件从市场消失且零报错** —— 官方源曾被 build.py 七行代码静默清空。
-3. **新加的宿主 ctx.ui 能力必须让用户重新构建 App**,只更新插件会退化成旧形态。
-4. **资源站不是文件树**,别复用网盘文件页去打补丁。
-5. **插件类改动只有挂真机端到端才现形**,编译绿+单测绿是常态。
-
-> 本文件共 **5** 条。每条都标了它的原记忆文件名与类型;正文按原样搬运,未做压缩或改写。
+1. 调用超时必须是**空转看门狗**,不是总墙钟 —— 等用户填表 / 等网络不能计时。
+2. JS 运行时**不是并发安全的**:异步结果必须投回运行时所在的 goroutine 再造值、再 resolve。
+3. 插件类改动**只有真机端到端才现形**,编译绿 + 单测绿是常态。
+4. 新加的宿主能力 = 旧版 App 装新插件必然退化,不能只更新插件。
+5. 清单 / 索引里的键名是硬契约:拼错一个字母,整条插件**静默消失**且零报错。
 
 ## 本页条目
 
-- 插件 v2 市场与声明式 UI — `plugin-v2-market-ui.md`
-- 插件仓库 v2 重写 — `plugin-repo-v2-rewrite.md`
-- VOD 资源站插件 — `vod-source-plugin.md`
-- UHD 插件 — `uhd-plugins.md`
-- UHD 测试账号 — `uhd-test-account.md`
+- 运行时:超时、goroutine、内存、UA
+- 宿主契约:静态声明、数据源动词、UI 树
+- 打包与分发
+- 苹果CMS 采集接口实测
+- UHD 求片站 / 测速接口实测
+- UHD 测试账号
+- 数据源页面的四个坑
+- Bangumi 接口实测
+- Trakt 接口实测
+- 付费解锁(爱发电订单号):用户口径与架构
+- 排行榜数据源:弹弹 trending 与 TMDB
+- 字幕翻译与 Whisper 转写:引擎与链路实测
 
 ---
 
-### 插件 v2 市场与声明式 UI
+### 运行时:超时、goroutine、内存、UA
 
-> 原记忆:`plugin-v2-market-ui.md` · 类型:`project`
+**超时 = 空转看门狗,不是总墙钟**(SPEC D12「单次调用超时中断」照此实现)
 
-**插件市场 + 声明式 UI 已接入 PC 端(2026-07-23)**。侧栏「插件」独立入口(不在设置里),
-三页签:发现 / 已安装 / 插件源。规格与偏离见 `git show rust-final:docs/PLUGINS_V2_PLAN.md` 的 P1 段。
+- Flutter 时代 `callTimeout` 30s 用 `future.timeout(30s)` 包住整个 handler Promise,
+  **等用户填表 / 等网络也在计时** → 交互式多步流程必被 30s 杀 + 插件自动禁用
+  (日志 `PluginTimeoutError 调用超时 30000ms`)。改法:宿主记「在途宿主调用数」+「最后一次活动时间」,
+  只有**既无在途宿主调用、又超 30s 无交互**(纯 JS 死循环)才判失控。
+- goja 版同一思路:`vm.Interrupt` + 墙钟 30s,**每次触碰宿主都把 deadline 往后推**。
+- quickjs-go spike(2026-08-31)实测的另一半:中断处理器只在 JS **正在执行**时被调用,
+  `await` 期间不触发;但 `await` 恢复后插件还要接着干活,**deadline 若没在每次泵作业时重置,
+  恢复后的那段活会被立刻杀掉**。反向注入「泵作业时不重置 deadline」→ 长等待被误杀,实测红。
+- 同一 spike 的两个注入陷阱:① 第一版把死循环放在**另一个 goroutine** 上 Eval,违反运行时单 goroutine 约束,
+  不但没测到东西,还**污染了后面所有测试**(本来通过的变成失败)—— 死循环类注入要开**子进程**;
+  ② 第一版「不重置」注入里 `await` 完就 `return`,代码短到中断检查根本没触发,把真约束测成了不存在,
+  改成「等完之后接着干 300ms 的活」(真实插件的形状)才红。**注入本身有 bug 比没有注入更糟。**
+- 失效条件:新系统若改按 CPU 时间计超时,第一条自然成立,deadline 重置那条仍要验。
 
-**外观口径**(调研 VSCode/JetBrains/Obsidian/Raycast/Figma/Jellyfin/Kodi/HACS 后定):
-- 卡片网格发现 + 密列表已装(HACS:已装置顶)
-- 深色靠灰阶分层不靠阴影(Raycast)——正好是本仓库 token 原样
-- 启用前弹权限清单,一行一条人话,词表**由核层 `plugin_permission_catalog` 透出**,前端不许抄
-- 同类产品**共同缺的两个洞**是我们的差异点:①「第三方源」信任徽章 ②启用后一句「去哪用」
-- 开发者入口(装本地 ipk / 挂开发目录)放最下面一行小字(Obsidian)
+**运行时不跨 goroutine**
 
-**关键教训:这一轮 7 个 bug 全是编译绿+单测绿,只有挂真机 CDP 端到端才现形。**
-共性是「两边都不报错,只是功能不对」:
-- 运行时 `register` 整条顶掉 manifest 静态声明 → 数据源丢 name/auth 表单
-- 贡献点要的权限两处口径不一致 + `onEnable` 错误被 `let _ =` 吞 → 插件"已启用无错误"但面板空白
-- `register` 收非对象描述照单全收编个 `ext_N` 幽灵贡献(API 形状不一致:extensions 是
-  (kind,描述),sources 是 (源id,描述),写混很自然)
-- 面板 handler 返回 null 时不刷新 → 点按钮没反应
-- registry 条目全解析失败报「0 插件 0 错误」→ 和空源无法区分
-- 市场缓存只存插件不存错误 → 二次进入警告条消失
-- 浮层 `inset:0` 被 z-index 90 自绘标题栏盖住 36px → 顶对齐的抽屉头被切(居中弹窗看不出来)
+- goja 的 Runtime 不是并发安全的(`docs/research/plugins-v2/02-embeddable-runtimes.md` 同结论),
+  旧实现把所有对 VM 的触碰投进一条 jobs 通道串行执行。
+- quickjs-go spike 实测到的失效形态:在**非 owner goroutine** 上造对象,resolve 出去后 JS 拿到 `undefined`,
+  **不报任何错**(`TypeError: cannot read property 'status' of undefined`)。常量值(`NewNull()`)不分配所以不受影响
+  —— `sleep` 一直是好的,换成返回对象的 `http` 才坏。**简单的先写、先测、先通过,复杂的后写,正是最容易漏测的形态。**
+- 正确形状:goroutine 里只做 Go 的事(发 HTTP / 读盘)→ 投回 JS 所在 goroutine 再造值并 resolve;
+  泵作业的每一轮排干这条队列。goja 上这条失效形态未单独实测,按 Runtime 非并发安全照做。
 
-见 [挂真机 CDP 调试](methodology.md)(挂真机的手法)、[「待接」多半是谎](methodology.md)、
-[每次都要出可测 exe](methodology.md)、Stremio 插件协议源(本地 sources.md,未入公开库)。
+**大响应体不能整个读进运行时**
 
----
+- UHD 测速的官网文件是 32 / 64 / 100 MiB。Flutter 时代插件的 http 把整个 body 读进 64MB isolate → 大文件 OOM。
+  当时给宿主 http 加了 `discardBody`(按流丢弃、只数字节,内存恒定)。
+- goja 不能按运行时限内存(SPEC D141),一个 100MiB body 直接压在进程 Go 堆上 ——
+  新宿主的 fetch 要有流式 / 丢弃 body 的形态,否则测速类插件会触发全局水位看门狗。
+- 单次请求内拿不到实时百分比 → 测速下载阶段只能用不定态进度条。
 
-### 插件仓库 v2 重写
+**出网默认必须带 UA**
 
-> 原记忆:`plugin-repo-v2-rewrite.md` · 类型:`project`
+- 采集站的海报和 m3u8 都不需要 Referer、无防盗链、无 302,但**空 UA 会被部分 CDN 403**;
+  旧 `ctx.http` 默认一个头都不发,插件必须自己设。宿主 fetch 要默认带 UA,
+  且**插件自己给的 UA 不许被宿主盖掉**(`network.md` 里 `TestImgSendsUA` 钉的同一条)。
 
-**`D:\LinplayerPluginsRepository` 已全量重写为 v2(2026-07-23,已推 main)**。
-官方源现在真的能用:GitHub raw → 6 个插件 → sha256 校验 → 装 → 启用,真机跑通。
+**真机端到端**
 
-**官方源曾经全空的根因**:`tools/build.py::_author()` 把 manifest 的字符串包成
-`{"name": …}` 写进 registry,而 v2 宿主 `RegistryPlugin.author` 是 `String` →
-serde 整条失败 → 8 个插件**全部静默跳过** → 市场显示「0 插件 0 错误」,
-和空源一模一样。**七行代码,两边都不报错。**
-
-**registry 的两条硬契约**(违反就是整条插件从市场消失且无任何报错):
-- 版本键是 **snake_case**(`package_url` 不是 `packageUrl`)
-- `author` 是**字符串**
-
-已在 `crates/core/src/plugins/registry_index.rs::the_real_official_registry_shape_parses_with_nothing_skipped`
-把 build.py 真实产出的形状一字不改钉住 —— 这是跨仓库唯一的守门人。
-
-**仓库的三条不显然的规矩**:
-- **产物必须可复现**:打包时间戳/顺序/权限位钉死,索引里**没有任何时间戳**
-  (试过 `datetime.now()` 每次刷新、git 提交时间新插件首提交时取不到值 → CI 必红)。
-  `Path.write_text` 默认在 Windows 上把 `\n` 翻成 CRLF,必须显式 `newline="\n"`,
-  否则跨平台产物不一致、**只有 CI 红**。
-- 图标构建期压成 data URI 内联(零额外请求、不受图床可达性影响),因此有 64KB 上限。
-- `validate_repo.py --selftest` 会往干净 manifest 里注入 23 条真实坏值,
-  任何一条没让它变红就失败;同时钉住 `schemas/manifest.schema.json` 和
-  `assets/permissions.js` 这两份规则副本不漂移。
-
-~~插件目前只在 PC 可用~~ —— **2026-08-01 核实作废**。安卓侧 `apps/android/src/lib.rs` 现在
-注册了整套 `plugin_*`(含 `plugin_market_install` / `plugin_sources`),`ui/mobile` 有 PluginsPage,
-插件源在手机端能装能用(挂真机 CDP 验过,见 [VOD 资源站插件](plugins.md))。**仍然不可用的只有 TV**:
-`ui/tv` 不渲染任何插件槽位。写 manifest 的 `targets` 时按这个填。
-所以官方插件 `targets` 一律只写 `pc`。
-
-见 [插件 v2 市场与声明式 UI](plugins.md)、[「待接」多半是谎](methodology.md)、[每次都要出可测 exe](methodology.md)。
+- 旧市场 + 声明式 UI 接入那一轮(2026-07-23)**7 个 bug 全是编译绿 + 单测绿**,只有真机端到端才现形。
+  共性是「两边都不报错,只是功能不对」,逐条见下一节。
+- 插件每轮都因没真机验证而返工:宿主 UI 能力有限要先摸清,发版前在真机装一遍跑通。
+- **新宿主能力 = 旧 build 装新插件必坏**:build493 不认表单的 `type:'select'` → 退化成文本输入框
+  (用户原话「让我填写」);不认带图列表 → 没有列表。新能力必须让用户重新构建 App,
+  SPEC D36 的 `minAppVersion` 就是为这个。
 
 ---
 
-### VOD 资源站插件
+### 宿主契约:静态声明、数据源动词、UI 树
 
-> 原记忆:`vod-source-plugin.md` · 类型:`project`
->
-> 🔒 原文含真实地址/账号等具体值,已替换为占位符(原文含具体值,已脱敏)。
+**清单静态声明与运行时注册必须合并,不能整条顶掉**(SPEC D34 同样是「清单声明、代码实现」)
 
-2026-08-01 落地。**纯插件,宿主 Rust 一行没动** —— `MediaSourceBackend` 三方法 +
-`plugin_source.rs` 的 JS 桥已经够用(Stremio 早证明过)。代码在
-`D:\LinplayerPluginsRepository\plugins\com.linplayer.vod\`,抄的是 `com.linplayer.m3u`。
+- 清单写**描述**字段(数据源的 name、登录表单),运行时交**行为**字段(几个回调),两边天然各写一半。
+- 旧实现第一版直接 `*slot = c`,插件一注册回调,清单里的 `name` 和 `auth` 就没了 ——
+  「添加服务器」页拿到一个**没有任何输入框**的插件源,名字退化成源 id。2026-07-23 真机端到端跑出来的。
+- 合并方向:同名键运行时赢,清单只填空缺。测试要让**两边都带同名键**才钉得住方向 —— 方向写反了测试照样绿。
 
-##### v2 重做:资源站不是文件树(2026-08-01 当天推翻 v1)
+**键名与错误口径**
 
-v1 复用了 `NetdiskPage`(网盘文件页),因为插件数据源的契约只有
-`{id,name,isDir,isVideo,size,thumb,raw}`。用户列的六条毛病**全是这一个决定的症状**:
-分类只能伪装成文件夹、翻页只能伪装成一个叫「下一页」的文件夹、「更新至17集」只能
-拼进 name、打开只能是文件管理器的双击、页面就是一张文件表。**别在 NetdiskPage 上
-打补丁,那条路越修越歪。**
+- 贡献点类型名是写在用户清单里的字面量,也是前端查询的键:改一个字母,所有已发布插件的那一类贡献**静默消失**。
+- 撞上废弃字段要报「这是老插件,请获取新版」,不是 JSON 语法错。能力表删一项必须同时进「已删除 + 人话原因」表;
+  只删一半,老插件撞上「未知权限: xxx」,看起来像 App 的 bug 而不是设计。
+- 启用回调里的异常不许吞:旧版 `onEnable` 错误被 `let _ =` 吞掉 → 插件「已启用、无错误」,面板却空白。
+- `register` 收到非对象描述照单全收,编出 `ext_N` 幽灵贡献 —— 描述必须是对象且有非空 `id`,否则当场抛。
+- 解析失败要计数上报:索引条目全解析失败时报「0 插件 0 错误」,和空源无法区分;
+  市场缓存只存插件不存错误 → 第二次进入时警告条消失。
 
-v2 = 核层新加一套**影视目录契约** + 两端各一个新页面:
+**数据源动词的返回约定**(SPEC D40 的 home / category / search / detail / play 同样适用)
 
-- 核层 `crates/core/src/source/mod.rs`:`MediaCategory/MediaCard/MediaPage/MediaDetail
-  /MediaLine/MediaEpisode` + trait 三个默认方法 `categories / catalog / media_detail`。
-  **没往 `SourceEntry` 加字段** —— 那会让 10 个网盘后端的 40 处构造点全跟着改。
-  `MediaCard.badge/year/score` 必须是独立字段,这是整件事的由来。
-- 命令 `source_categories / source_catalog / source_media_detail`(桌面+安卓各一份)。
-- 前端 `VodPage`(PC/手机各一份)+ `SourceBrowsePage` 分流。
-  **分流不能看 source_kind**(插件源的 kind 都是 `plugin:<id>/<src>`),要探一次
-  `categories`;不支持的源返回 `__LP_UNSUPPORTED__` 前缀,前端据此静默换路。
-- 插件 2.0.0 **故意不实现 listDir/search**(测试里有断言钉着)。搜索并进
-  `catalog(keyword)`,否则搜索的翻页会漏写。
+- 播放地址 `url` 必填,空 / 缺失直接报错 —— 放过去播放器收到空地址,表现是「点了没反应」。
+- 分页 `hasMore` 缺省 **false**;缺省 true 会让前端无限拉空页。
+- 插件没实现某个动词(返回 null)≠「结果 0 条」,要当 unsupported 静默换路,不弹红字。
+- 列表**逐条跳过畸形项**,整体不是数组才报错。
+- 错误文案含 `401` / `unauthorized` / `登录` → 标成鉴权错,UI 引导重登。
+- 「是不是视频」复用宿主的扩展名表,别让插件自己维护一份 —— 漂移的后果是「某格式在内置源能播、插件源里根本不显示」。
+- 下发给插件的服务器信息是**显式白名单**字段,不是整包 —— 宿主以后加字段不会自动流进所有插件。
 
-三个当天踩的坑:
-1. **`plugin_enable` 报「internal null bytes at position N」= main.js 里有裸控制字符。**
-   manifest 合规、包打得出、装得上,只有启用那一刻炸,报错完全看不出是源码问题。
-   已在 `validate_repo.py` 加逐字节闸门(顺带拦 BOM)。
-2. **`source_login` 只拿 `list_dir` 探连通性 → 影视目录型的源永远加不进服务器表。**
-   已提成核层 `probe_backend`(两条通一条就算能用),两端共用 + 3 条单测。
-3. 手机端页面**不能自己造 `position:absolute;inset:0` 的滚动层** —— `Page` 已经给了
-   `.pg-body`,再造一层会盖住标题栏。另:手机是真页面栈,DOM 里同时有多个 `.pg-body`,
-   CDP 里 `querySelector('.pg-body')` 取到的是别的 Tab 的隐藏页。
+**插件交来的 UI 树是不可信数据**(SPEC D23 组件树序列化后交原生渲染,同样适用)
 
-速度实测:`ac=detail` 53KB/0.83s vs `ac=list` 7KB/0.75s —— **瓶颈是 RTT 不是体积**,
-换轻接口省不下来;能改的是观感结构(骨架先出 + 首屏预抓两页 + 分页缓存)。
+- 旧声明式 UI 的配额 `MAX_DEPTH=12` / `MAX_NODES=400` / `MAX_CHILDREN=100`;超深子树**整棵丢掉,不截断成半棵**;
+  不认识的节点类型直接丢 —— 将来加新块,老宿主上是「少了一块」而不是崩。
+  配额不是洁癖:一棵递归树能把渲染栈打爆,透明窗口下白屏看起来就是「整个 app 打不开」。
+- 链接协议白名单只放 `https://` / `http://`;`javascript:` / `data:` 是现成注入面。
+- 宿主参考示例一度教的是 `key` / `default`(错的,实际键是 `id` / `value`),消毒器遇到没 `id` 的输入控件返回 null
+  → **整个表单一片空白、日志里什么都没有**。示例的集成测试用假 host 硬编码返回值,根本没跑到那段映射。
+- 表单的提交按钮由宿主固定提供,不画进插件树:插件忘写按钮 = 一个关不掉的弹窗。
+- handler 返回 null 时必须重拉一次界面:绝大多数 handler 只干件事(改开关、发请求)然后返回 null,
+  「返回了树才更新」= 点了完全没反应。
+- 需要返回值的宿主 UI 调用(表单 / 列表 / 对话框)旧实现**没有超时**,前端不回,插件的 `await` 永远悬着
+  —— 前端关弹窗必须显式回 null。
 
-##### 采集接口(`…/api.php/provide/vod/`)实测,不是文档
+**宿主界面口径**(旧 `UI_PC.md` / `UI_MOBILE.md` 插件章节里与新 SPEC 不冲突的几条)
 
-- **`ac=detail` 同样吃 `t` 和 `pg`,一次回 20 条 × 83 字段,含 `vod_pic` 和 `vod_play_url`。**
-  这是整个架构的支点。`ac=list` 每条只有 8 个字段、**没有海报也没有播放地址**,用它就得
-  「列 20 条 → 再打 20 次详情」。测试里有断言钉死「不许出现 ac=list」。
-- 搜索**只有** `ac=detail&wd=` 有效。`ac=list&wd=` 会返回**全站内容**,看起来像搜到一堆
-  其实一条没匹配 —— 很安静的坑。
+- 插件贡献的数据源,登录表单由清单声明的字段**现渲染**:不这样的话每接一个插件源都要回来改一次宿主,
+  「用户自己做插件自己用」就是空话。插件字段值单独存,别和内置输入框混。
+- 「整页」形态的贡献需要宿主给入口,否则声明了也永远打不开。
+- 插件启用后要按贡献点给一句**「去哪用」** —— 2026-07-23 调研 Kodi / Jellyfin / HACS,三家共同缺这一条。
+- 列表里已装置顶、可装在下(HACS 的做法),不让用户在两个页面之间来回找。
+- 插件没有设置项时,它的设置入口整个不出现,不画一个空页。
+- 「已装」经常是空的 —— 做成同一页的 tab 而不是两个入口,空 tab 比空页面便宜。
+
+**宿主代发 Emby 请求要防 SSRF**:`base.join(path)` 之后 scheme / host / port 必须仍等于服务器本身,
+否则拒绝 —— 否则插件拼一个外站路径就能把 `X-Emby-Token` 带出去(守 SPEC D11)。
+旧宿主代发时用的是账号主键 `account.server` 而不是当前生效线路 `active_line_url()`,与 `knowledge/EMBY.md` §1.6
+「Session.server 必须是当前生效线路」的口径不一致,旧代码里没有解释这一选择的注释 —— 新宿主按 §1.6 走。
+
+---
+
+### 打包与分发
+
+- **产物必须可复现**:打包时间戳 / 文件顺序 / 权限位钉死,索引里**没有任何时间戳**
+  (试过 `datetime.now()` 每次刷新;用 git 提交时间则新插件首次提交时取不到值 → CI 必红)。
+  `Path.write_text` 默认在 Windows 上把 `\n` 翻成 CRLF,必须显式 `newline="\n"`,否则跨平台产物不一致、**只有 CI 红**。
+- **跨仓库契约只靠宿主测试守**:旧官方源曾全空,根因是插件仓库 `tools/build.py::_author()` 把清单里的字符串
+  包成 `{"name": …}` 写进索引,而宿主的 `author` 是字符串 → 整条反序列化失败 → 8 个插件全部静默跳过 →
+  市场显示「0 插件 0 错误」。七行代码,两边都不报错。解法是在宿主测试里把**构建脚本真实产出的形状一字不改**钉住;
+  另一条硬契约是版本键 snake_case(`package_url` 不是 `packageUrl`)。
+- 插件仓库的校验脚本 `--selftest` 往干净清单里注入 23 条真实坏值,任何一条没让它变红就失败。
+- 图标构建期压成 data URI 内联(零额外请求、不受图床可达性影响),因此设了 64KB 上限。
+  分发通道见 [分发通道 GitHub 优于 CF](build-release.md)。
+- 市场里「可装版本」要取**版本号最大值**,不是数组第一个 —— 上游返回顺序不可依赖(同 GitHub `/releases`)。
+  多个订阅源并发拉,**单个源拉不到只标那个源**,不整页失败。
+- Go 的 `archive/zip` **不做**路径逃逸检查(Rust 的 zip crate 有 `enclosed_name`),解压插件包时要自己补。
+- 插件数据目录:不要用系统的「应用配置目录」API —— 那类路径由 identifier 推出另一个根,会在 `%APPDATA%`
+  下再开一份,改 identifier 就让已装插件静默失联。所有数据的唯一出口是 `core/paths`;
+  插件数据与插件代码目录分开放,升级 / 重装不丢数据。
+
+---
+
+### 苹果CMS 采集接口实测
+
+> 从旧 VOD 资源站插件(2026-08-01)的记录里搬来。🔒 原文含真实站点,已替换为「采集站甲~戊」。
+> SPEC D7 的 TVBox type 0/1 数据源对接的就是这套 `…/api.php/provide/vod/` 接口,换了实现照样成立。
+
+**资源站不是文件树。** 第一版把资源站塞进网盘文件页,因为当时数据源契约只有
+`{id,name,isDir,isVideo,size,thumb,raw}`。用户列的六条毛病**全是这一个决定的症状**:分类只能伪装成文件夹、
+翻页只能伪装成一个叫「下一页」的文件夹、「更新至17集」只能拼进 name、打开只能是文件管理器的双击。
+卡片的角标 / 年份 / 评分必须是独立字段;分类**不能和内容平铺**(分类没有图,平铺进海报墙就是一排空盒子),
+要做成顶部 chip 横条。这个只有真渲染看得见,DOM 断言全是绿的。
+
+**接口实测,不是文档:**
+- **`ac=detail` 同样吃 `t` 和 `pg`,一次回 20 条 × 83 字段,含 `vod_pic` 和 `vod_play_url`。** 这是整个架构的支点。
+  `ac=list` 每条只有 8 个字段、**没有海报也没有播放地址**,用它就得「列 20 条 → 再打 20 次详情」。
+- 搜索**只有** `ac=detail&wd=` 有效。`ac=list&wd=` 会返回**全站内容**,看起来像搜到一堆其实一条没匹配 —— 很安静的坑。
+  搜索并进分类列表(带 keyword)走同一条分页,否则搜索的翻页会漏写。
 - 每页恒 20 条,无 limit 参数;`limit` 字段是**字符串** `"20"`。
-- `vod_play_from`/`vod_play_url` 用 `$$$` 分多线路(两边 1:1 对齐),`#` 分集,`$` 分集名和地址。
+- `vod_play_from` / `vod_play_url` 用 `$$$` 分多线路(两边 1:1 对齐),`#` 分集,`$` 分集名和地址。
 - **顶级分类基本是空的**(采集站甲 `t=2`、采集站乙 `t=1` 都 total=0),内容只挂叶子分类。
-  v2 的解法:分类横条里点父级时**自动落到它的第一个子分类**,别把用户扔进空页。
-  (v1 那套「子分类目录 + 本级内容混排」已随 NetdiskPage 方案一起作废。)
-- **有的站 `class` 里根本没有 `type_pid`**(采集站丁 只有 type_id+type_name),父子关系无从得知,
-  那种站上「电影/连续剧」点进去就是空的 —— 站点数据如此,不是插件漏了什么。
-- **有的线路给的是网页播放页不是流**:采集站丙 的 `liangzi` 是 `/share/<hash>`,GET 回来
-  `<!doctype html>`;同片的 `lzm3u8` 才是真 m3u8。解法=同一部片内部**按媒体扩展名取舍**
-  (有真流的就不摆网页那条;一条都认不出时全留,无扩展名直链是存在的)。
-- 海报和 m3u8 都不需要 Referer、无防盗链、无 302;但**空 UA 会被部分 CDN 403**,`ctx.http`
-  默认一个头都不发,必须自己设。
-- 故障有两种要分开报:返回 HTML 错误页(采集站戊) vs JSON 被截断(采集站丁 出现过)。
-
-##### 为什么是「一站一服务器」
-
-`httpAllowedHosts: ["$sourceServer"]` 运行时展开成**该插件已配置的全部服务器地址**
-(`sync_plugin_source_grants` → `set_source_grants`,整体替换语义)。一个服务器实例只能打
-它自己那个域名,**想在一个实例里聚合几十个站就得把域名硬编码进 manifest**。用户 2026-08-01
-定:一站一服务器,且**仓库里不出现任何采集站域名**(插件只留一个地址输入框)。
-`D:\LinPlayer\vod.json` 已加进 .gitignore。
-
-##### 顺带挖出的两个宿主真 bug(都已修)
-
-1. **`NetdiskPage` 默认「文件夹优先 + 名称升序」会毁掉策展顺序。** 资源站返回「最新在前」,
-   一排就全乱,连末尾那条「下一页 ›」都被排到最上面。加了 `"default"`(源顺序)档并设为默认,
-   该档**连文件夹置顶都不做**——那也是重排。PC 和手机两处。
-2. **手机端只登录网盘/插件源的用户,浏览页一辈子进不去。** `ServersPage` 的 `onTap` 第一行
-   是 `if (sv.active) return;`,而手机端到 netdisk 路由的另一条路是「设置 → 网盘文件」,设置的
-   入口是首页右上角齿轮 —— 没有 Emby 会话时 `HomePage` 早退成空状态,齿轮跟着没了。
-   改成点文件浏览型的源就进它的浏览页(对齐 PC 的 `onEnter`)。这是
-   首登闸口+源表单共用(本地 sources.md,未入公开库) 那个「只判 session = 网盘用户进不了门」的同款复发。
-
-##### 版式
-
-**v2 的 VodPage 是固定海报墙**(2:3 网格),不再靠猜。下面这段讲的是 **NetdiskPage**
-(网盘源仍在用,那几处改动保留):
-
-- 过半条目带 `thumb_url` → 自动铺网格,否则文件表。**不落 localStorage 是故意的**:
-  一个目录是海报墙、下一层是分集列表,钉死偏好等于永远有一半目录是错版式。
-- 宽高比取第一张真图,但**必须 snap 到标准值**(<0.9→2:3,<1.2→1:1,否则 16:9)。直接用实测值的话
-  「第一张加载完的是谁」取决于网络竞速,真机上量到同目录两次进来 0.709 / 0.801 不一样。
-- 分类**不能和内容平铺在一起**:分类没有图,平铺进海报墙就是一排 172×257 的空盒子。
-  v1 试过「收成一个入口」,v2 直接改成顶部 chip 横条 —— 这才是它本来的形态。
-  **这个只有真渲染看得见,DOM 断言全是绿的。**
-
-##### 验证手法
-
-- 夹具测试 `tools/test_vod.mjs`(19 条,v2 契约),**逐条注入真 bug 验过会红**;CI 有 node 步骤。
-  其中一条专守 v2 的由来:卡片 `title` 里不许再出现角标和年份。
-- 真机 CDP:`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=…` 起打包好的 exe,
-  `__TAURI_INTERNALS__.invoke` 直接调 `plugin_install` / `source_login` / `source_list_dir`。
-- **手机端 UI 也能在桌面 exe 里真跑**:把同一个 WebView `Page.navigate` 到
-  `http://tauri.localhost/index-mobile.html` —— 三端共用一份 dist,Tauri 桥还在,所以是真 UI +
-  真后端。视口必须 `Emulation.setDeviceMetricsOverride`(见 [手机端 UI(ui/mobile)](ui-mobile.md))。
-
-相关:[插件 v2 市场与声明式 UI](plugins.md)、[插件仓库 v2 重写](plugins.md)、Stremio 插件协议源(本地 sources.md,未入公开库)、
-网盘源架构(2026-07-24大改+登录扩容)(本地 sources.md,未入公开库)、[挂真机 CDP 调试](methodology.md)、[测试必须先红](methodology.md)
+  点父级时**自动落到它的第一个子分类**,别把用户扔进空页。
+- **有的站 `class` 里根本没有 `type_pid`**(采集站丁只有 type_id + type_name),父子关系无从得知,
+  那种站上「电影 / 连续剧」点进去就是空的 —— 站点数据如此,不是对接漏了什么。
+- **有的线路给的是网页播放页不是流**:采集站丙某条线路是 `/share/<hash>`,GET 回来 `<!doctype html>`;
+  同片的 m3u8 线路才是真流。解法 = 同一部片内部**按媒体扩展名取舍**(有真流的就不摆网页那条;
+  一条都认不出时全留,无扩展名的直链是存在的)。
+- 海报和 m3u8 都不需要 Referer、无防盗链、无 302;但**空 UA 会被部分 CDN 403**。
+- 故障有两种要分开报:返回 HTML 错误页(采集站戊)vs JSON 被截断(采集站丁出现过)。
+- 速度实测:`ac=detail` 53KB / 0.83s vs `ac=list` 7KB / 0.75s —— **瓶颈是 RTT 不是体积**,换轻接口省不下来;
+  能改的是观感结构(骨架先出 + 首屏预抓两页 + 分页缓存)。
+- 仓库里不出现任何采集站域名(用户 2026-08-01 定);本地清单 `vod.json` 在 `.gitignore` 里。
 
 ---
 
-### UHD 插件
+### UHD 求片站 / 测速接口实测
 
-> 原记忆:`uhd-plugins.md` · 类型:`project`
->
-> 🔒 原文含真实地址/账号等具体值,已替换为占位符(原文含具体值,已脱敏)。
->
-> ⚠️ 本条含 Flutter 时代 / `native-poc/` 时代的路径。2026-07-19 仓库重构后这些路径已作废(换算表见 [仓库结构(2026-07重构后)](build-release.md))。**原文按要求原样保留,未做改写。**
+> 🔒 原文含真实地址/账号等具体值,已替换为占位符。
+> 这些是第三方站点的事实,与插件系统实现无关;UHD 系列插件(流量 / 线路测速 / 求片)
+> 在独立的插件仓库,新系统上重写时照样用得上。
 
-UHD(<UHD 求片站>)系列插件在 **D:\LinplayerPluginsRepository**(独立于主项目 D:\LinPlayer)。
-已发布：`UHD-traffic`(流量,原有)、`UHD-speed`(线路测速)、`UHD-request`(求片)。
-三者都复用同一登录：`POST /api/v1/auth/login {username,password}` → `Authorization: <原始token>`(非 Bearer)。
+UHD(<UHD 求片站>)三个插件都复用同一登录:`POST /api/v1/auth/login {username,password}`
+→ `{ok,data:{token,expires_at}}`,token 作 `Authorization: <原始token>` 头(**非 Bearer**)。
 
-**逆向官网接口的方法**(官网是 React Router SPA,接口全在 `/api/v1/`)：
+**逆向官网接口的方法**(官网是 React Router SPA,接口全在 `/api/v1/`):
 1. `curl /speed` 拿 HTML → 找 `/assets/manifest-*.js`
 2. manifest 里 `"routes/xxx"` 映射到 `module:"/assets/<route>-*.js"` 的路由 chunk
 3. 下载 route chunk + 共享的 `api-*.js`(fetch 封装,baseURL 空=相对,Authorization 头)
 4. `grep '/api/v1/...'` 拿端点,读 minified 上下文拿 body 字段
 
-关键端点已在各插件 main.js 顶部注释逐条记录。测速：`subscriptions/domains`→`/{id}/resolve`
-→`{线路}/speed-test/session {parent_domain_id,size_mib}`→`/speed-test/download?size_mb=&session_id=`
-→`/speed-test/report`。求片：`media-requests/search`→`media-requests`(创建,request_type=missing求片/refresh追新)
-→`media-requests/mine/list`。响应列表容器是 `data.list`。
+**端点链**:测速 `subscriptions/domains` → `/{id}/resolve` → `{线路}/speed-test/session {parent_domain_id,size_mib}`
+→ `/speed-test/download?size_mb=&session_id=` → `/speed-test/report`。
+求片 `media-requests/search` → `media-requests`(创建,`request_type=missing` 求片 / `refresh` 追新)
+→ `media-requests/mine/list`。响应列表容器是 `data.list`。
 
-宿主 QuickJS 里 `Date.now()`/`res.headers`(dio map,值是数组)/`query` 都可用(见 「plugin-system」(该条不在本库,多为 Flutter 时代的旧记忆,已作废))。
-发布=改完跑 `python tools/build.py`(重生成 registry+ipk)再 push main([Git workflow](methodology.md));
-registry 走 raw.githubusercontent main,推完即上市。
+**求片**
+- 「参数验证失败」根因 = **create 的 `content`(说明)必填**(前端 `if(!o.trim())error("请填写具体说明")`,
+  官网标「说明(必填)」)。留空 → 服务端拒。搜索结果项带 `tmdb_id`。
+- search 返回「服务端错误」(500)的排查法:同 body 用坏 token 打 search 是**干净 401**(`invalid or expired token`)
+  → 鉴权已过、是服务端处理阶段 500。当时的根因假设(未用真号验证):官网前端同源 fetch 会自动带
+  `Authorization` Cookie(api-client 用 `document.cookie` 设的)+ Origin / Referer,插件只发了 header;
+  修法是鉴权请求补 `Cookie: Authorization=<token>` + `Origin` + `Referer`。
+- 曾有段时间 `request_type:"missing"` 搜索恒返回 `{ok:false,msg:"服务端错误"}`(服务端 TMDB 搜索路径故障),
+  服主后来修好了,现 missing 搜索与 create 都正常(建出 `status:pending`)。
+- **`poster_path` 三形态**:完整 URL(TMDB 直链)/ `/img/...`(UHD 自托管,`<UHD 求片站>`+path 返 jpeg)/ 裸 TMDB 路径。
+- 搜索结果含 `exists_in_library` / `allowed_to_create`;对已在库且 `allowed_to_create:false` 的条目提交 missing
+  → 服务端回 `媒体库中已存在该影片`(列表里标「已在库」)。没有用户自删求片的接口,测试建出的求片要服主删。
 
-**1.0.1 修复(第一版全崩,根因见下,教训:插件必须端到端实测再发)**：
-- **httpAllowedHosts 是 fail-closed**:空/缺省=**拒绝所有主机**(不是放行!SPEC 原文写反了,
-  加载器 lib/plugins/runtime/plugin_context_bridge.dart:126 才是准的)。任何联网插件必须显式列 host,
-  精确匹配无通配符,重定向后 host 也要在名单。测速第一版没写→连 <UHD 求片站> 都被拦。
-- UHD 线路域名(前端 speed chunk 硬编码,已全列进测速白名单):www / speed / v1 / v1-vod1/2/3 /
-  global / smart .<UHD 主域>。resolve 返回其中之一作线路基址。
-- **官网测速文件大小=32/64/100 MiB**(前端 `Ls=[32,64,100]`)。官网单线路流式下载不缓冲;
-  插件用 `ctx.http` 会把整个 body 读进 64MB isolate→大文件 OOM。
-- **为此给宿主 ctx.http 加了 discardBody(流式只计 bytes,不读进 isolate)+ delete 方法**
-  (context_bridge + bootstrap_js,已 push 主仓 main)。所以测速/求片 1.0.1 **依赖重新构建的宿主**,
-  旧 build 装新插件仍会内存吃紧/取消投票失败。
-- **调试神器**:便携版 build 日志在 `<builddir>/userdata/temp/linplayer_logs/linplayer-YYYY-MM-DD.log`,
-  能看到 `[PluginCtx]`/`[Plugin:xxx]` 的 http 失败原因。求片插件已把所有 http 失败落日志。
-
-测速会耗真实账户流量(每线路×大小)。
-
-**1.0.2(第三轮反馈:太简陋)**：
-- 求片"参数验证失败"根因=**create 的 content(说明)必填**(前端 `if(!o.trim())error("请填写具体说明")`,
-  官网标"说明（必填）")。留空→服务端拒。已改强制校验循环重填。搜索结果项确实带 `tmdb_id`。
-- 测速改为**用户下拉选一条线路**(不批量)+选大小;**进度面板实时可视化**(进度条+当前/平均速度),
-  分段 8MiB 每段独立 session 驱动进度(总量=所选大小)。
-- **为此又给宿主加了两个 ctx.ui 能力**(已 push 主仓):`showProgress/updateProgress/closeProgress`
-  可实时更新的模态进度框 + `showForm` 的 `type:'select'` 下拉字段(options:[{value,label}]),
-  实现在 lib/plugins/runtime/plugin_ui_host.dart(进度面板+_PluginFormDialog select)。见 「plugin-system」(该条不在本库,多为 Flutter 时代的旧记忆,已作废)。
-- ctx.ui 原生只有 toast/dialog/form/openPage,无 webview/gauge;要"可视化"只能靠新加的进度面板。
-- 教训累计:**插件每轮都因没真机验证而返工**——宿主 UI 能力有限要先摸清,发版前让用户装真机跑一遍。
-
-**1.0.3(第四轮:两个真机日志坐实的硬伤)**：
-- **`callTimeout` 30s 是"总墙钟"不是 CPU 时间**——`qjs_plugin_engine.evaluate` 用 `future.timeout(30s)`
-  包住整个 handler Promise,**等用户填表/等网络也在计时**→交互式多步流程必被 30s 杀+插件自动禁用
-  (日志 `PluginTimeoutError 调用超时 30000ms`)。**已改「空转看门狗」**:包装宿主桥记 `_hostCallsInFlight`
-  +`_lastActivity`,只有既无在途宿主调用又超 30s 无交互(纯 JS 死循环)才判失控;等用户/等网络不计时。
-- **新宿主能力=旧 build 装新插件必坏**:build493 不认 `type:'select'`→退化成文本输入框("让我填写");
-  不认 showList→无带图列表。**任何新 ctx.ui 能力都必须让用户重新构建 App**,不能只更新插件。
-- **`ctx.ui.showList({items:[{id,title,subtitle,image}]})`** 带缩略图的滚动列表选择器(海报由宿主
-  直接 Image.network 加载 image.tmdb.org,不走插件白名单),返回选中 id。测速用它选线路、求片用它带海报选片。
-- 测速改单线路点选(不批量);求片搜索结果带海报列表。都在 plugin_ui_host.dart。
-
-**1.0.4(build500 实测:宿主修复生效,新暴露 search 500)**：
-- build500 已含宿主修复 → 不再 not-a-function,UI/登录都正常。新问题:求片 search 返回
-  「服务端错误」(500)。排查法:同 body 用坏 token 打 search 是**干净 401**(`invalid or expired token`),
-  证明鉴权已过、是服务端处理阶段 500 → 不是 body/鉴权,是缺浏览器上下文。
-- 根因假设(强,未真号验证):官网前端**同源** fetch 默认 `credentials:same-origin` 会自动带
-  **Authorization Cookie**(api-client `k()` 用 `document.cookie` 设的)+ Origin/Referer;插件只发了 header。
-  search 走服务端代理 TMDB,可能读 Cookie/Origin。**修法**:插件鉴权请求补
-  `Cookie: Authorization=<token>` + `Origin` + `Referer`(dio 无浏览器禁用头限制,能设这些头)。
-- 顺带 request 业务日志加 HTTP 状态码。**本地 `flutter build windows --release` 成功出 exe**
-  (177s,exit0)——证明宿主改动真能编译,不只是 analyze 过。构建产物在 build/windows/x64/runner/Release/。
-
-**测速接口实测约束(speed 1.0.5 修复,用测试账号 [UHD 测试账号](plugins.md) curl 跑通整链)**：
+**测速**
+- 官网测速文件大小 = **32 / 64 / 100 MiB**(前端 `Ls=[32,64,100]`),官网单线路流式下载不缓冲。
 - `POST {线路}/speed-test/session` 的 `size_mib` **只接受 32/64/100**,填 8 → `参数验证失败`。
-- `download?size_mb=` **必须等于**会话 size_mib,否则只回 ~39 字节。→ **只能单会话单次下载,不能分段**。
-- 旧版(1.0.2~1.0.4)用 8MiB 分段驱动进度条 → session 直接被拒,测速全废。1.0.5 改单次下载 +
-  下载阶段用不定态进度条(单请求内 ctx.http 拿不到实时百分比)。
-- resolve 返回 `data.domain` 是子线路(<用户主力 Emby 服(UHD fork)>→<UHD 子线路域名>),session/download 打这个;
-  `parent_domain_id` 用原列表项 id。列表项字段 `{id,name,description,domain,normalized_host}`,
-  **UI 只显示 name**(不暴露 domain,用户要求)。
-- **中国大陆线路 resolve 到 `<UHD 大陆线路域名>`(.online TLD!非 .com)**,旧白名单只有
-  .<UHD 主域> → 本地白名单拦下 → 插件报「线路域名未授权」(网页端正常)。1.0.6 补 <UHD 备用域> +
-  china-vod1/2/3.<UHD 备用域>。**根治**:宿主 httpAllowedHosts 现支持 `*.example.com` 通配子域
-  (plugin_context_bridge `_hostAllowed`,点分隔防 evil-example.com 误命中),插件加 `<*.UHD 主域>`/
-  `<*.UHD 备用域>` → 重建后动态 CDN 子域不再漏。**教训:resolve 出来的是动态 CDN host,别穷举白名单。**
-- **节点按账号分配、稳定**:测试账号大陆线路稳定 resolve 到 `china-vod3`,用户账号稳定到 `china-vod4`——
-  我从自己账号 curl **看不到用户的节点**,所以 1.0.6 只列 vod1/2/3 漏了用户的 vod4(日志实证)。
-  1.0.7 枚举 <UHD 线路域名枚举> 的 .com/.online 双 TLD 兜底(build500 exact-match)。
-  已 curl 实测 china-vod4 整链通(session 200 + download 满 32MiB 无重定向)。**exact-match 构建靠枚举,
-  真正一劳永逸只有重建后的通配 `<*.UHD 备用域>`。** 验证插件白名单类改动:必须看用户日志里的真实 host,
-  不能只凭自己账号 resolve(节点不同)。
+- `download?size_mb=` **必须等于**会话的 size_mib,否则只回约 39 字节 → **只能单会话单次下载,不能分段**。
+  旧插件 1.0.2~1.0.4 用 8MiB 分段驱动进度条 → session 直接被拒,测速全废。
+- resolve 返回的 `data.domain` 是子线路,session / download 打这个;`parent_domain_id` 用原列表项 id。
+  列表项字段 `{id,name,description,domain,normalized_host}`,**UI 只显示 name**(不暴露 domain,用户要求)。
+- **中国大陆线路 resolve 到 `.online` TLD 的备用域**(不是主域的 `.com`)。**resolve 出来的是动态 CDN host,别穷举**。
+- **节点按账号分配、稳定**:测试账号大陆线路稳定 resolve 到 `china-vod3`,用户账号稳定到 `china-vod4` ——
+  从自己账号 curl **看不到用户的节点**。验证线路类改动必须看**用户日志里的真实 host**,不能只凭自己账号 resolve。
+- 测速会耗真实账户流量(每线路 × 大小)。
 
 ---
 
 ### UHD 测试账号
 
-> 原记忆:`uhd-test-account.md` · 类型:`reference`
->
-> 🔒 原文含真实地址/账号等具体值,已替换为占位符(原文含具体值,已脱敏)。
+> 🔒 原文含真实地址/账号等具体值,已替换为占位符。
 
 UHD(<UHD 求片站>)**测试账号**(用户提供,服主已授权测试,可直接 curl 实测接口):
 - 用户名:`<测试用户名>`
 - 密码:`<测试密码>`
 
-**同一套账密也能登 Emby 测试服 `https://<Emby 测试服 A>`** —— 见 [Emby 测试服务器](emby.md)。别把两者搞混:这里的 www 是**求片站**(自家 /api/v1),smart 是 **Emby 媒体服务器**(标准 /Users/AuthenticateByName)。
+**同一套账密也能登 Emby 测试服 `https://<Emby 测试服 A>`** —— 见 [Emby 测试服务器](emby.md)。
+别混:`<UHD 求片站>` 是**求片站**(自家 `/api/v1`),`<Emby 测试服 A>` 是 **Emby 媒体服务器**(标准 `/Users/AuthenticateByName`)。
 
-登录:`POST /api/v1/auth/login {username,password}` → `{ok,data:{token,expires_at}}`,token 作 `Authorization` 头(非 Bearer)。用 `--data-binary @file`(含中文用户名)避免 shell 编码问题。
-
-**用它实测的定论(见 [UHD 插件](plugins.md))**:求片插件整条链路都正常——登录 / **追新(refresh)搜索** / **创建(create,content 必填)** / 我的列表(mine/list)全部 `ok:true`,create 真能建出 `status:pending` 的求片。
-曾有段时间 `request_type:"missing"`(求新片)搜索恒返回 `{ok:false,msg:"服务端错误"}`(服务端 TMDB 搜索路径故障),**服主后来修好了**,现 missing 搜索正常 ok:true,missing create 也通(建出 status:pending)。
-
-**poster_path 三形态(1.0.7 修)**:完整 URL(TMDB 直链)/ `/img/...`(UHD 自托管,`<UHD 求片站>`+path 返 jpeg)/ 裸 TMDB 路径。搜索结果含 `exists_in_library`/`allowed_to_create`;对已在库且 `allowed_to_create:false` 的条目提交 missing → 服务端回 `媒体库中已存在该影片`(1.0.7 在列表标「已在库」)。
-
-(实测建过 3 条测试求片需服主/admin 删:沙丘 `<求片单号>`、沙丘(refresh)、To End All War `<求片单号>`;无用户自删接口。)
+登录时用 `--data-binary @file`(含中文用户名)避免 shell 编码问题。
 
 ---
 
+### 数据源页面的四个坑(从已删的「影视目录」页抢救,2026-09-19)
+
+新 SPEC D40 让数据源页面由官方画,这四条照样成立:
+
+- **资源站不是文件树。** 旧实现曾复用文件浏览页,六个毛病全是这个决定的症状:分类伪装成文件夹、
+  翻页伪装成一个叫「下一页」的文件夹、「更新至 17 集」只能拼进文件名。角标 / 年份 / 评分要各占各的位置。
+- **首屏要预抓几页。** 一页内容铺不满一屏 → 没有滚动条 → 无限下拉永远不会被触发。
+- **有子分类的父分类本身多半是空的**,点它要直接落到第一个子分类,不是把用户扔进空页。
+- **详情关掉后,海报墙的滚动位置要还在;单击就打开,不是双击。**
+
+---
+
+### Bangumi 接口实测(从已删的宿主同步 / 追剧日历抢救,2026-09-19)
+
+宿主里的 Trakt / Bangumi 同步与追剧日历已删,将以官方插件重做。下面是接口本身的怪癖,插件照样会撞上:
+
+- **API 走官方,图片走反代。** 用户实测:第三方 anibt 的 **API 反代过不了 CF**,但它的**图片反代**没问题;
+  官方图床 `lain.bgm.tv` 国内常不通。所以是「API 官方 + 图片 anibt」这个反直觉组合。
+- **授权页在主站,不在 API 子域。** API 切到官方之后,`/oauth/authorize` 必须独立指到主站,
+  打到 API 子域直接 404。回调页在自建 oauth-proxy 上(`docs/oauth/bangumi.html`),地址属于我们的中转,编译期注入不进源码。
+- **授权码深链 `linplayer://sync-bangumi?code=...` 不可信**:调用方必须先弹确认再拿去换令牌,
+  否则一个网页就能把用户绑到攻击者的 Bangumi 账号上。空 `code=` 不能拿去换。
+- **个人访问令牌(Access Token)登录完全不经代理**:代理挂了 / 共享密钥轮换了照样能登;
+  没有 refresh_token,有效期由 Bangumi 定(通常一年)。**存之前立刻打一次 `/v0/me` 验一下** ——
+  废令牌存进去,设置页显示「已连接」而每次同步都静默失败。遥控器上主推令牌:授权码 30+ 字符区分大小写,敲一次好几分钟。
+- **官方 API 根本没有放送时刻**(2026-07-16 curl 实证):`/calendar` 只有 `air_date`(无时刻)+ `air_weekday`,
+  条目详情的 infobox 也只有「放送开始 / 放送星期 / 播放电视台」。拿 air_date 硬凑 = 显示 00:00 假时间。
+  用户选了 **bangumi-data** 数据集(npm 包 `bangumi-data@0.3` 的 `dist/data.json`,7.4MB):
+  `broadcast` 是 RFC5545 `R/<ISO UTC 起始>/P7D`,条目自带 `sites[].site=="bangumi"` 的 subject id,**精确对得上不靠标题**。
+  实测本周覆盖 **72/111≈64%**,没覆盖的**不显示时刻,不编**。只留 `id→起始时刻` 小索引(约 1800 条)落盘,TTL 7 天。
+- **`air_date` 是首播日,不是本周这一集的日期。** 拿它跟本周比对会把整条丢掉 → 放送表全空。
+- `/calendar` 的 `summary` 字段整周 111 条**全是空串**(字段在、值不给);真简介只在 `/v0/subjects/{id}`,要按需拉。
+- 图片地址是协议相对的 `//lain.bgm.tv/…`,要补 `https:`;海报优先 `large`,`common` 放大到卡片上发虚(用户 2026-07-16「好模糊」)。
+  封面实测比例 **0.707~0.711(≈5:7)**,不是 2:3。
+- **0 分 = 没人评过**(新番常见),不是「这片 0 分」—— 滤掉,别画出来。名字中文名优先,没有才用原名。
+- **单集写入路径的 subject 位必须是字面 `-`**:`PUT /v0/users/-/collections/-/episodes/{episode_id}`;
+  带 subject_id 的只有批量 `PATCH /v0/users/-/collections/{subject_id}/episodes`(body `{episode_id:[...], type}`,官方注明它会重算完成度)。
+  旧代码写成 `.../collections/{subject_id}/episodes/{episode_id}`,**永远 404**,「在看」那条恰好路径对所以只有它能成。
+  EpisodeCollectionType:0 未收藏 / 1 想看 / 2 看过 / 3 抛弃;SubjectCollectionType 是另一套,**3 = 在看**。
+- **更单集之前先把条目设成「在看」**:未收藏的番直接更单集会失败。代价是重看已「看过」的番会被降回在看(罕见,可接受)。
+- **同步类调用别返回裸 bool。** 上面那个 404 活了几个月没人看见,就因为 `is_success().unwrap_or(false)`;
+  失败要带状态码 + 响应体前 200 字。
+- **按标题反查条目要设门槛**:旧匹配器「日期对不上就无条件取 `results[0]`」。改成复用弹幕那套标题评分,
+  低于 **0.45** 判「没匹配上」—— **标错条目比不标更坏**(往用户账号里写别人的番)。门槛先筛再按总分排,
+  反过来会让日期碰巧对上的噪声挤掉真本体。
+- 手动「标为看完」也要触发同步,不能只在播到 80% 的停止上报里做。
+
+---
+
+### Trakt 接口实测(从已删的宿主同步抢救,2026-09-19)
+
+- **进度同步用 Scrobble API**(`/scrobble/start|pause|stop`):起播发 start(账号上显示「正在观看」),
+  停止发 stop 带真实 progress%,Trakt 自己在 **≥80%** 判看过、<80% 存续播点。取代旧的 `/sync/history` 完播打卡。
+  上报失败只返回 false 不抛:上报是记账,播放是主线。**没有外部 id(ProviderIds)就别发。**
+- **判「播完」读 mpv 的 `eof-reached`**:`keep-open=yes` 下 END_FILE 永远不发,等它等于「播完从不同步」。
+- **设备码登录**:需要 client_secret 的两步(申请设备码 / 换 token / 刷新)走自建 oauth-proxy,客户端只持公开 client_id。
+  轮询的状态码语义照 Trakt 原样:**400 = 还没授权(不是错)、429 = 问太快了(间隔 +5s)**、404/409/410 = 过期、418 = 用户拒绝。
+  一律当失败的话,用户还没来得及点授权就被告知失败。**间隔听服务端给的 interval**,自己拍更短会被限流(「码是对的但一直连不上」)。
+- 令牌给的是 `created_at + expires_in(秒)`,绝对过期时刻要自己算;判过期留 **60 秒余量**;刷出来的新令牌要落盘,否则每次启动都刷。
+- **Trakt 自己不发图**,只给 `ids.tmdb`:封面要拿 tmdb id 去 TMDB 查 poster_path(按 id 去重、并发受限),
+  所以依赖 TMDB 密钥。`first_aired` 本身是精确时刻,时间不缺。
+- 放送表 `/calendars/all` 是**全站火喉**,一次几千条,必须截断(旧实现截 200);起点往前 7 天、共 21 天 ——
+  「昨天更新的那集」要在表里。
+- 需要 client_secret 的那几步不经代理就做不了:构建没注入代理地址时要明说「这个构建没有配同步服务」,不假装成功。
+
+---
+
+### 付费解锁(爱发电订单号):用户口径与架构(从已删的付费追剧日历抢救,2026-09-19)
+
+- **付费墙是用户要的,别自作主张删。** 2026-07-16 我一度误删了 gate,被当场骂回:「放出来又免费吗?逗我呢」。
+  用户要的是「**解锁后**免登录也能看放送表」,不是免费。见 [别过度解读需求](methodology.md)。
+- **软锁,故意不加固**:开源客户端里「已解锁」判断可被改。订单号 → 自建 oauth-proxy 的 `/api/afdian/verify`
+  → 代理持爱发电 token 调 `query-order`(md5 签名)→ `{valid, planTitle, amount}`。**客户端不接触爱发电 token**;
+  路由受 `_middleware.js` 的 `X-LinPlayer-Key` 共享密钥保护。
+- 校验失败**带着 reason 返回**,不抛错:没填 / 没配代理 / 订单无效 / 网络失败,每一种要给用户的话都不同。
+- **赞助(收款)地址只能有一份,而且必须来自构建注入**:2026-07-19 UI 里写死了一个凭空猜的主页,功能看着完全正常,
+  **赞助收益却是零** —— 收款地址是那种「错了也不会报错」的东西。它也是账号地址,不进提交。
+- 已知边界:解锁标记 per-device(换设备要重填订单号);订单号可转发(没做设备绑定)。
+
+---
+
+### 排行榜数据源:弹弹 trending 与 TMDB(从已删的宿主排行榜抢救,2026-09-19)
+
+- **错误必须说人话地冒出去,不许吞成空数组。** 2026-07-21 用户报「榜单没数据」,当时 fetch 里有 6 条 `return vec![]`:
+  缺凭据 / 请求失败 / 非 JSON / success=false / 缺字段全部长成空榜,分不清是「构建没注入密钥」还是「服务端拒签」。
+  UI 侧同理:**「空表(没凭据)」和「取不到(命令失败)」必须分开显示**,见 [排行榜「没有凭据」可能是一句假话](ui-mobile.md)。
+- **没有「排行榜开关」。** 分类为空的唯一原因是打包时没注入凭据;没凭据的那一族分类不亮(亮出来点进去必然是空的)。
+  TV 端曾写「排行榜默认是关的,去设置里打开」,用户照着找只会翻个空。写这类提示前先 grep 那个设置真的存在。
+- 动漫 = 弹弹Play `/api/v2/trending/all/{hot,rising}/{week,month,quarter}` 与
+  `/api/v2/trending/new-anime/hot/{current-season,previous-season}`。**需签名**,与弹幕共用签名算法;
+  签名路径 = 请求路径(含 `/api/v2` 前缀,不含 query)。字段 `bangumiList` / `animeId` / `animeTitle` / `imageUrl`
+  与官方 swagger 逐个核对过。匿名请求一律 403 `X-Error-Message: Missing Authentication Headers`。
+- **403 的真因是多串轮换密钥**:GH Secret 里是两串换行分隔的 AppSecret,排行榜把整坨拿去签名(弹幕那边有拆分所以正常)。
+  修前 CI 实测 `HTTP 403`,修后 `返回 50 条`。被排除的假设(都验过):凭据没注入、签名算法错、UA、CI 机房 IP、Secret 要手动加密。
+  见 [弹弹多密钥轮换](danmaku-sync.md)。
+- 影视 = TMDB,密钥自动识别 **v4 Bearer(含点)/ v3 api_key**。TMDB 只给 `poster_path`,图床前缀要自己拼;
+  **id 可能是数字也可能是字符串**,解析要两种都吃(移植时错过一次)。榜单文件缓存 6 小时。
+- **第三方图床要进本地图片代理的白名单,而且要在每次按账号表整表重建时补回来**:只在注册时放行一次的话,
+  排行榜第一次打开有图,之后随便切一下服务器 / 改一下线路,图就全没了,**一点错都不报**。
+- 本地构建没有凭据,版式要靠假榜单看;真机自检把两个上游与图床都指到假服务器,**覆盖基址时要同时放行对应图床**,
+  否则自检里「数据有、图全空」,和白名单漏了的真实症状混在一起就白验了。
+- 前三名金 / 银 / 铜三色要**两两不同**(「三个都是金色」这种退化截图上要盯着看才发现),第四名起回普通色。
+- 榜单条目**不在用户的媒体库里**:卡片不能复用带「标记已看 / 收藏 / 屏蔽」右键的媒体卡,那三项点下去只会报错;
+  点条目的合理去向是拿标题去搜索。换分类比请求快得多,回来的旧结果要丢掉,别画到新分类上。
+
+**放送表 / 排行榜的界面口径(用户定,插件重做时照旧)**
+
+- 2026-09-18 用户:「重做 排行榜 和 追剧日历 样式」—— 日历从「七列横滚看板」改成「周几日期条 + 当天整宽海报墙」
+  (打开日历最常见的目的是看今天更新了什么);排行榜两个下拉换两排 chip(分类十来个,藏在下拉里就得点开才知道有什么),
+  前三名单独一排大卡、其余海报墙。
+- **今天居中**【用户定】(日期条从今天往前三天排起;周一 / 周日是今天时自然靠边,那不是 bug);
+  标题**不许截成「…」**;封面按源站的竖版等比放、不裁;不上背景模糊。
+- **「今天是周几」按上游时区 JST 判**:按本地时区,国内用户每天 23:00~01:00 看到的「今天」是错的。
+- 简介缓存里存 `null` 代表「查过了,确实没有」,不能用「键不存在」表示,否则每次展开都再查一遍。
+- 打开外部链接(赞助页等)失败要说出来,静默失败会让用户以为按钮是坏的。
+
+---
+
+### 字幕翻译与 Whisper 转写:引擎与链路实测(从已删的宿主字幕翻译抢救,2026-09-19)
+
+- **五种引擎**:OpenAI 格式、Anthropic 格式(整批送,模型看得到上下文,质量更好也更省请求)、百度通用、百度大模型、腾讯机器翻译。
+  存盘键是字面量,改了等于把用户的选择作废。设置里的 apiKey / secretKey 明文落盘,与账号 token 同等姿态。
+- **百度免费版 QPS=1,必须串行**;单条 `q` 上限 6000 字节,按 50 行 / 2000 字双限分批。
+  `sign = MD5(appid + q + salt + 密钥)`,多条用 `\n` 拼成一个 `q` 提交,`trans_result` 按行回包。
+- **腾讯批量接口 `TextTranslateBatch` 不支持源语言 auto**,源语言未知要退回支持 auto 的单条 `TextTranslate`;
+  批量保守取 50 条 / 4000 字,免费 QPS 低,串行。
+- 引擎实现必须保证**返回列表与输入等长、顺序一致**,服务层靠这个把译文贴回字幕条目。
+- **全部条目都失败 = 引擎根本不可用**(没开通 / 鉴权错),直接报错;静默产出一份原文文件,用户会以为「翻译了但没变化」。
+- **Emby 字幕导出路由各服不一**:`/Subtitles/{i}/Stream.srt`、`/Subtitles/{i}/0/Stream.srt`(StartPositionTicks 段)、
+  服务端给的 DeliveryUrl。要逐个试,**并校验内容像字幕**(含 `-->` / `Dialogue:` / `WEBVTT` / `[Script Info]`),
+  否则 404 的 HTML 页被当字幕,报「源字幕解析为空」而真原因是地址不对。`Path` 是服务端本地路径,**不能当 URL**。
+- 同一(源、引擎、目标语言、排版)命中缓存直接复用,别重复烧额度。
+- 解析口径:SRT 毫秒位不足要**右补零**(`,5` 是 500ms 不是 5ms);ASS 时间是 `H:MM:SS.cc`,**百分秒**不是毫秒。
+- **翻完必须直接挂上**,只返回路径 = 摆了个按钮不接线。挂成次字幕时,`sub-add` 把新轨排在最后,
+  要挂完读一次 `track-list` 取**最大的 sid** 再设 `secondary-sid`;直接写 `secondary-sid=1` 会切到内封第一条,
+  表现是「次字幕出来了,但不是译文」。次字幕 `sub-add` 的 flag 用 `auto`,不能 `select` 占掉主轨。
+- 实时翻译:换引擎 / 语言前**先停旧轮询**,否则两句译文交替闪;单句失败不停整个轮询(限流 / 抖动常见),但要告诉前端。
+  译文未到时:双语显示原文占位,仅译文显示空。
+- **Whisper 模型几百 MB 到几 GB,放 data/ 不放 cache/**(清缓存会删掉,重下代价太高);下载强制 https
+  (自定义镜像可能填 http,明文下载会被中间人替换);流式写临时文件,完成后原子改名,中断不留半截「已下载」。
+  认不出的模型键**报错,不静默回落默认档**。下载进度事件限流到每 200ms 一条,否则几 GB 的下载刷爆事件队列。
+- **探测 whisper / ffmpeg 可执行要按 exe 名缓存**:每次探测真 spawn 子进程(最多 4 次),不缓存 =「每次打开字幕翻译都卡」;
+  Windows 上还要 HideWindow,否则黑框一闪。ffmpeg 包内路径含版本号,**按文件名找不按路径找**;
+  Linux 上游是 `.tar.xz`,Go 标准库解不了,明确报错让用户走包管理器。
+- 语言码:未知码**原样喂给模型**,归一码剥掉的地区后缀对模型可能有意义。
+- 设置写回要**在当前设置之上反序列化**:从零值开始的话,前端只传了一个目标语言,其它字段全被清空;
+  老配置缺新键要逐个补默认,不能整份回默认。
+
 ## 跨域交叉引用
 
-这些条目和本领域强相关,但正文放在别的文件里(一条经验只存一份正文):
-
-- Stremio 插件协议源(本地 sources.md,未入公开库) — 插件协议型源的方法参考(该源已删)
-- [起播不露视频窗](player-mpv.md) — 插件源起播不露画面窗的两个真因
-- [分发通道 GitHub 优于 CF](build-release.md) — 插件包与 registry 走 GitHub raw,别挪 CF
-- SourceKind 线上是小写(本地 sources.md,未入公开库) — 插件源的 kind 形如 plugin:<插件id>/<源id>
+- [分发通道 GitHub 优于 CF](build-release.md) — 插件包与市场索引走 GitHub,别挪 CF
+- [起播不露视频窗](player-mpv.md) — 非 Emby 源起播不露画面窗的两个真因

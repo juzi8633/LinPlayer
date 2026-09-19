@@ -511,7 +511,7 @@ keyboardHidden|density|uiMode`,不让系统重建 Activity。**
 2. **失败必须回滚。** 乐观更新是对的,但命令失败时必须翻回来 + 报错。
    不回滚的表现是「开关是开的但功能没生效」—— 本项目最难查的一类 bug。
 
-需要确认弹窗的**只有三类**:不可逆的删除(删服务器 / 卸插件 / 清空记录)、
+需要确认弹窗的**只有三类**:不可逆的删除(删服务器 / 清空记录)、
 影响他人的动作(扫描媒体库 / 刷新元数据)、会丢数据的导入。**其余一律不确认。**
 
 ### 6.3 错误码 → UI 行为映射
@@ -525,7 +525,7 @@ keyboardHidden|density|uiMode`,不让系统重建 Activity。**
 | `E_UPSTREAM` | Toast 显示 `msg`,详情写日志 |
 | `E_UNSUPPORTED` | **静默降级,不显示任何错误。隐藏该入口。** |
 | `E_NOTFOUND` | 空态 |
-| `E_PERMISSION` | 插件权限弹窗 |
+| `E_PERMISSION` | 显示「当前账号没有权限」(`CoreClient.kt` 现有文案);核心层目前没有发出方 |
 | `E_INVALID` | 行内错误 + 回滚(§6.2) |
 | `E_SHUTDOWN` | 忽略 |
 | `E_INTERNAL` | Toast「出错了」+ 一个「复制诊断信息」动作 |
@@ -534,7 +534,7 @@ keyboardHidden|density|uiMode`,不让系统重建 Activity。**
 对应入口在启动时就不画**,不要等点了才 `E_UNSUPPORTED`。
 安卓上必然进这张表的有:`system.pickFile` / `system.pickDirectory` /
 `player.playExternal` / `player.windowOpen` / `player.windowClose` /
-`player.getMpvConf` / `player.setMpvConf` / `translate.whisper*`。
+`player.getMpvConf` / `player.setMpvConf`。
 
 > `E_UNSUPPORTED` 单列是有原因的:媒体源有一批「默认不支持」的可选能力,
 > UI 探测它们时收到的不是错误而是信息。混在一起的表现是「进某个源就弹一个红色报错」。
@@ -745,7 +745,7 @@ keyboardHidden|density|uiMode`,不让系统重建 Activity。**
 
 | | |
 |---|---|
-| 版式 | 顶部搜索条(点进 §7.5)+ 一行快捷入口(继续观看 / 收藏 / 下载 / 排行榜 / 日历)+ 按服务器分组的聚合内容 |
+| 版式 | 顶部搜索条(点进 §7.5)+ 一行快捷入口(服务器 / 下载)+ 按服务器分组的聚合内容 |
 | 数据来源 | `emby.aggregateOverview` `account.getCrossServerResume` `account.setCrossServerResume` `account.listAccounts` |
 | 加载态 | **流式**(`SPEC.md` §5.7):每台服务器各自回各自渲染。**收到 `partial` 就画,不许攒齐再画** |
 | 错误态 | 逐台标失败,不整页失败;`result` 汇总里带失败清单,画在底部 |
@@ -814,32 +814,10 @@ keyboardHidden|density|uiMode`,不让系统重建 Activity。**
 | 空态 | 空目录就说**空目录**,不要说「加载失败」 |
 | 手势 | 点=进目录 / 起播;右滑返回上级 |
 
-- **进一个源之前先探能力。** 探到「影视目录型」→ 走 §7.10 那一页;
-  探不到(`E_UNSUPPORTED`)→ **静默换路**留在本页,不当错误弹。
 - 起播必须走**宿主统一的起播入口**(`ui/player/PlaybackLauncher.kt`),
   **本页不许自己 `player.play`**。
   > 教训:曾经绕开统一入口自己起播,结果「有声音、没画面、还关不掉」。
 - 本轮范围内**只有 `local` 一种源**会进这一页(网盘 / 局域网源已于 2026-09-04 砍掉)。
-  插件贡献的文件型源将来也走这里。
-
-### 7.10 影视目录(U1.11)· **与文件浏览是两套页面,不复用**
-
-> 这一页存在的唯一理由:**资源站不是文件树。**
-> 复用过一次,六个毛病全是那个决定的症状 —— 分类伪装成文件夹、翻页伪装成一个叫
-> 「下一页」的文件夹、「更新至 17 集」只能拼进文件名。
-
-| | |
-|---|---|
-| 版式 | 顶部**横条分类**(不是网格里的卡片)+ 海报墙(角标 / 年份 / 评分**各占各的位置**,标题里只有标题)+ 详情**盖在同一页上** |
-| 数据来源 | `source.categories` `source.catalog` `source.mediaDetail` `source.play` |
-| 加载态 | 首屏**预抓几页** —— 否则内容铺不满一屏 → 没有滚动 → 无限下拉永远不会被触发 |
-| 错误态 | 探能力抛不支持 = 这是个文件型源 → 静默换路回 §7.9 |
-| 空态 | **有子分类的父级本身多半是空的**,点它要先落到第一个子分类,不是把用户扔进空页 |
-| 手势 | 点=打开详情浮层;上滑续页;**详情关掉时网格的滚动位置还在** |
-
-- **单击就打开,不是双击。** 海报墙不是文件管理器。
-- 本轮只有**插件贡献的 VOD 源**会用到这一页(走 `plugin:<插件id>/<源id>` 开放键)。
-  没装这类插件时,这一页**没有入口** —— 不是空页,是不存在。
 
 ### 7.11 下载(U1.12)
 
@@ -859,60 +837,10 @@ keyboardHidden|density|uiMode`,不让系统重建 Activity。**
 - 安卓侧下载在**核心层的后台 goroutine** 里跑,App 进程被杀就停 ——
   这是已知取舍,不做 `WorkManager`。设置页要有一句说明。
 
-### 7.12 插件市场 / 已装(U1.13)
+### 7.13 / 7.14 排行榜 · 追剧日历(已删)
 
-| | |
-|---|---|
-| 版式 | 一页**三个 Tab**:市场 / 已装 / 源订阅。卡片带**第三方源徽章**。插件详情是独立一页,插件自己贡献的设置面板作为详情里的一段 |
-| 数据来源 | `plugin.marketList` `plugin.marketSources` `plugin.marketAddSource` `plugin.marketRemoveSource` `plugin.marketToggleSource` `plugin.marketInstall` `plugin.list` `plugin.install` `plugin.uninstall` `plugin.enable` `plugin.disable` `plugin.permissionCatalog` `plugin.panels` `plugin.extensions` `plugin.invokeField` `plugin.trigger` `plugin.uiRespond` `plugin.sources` `plugin.reload` |
-| 加载态 | 进页拉已装列表 + 各订阅源的 registry,**并发** |
-| 错误态 | 单个源拉不到只标那个源,不整页失败 |
-| 空态 | 「已装」经常是空的 —— **做成 Tab 而不是两个入口,空 Tab 比空页面便宜** |
-| 手势 | 卡片点=详情;已装项长按=启用/停用/卸载 |
-
-- **授权清单在装 / 启用之前弹,一行一条人话**,不是一句「该插件需要若干权限」。
-  **权限词表由 `plugin.permissionCatalog` 透出,UI 不许抄一份**
-  —— 抄了就会漏新权限,弹窗里显示光秃秃的 id。
-- **可装版本要取版本号最大值,不是数组第一个** —— 上游返回顺序不可依赖。
-- **插件自定义 UI(`plugin.ui` 事件)本轮只支持声明式描述符**
-  (`kind` = 表单 / 列表 / 确认),**不起 WebView**。
-  PC 端用独立 origin 的 WebView2 跑插件页面;安卓上再养一个 WebView 会把
-  APK 和内存都推上去,而本轮 16 页里没有任何一页依赖它。记为阻塞条目。
-- **插件是全平台可用的**(2026-08 已推翻「插件只在 PC 可用」),
-  但 `system.capabilities.features.plugins` 说 false 时整个 Tab 不画。
-
-### 7.13 排行榜(U1.14a)
-
-| | |
-|---|---|
-| 版式 | 榜单选择芯片条 + 带排名序号的列表(横版卡 + 名次) |
-| 数据来源 | `emby.rankingCategories` `emby.rankingFetch` |
-| 加载态 | 按榜单分别拉 |
-| 错误态 | 显示错误 + 重试。**不许吞成空表**(空表和失败在界面上长得一样,但一个该重试一个不该) |
-| 空态 | 「暂无榜单数据」 |
-| 手势 | 下拉刷新;卡片长按菜单 |
-
-- **根本没有「排行榜开关」这个东西** —— 别去找,也别加。
-
-### 7.14 追剧日历(U1.14b · 付费)
-
-| | |
-|---|---|
-| 版式 | 两种视图:**本周看板**(横滑,一屏 3 天,每列自己滚)/ **本日直列表**(一条一行、按时间从早到晚、**待定沉底**)。手机竖屏默认「本日」 |
-| 数据来源 | `sync.bangumiCalendar` `sync.traktCalendar` `sync.bangumiSummary` `system.afdianSponsorUrl` `system.afdianVerify` |
-| 加载态 | 放送表整表一次拉;**简介按需拉 + 模块级缓存** |
-| 错误态 | 打开外部链接失败**要说出来**(静默失败会让用户以为按钮是坏的) |
-| 空态 | 简介缓存里**存 `null` 代表「查过了,确实没有」** —— 不能用「键不存在」表示,否则每次展开都会再查一遍 |
-| 手势 | 看板左右滑换天;条目点=进详情 |
-
-- ☠ **赞助地址必须来自 `system.afdianSponsorUrl`,不许硬编。**
-  2026-07-19 就栽在这:UI 里写死了一个凭空猜的主页,功能看着完全正常,
-  **赞助收益却是零**。收款地址只能有一份。
-- 解锁后默认「Bangumi + 不看我追的」(公开放送表免登录即可返回整张表)。
-- **今天要居中,不是靠边**【用户定】。周一 / 周日是今天时自然靠边,那是没得居中不是 bug。
-- **本周标题不许单行截断**(截成「…」= 显示不全),放开完整换行 + 大封面 `ContentScale.Fit` 不裁。
-- 封面用 **2:3 竖版**(源站给的就是竖版,硬裁成方图会切掉大半)。
-- 判「今天是周几」**必须按上游时区(JST)** —— 核心层已经处理,UI 直接用它给的分组。
+2026-09-19 从宿主删除,以后做成官方插件(`docs/plugin-system/SPEC.md` 第 125、198 条)。
+原来两节里仍然成立的接口实测与用户口径搬到了 `docs/lessons/plugins.md`。
 
 ### 7.15 设置(U1.15)
 
@@ -920,16 +848,16 @@ keyboardHidden|density|uiMode`,不让系统重建 Activity。**
 
 | 组 | 项 |
 |---|---|
-| 通用 | 外观与语言 / 播放器 / 弹幕 / 字幕翻译 |
+| 通用 | 外观与语言 / 播放器 / 弹幕 |
 | 网络 | CF 优选加速 / 多线程加载 / 预加载 / 代理设置 |
-| 同步 · 账号 | 同步记录 · 跨服聚合 / Trakt · Bangumi |
+| 同步 · 账号 | 同步记录 · 跨服聚合 |
 | 其它 | 已屏蔽的内容 / 存储与数据目录 / 关于 |
 
 > 手机端比 PC 少一项:**快捷键**(没有键盘)。多的没有。
 
 | | |
 |---|---|
-| 数据来源 | `prefs.getPrefs` `prefs.setPrefs` `prefs.applyPrefs` `prefs.getPrefetchSettings` `prefs.setPrefetchSettings` `prefs.getPreloadSettings` `prefs.setPreloadSettings` `prefs.getProxy` `prefs.setProxy` `prefs.cfProxyStatus` `prefs.cfProxyEnable` `prefs.cfProxyDisable` `prefs.cfSpeedTest` `prefs.getWritebackSettings` `prefs.setWritebackSettings` `prefs.getTranslationSettings` `prefs.setTranslationSettings` `prefs.getHomeSettings` `prefs.setHomeSettings` `prefs.configExportQr` `prefs.configImportQr` `player.getPlaybackPrefs` `player.setPlaybackPrefs` `player.shaderLevels` `player.setShaderLevel` `player.setTrackRegexes` `player.validateTrackRegex` `danmaku.getDanmakuConfig` `danmaku.setDanmakuConfig` `danmaku.minAutoScore` `danmaku.cacheSize` `danmaku.cacheClear` `danmaku.importBlocklist` `sync.traktAccount` `sync.traktDeviceCode` `sync.traktPoll` `sync.traktLogout` `sync.bangumiAccount` `sync.bangumiAuthorizeUrl` `sync.bangumiExchange` `sync.bangumiLoginToken` `sync.bangumiLogout` `emby.blockedList` `emby.setBlocked` `emby.watchHistoryList` `emby.watchHistoryDelete` `emby.watchHistoryClear` `system.dataPaths` `system.cacheSize` `system.clearCache` `system.checkUpdate` `system.exportDiagnostics` `account.getCrossServerResume` `account.setCrossServerResume` |
+| 数据来源 | `prefs.getPrefs` `prefs.setPrefs` `prefs.applyPrefs` `prefs.getPrefetchSettings` `prefs.setPrefetchSettings` `prefs.getPreloadSettings` `prefs.setPreloadSettings` `prefs.getProxy` `prefs.setProxy` `prefs.cfProxyStatus` `prefs.cfProxyEnable` `prefs.cfProxyDisable` `prefs.cfSpeedTest` `prefs.getWritebackSettings` `prefs.setWritebackSettings` `prefs.getHomeSettings` `prefs.setHomeSettings` `prefs.configExportQr` `prefs.configImportQr` `player.getPlaybackPrefs` `player.setPlaybackPrefs` `player.shaderLevels` `player.setShaderLevel` `player.setTrackRegexes` `player.validateTrackRegex` `danmaku.getDanmakuConfig` `danmaku.setDanmakuConfig` `danmaku.minAutoScore` `danmaku.cacheSize` `danmaku.cacheClear` `danmaku.importBlocklist` `emby.blockedList` `emby.setBlocked` `emby.watchHistoryList` `emby.watchHistoryDelete` `emby.watchHistoryClear` `system.dataPaths` `system.cacheSize` `system.clearCache` `system.checkUpdate` `system.exportDiagnostics` `account.getCrossServerResume` `account.setCrossServerResume` |
 | 加载态 | 各面板**进入时各自拉自己的配置**;同一面板里的多个请求**必须并发** |
 | 错误态 | 读取失败的提示**必须挂在加载分支里面**(§6.4 第 3 条) |
 | 空态 | 「已屏蔽的内容」为空 = 没屏蔽过任何东西,正常 |
@@ -946,8 +874,6 @@ keyboardHidden|density|uiMode`,不让系统重建 Activity。**
   安卓的数据根是 `context.filesDir`(应用私有),**路径展示但不可点开**
   —— 没有文件管理器能进去,给一个打不开的按钮比不给更糟。
 - 「关于」:版本号 / 数据目录 / 开源信息 / **有新版本时的跳转链接**(§6.5)。
-- 「字幕翻译」在安卓上整组**不画** —— `translate.whisper*` 在 `unsupported` 里
-  (Whisper 模型是几百 MB 的桌面级依赖)。这是 §6.3 那条「入口在启动时就不画」的落法。
 
 ### 7.16 安卓专有:文件与目录选择
 
@@ -1079,8 +1005,7 @@ mpv 真的不再画为止;JNI 薄层**不许**把它扔到别的线程去做。
   但兜底放行前**必须先确认不在等缓冲**。
 - ☠ **`duration == 0` 时进度条禁用**,并且不许用 0 盖掉已知时长。
   真服加载窗口实测 6~7 秒 —— 这期间点进度条中间会跳到 0.5 秒,用户看到的是「画面不变」。
-- **播完收尾传总时长,不是当前时间**(差最后零点几秒 = 服务端不算看完,
-  Trakt / Bangumi 一次都不触发)。
+- **播完收尾传总时长,不是当前时间**(差最后零点几秒 = 服务端不算看完)。
 - **判播完必须读 `eof-reached` 属性**,不能等 `END_FILE` —— `keep-open` 下它永远不发。
   核心层已经处理,UI 只认 `player.status` 里的 `eof`。
 - **进度上报三件套必须带 `PlaySessionId`**(核心层负责),UI 只管调 `emby.reportProgress`

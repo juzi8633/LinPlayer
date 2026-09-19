@@ -274,13 +274,6 @@ public sealed class PlayerPage : UserControl
     /// 章节、进度上报、停播上报这些要 server/token 的事全靠它挡。</summary>
     private bool NoEmby => _isSource || _isLocal;
 
-    /// <summary>
-    /// 源条目的原始数据,原样回传给核心层。
-    ///
-    /// <para>资源站(影视目录)的**可播地址就藏在 raw 里** —— 不带它的话
-    /// 后端只拿到一个 id,解析不出流。表现是「点了集数没反应」。</para>
-    /// </summary>
-    private readonly object? _sourceRaw;
     private readonly string _title = "";
 
     /// <summary>
@@ -326,7 +319,7 @@ public sealed class PlayerPage : UserControl
     /// (<c>account.listAccounts</c> 故意不带),会话由核心层按 id 解析。</para>
     /// </param>
     public PlayerPage(CoreClient core, string itemId, string title, double resumeSecs,
-        bool isSource = false, object? sourceRaw = null, string mediaSourceId = "",
+        bool isSource = false, string mediaSourceId = "",
         CardItem? next = null, int audioIndex = -1, int subIndex = -1, bool isLocal = false,
         string serverId = "")
     {
@@ -337,7 +330,6 @@ public sealed class PlayerPage : UserControl
         _mediaSourceId = mediaSourceId;
         _core = core;
         _isSource = isSource;
-        _sourceRaw = sourceRaw;
         _title = title;
         _itemId = itemId;
         _next = next;
@@ -1761,7 +1753,6 @@ public sealed class PlayerPage : UserControl
                 await _core.SourcePlay(new
                 {
                     entry_id = itemId, entry_name = _title, resume_secs = resumeSecs,
-                    raw = _sourceRaw,
                 });
             }
             else

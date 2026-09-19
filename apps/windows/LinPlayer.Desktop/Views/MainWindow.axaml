@@ -92,16 +92,12 @@
           <StackPanel Name="NavList" Spacing="0">
             <RadioButton Classes="nav" Name="NavHome" GroupName="nav" Content="首页" IsChecked="True" Tag="&#xE80F;" />
             <RadioButton Classes="nav" Name="NavBrowse" GroupName="nav" Content="文件浏览" IsVisible="False" Tag="&#xE8B7;" />
-            <RadioButton Classes="nav" Name="NavCatalog" GroupName="nav" Content="影视目录" IsVisible="False" Tag="&#xE8A9;" />
             <RadioButton Classes="nav" Name="NavLibrary" GroupName="nav" Content="媒体库" Tag="&#xE8F1;" />
             <RadioButton Classes="nav" Name="NavSearch" GroupName="nav" Content="搜索" Tag="&#xE721;" />
             <RadioButton Classes="nav" Name="NavFavorites" GroupName="nav" Content="收藏" Tag="&#xE734;" />
             <RadioButton Classes="nav" Name="NavAggregate" GroupName="nav" Content="聚合视界" Tag="&#xE774;" />
             <RadioButton Classes="nav" Name="NavHistory" GroupName="nav" Content="观看历史" Tag="&#xE81C;" />
             <RadioButton Classes="nav" Name="NavDownload" GroupName="nav" Content="下载" Tag="&#xE896;" />
-            <RadioButton Classes="nav" Name="NavRanking" GroupName="nav" Content="排行榜" Tag="&#xE8CB;" />
-            <RadioButton Classes="nav" Name="NavCalendar" GroupName="nav" Content="追剧日历" Tag="&#xE787;" />
-            <RadioButton Classes="nav" Name="NavPlugins" GroupName="nav" Content="插件" Tag="&#xE71D;" />
           </StackPanel>
 
           <!--

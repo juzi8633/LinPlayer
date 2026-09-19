@@ -226,30 +226,6 @@ func TestSearch_不支持要能被认出来(t *testing.T) {
 	}
 }
 
-// ★ 影视目录三条:不是资源站的源要回「没这个能力」,前端据此走文件浏览页。
-func TestCategories_文件树源要回没这个能力(t *testing.T) {
-	fresh(t)
-	if err := login(t, "local", dir(t)); err != nil {
-		t.Fatal(err)
-	}
-	_, err := cmdCategories(context.Background(), 7, nil)
-	if err == nil {
-		t.Fatal("本地源不是资源站,却给出了分类")
-	}
-	if !containsUnsupportedMark(err.Error()) {
-		t.Fatalf("错误里没有可机读的标记: %v —— "+
-			"靠中文提示语判断会在改文案时静默失效", err)
-	}
-}
-
-func containsUnsupportedMark(s string) bool {
-	return len(s) > 0 && source.IsUnsupported(errString(s))
-}
-
-type errString string
-
-func (e errString) Error() string { return string(e) }
-
 func asBusErr(err error, out **bus.Err) bool {
 	e, ok := err.(*bus.Err)
 	if ok {

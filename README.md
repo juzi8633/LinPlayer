@@ -80,7 +80,7 @@ Windows 上同样可用（`LinPlayer.exe`），输出需要重定向或经管道
 
 ## 功能
 
-业务能力（Emby 协议、网络、播放控制、弹幕、同步、下载、插件）集中在**各端共用的 Go 核心层**里，
+业务能力（Emby 协议、网络、播放控制、弹幕、下载）集中在**各端共用的 Go 核心层**里，
 编译成 `lpcore` 动态库；每端只写自己的界面。所以下表标 ⬜ 的并不是「没做」，而是**核心层已经有了、那一端的界面还没接**。
 
 | 功能 | 说明 | Windows | Linux | 手机 / 平板 | TV |
@@ -91,15 +91,10 @@ Windows 上同样可用（`LinPlayer.exe`），输出需要重定向或经管道
 | **弹幕** | 弹弹play 等多来源，智能集数匹配，屏蔽词与显示设置 | ✅ | ✅ | ✅ | ✅ |
 | **字幕** | Emby 内封 / 外挂字幕，轨道切换、延迟、样式；libass 完整特效 | ✅ | ✅ | ✅ | ✅ |
 | **进度上报与跨服续播** | Emby 进度上报；同一部片在多台服务器间取最靠后的进度 | ✅ | ✅ | ✅ | ✅ |
-| **排行榜** | 弹弹play 动漫榜 + TMDB 影视榜 | ✅ | ✅ | ✅ | ✅ |
-| **追剧日历** | Trakt / Bangumi 放送表（手机端目前只有 Bangumi） | ✅ | ✅ | ✅ | ✅ |
 | **下载** | 自建多线程 Range 分段下载，整季下载 | ✅ | ✅ | ✅ | ✅ |
 | **多线程加载** | 本地预取代理，并发 Range 超前拉流喂给播放器 | ✅ | ✅ | ✅ | ✅ |
 | **本机文件夹播放** | 选一个本地目录直接浏览播放 | ✅ | ✅ | ✅ | ✅ |
 | **应用内更新** | 双渠道，按平台与架构自动挑包 | ✅ | ✅ | ✅ | ✅ |
-| **插件** | QuickJS 脚本引擎，插件市场，逐插件授权与隔离 | ✅ | ✅ | ✅ | ⬜ |
-| **Trakt / Bangumi 账号** | 登录、查看账号与放送表 | ⬜ | ⬜ | ⬜ | ✅ |
-| **观看记录同步** | Trakt Scrobble / Bangumi 点格子 | ⬜ | ⬜ | ⬜ | ⬜ |
 | **自定义网络代理** | | ⬜ | ⬜ | ⬜ | ✅ |
 | **CF 优选 IP 测速** | 抽样 Cloudflare 边缘节点测速 | ✅ | ✅ | ⬜ | ⬜ |
 | **批量添加服务器** | 粘贴多行配置一次性解析导入 | ✅ | ✅ | ⬜ | ⬜ |
@@ -112,7 +107,7 @@ Windows 上同样可用（`LinPlayer.exe`），输出需要重定向或经管道
 
 > **不做的东西**（2026-09-04 定）：网盘（阿里 / 百度 / 115 / 189 / 139 / 夸克 / OpenList / 飞牛）、
 > 局域网源（SMB / WebDAV / FTP）、Ani-RSS 全部下线，代码已删净。
-> 资源站将来只以**插件**形式出现。本机文件夹播放保留 —— 它是播放器的基础能力。
+> 资源站将来只以**插件**形式出现 —— 插件系统从零重做中，设计见 [`docs/plugin-system/SPEC.md`](docs/plugin-system/SPEC.md)。本机文件夹播放保留 —— 它是播放器的基础能力。
 
 ## 界面预览
 
@@ -150,8 +145,6 @@ Windows 上同样可用（`LinPlayer.exe`），输出需要重定向或经管道
   </tr>
   <tr>
     <td><img src="docs/images/screenshots/tablet-player.jpg" width="100%" alt="播放页"><br><sub><b>播放页</b></sub></td>
-    <td><img src="docs/images/screenshots/tablet-rankings.jpg" width="100%" alt="排行榜"><br><sub><b>排行榜</b></sub></td>
-    <td><img src="docs/images/screenshots/tablet-calendar.jpg" width="100%" alt="追剧日历"><br><sub><b>追剧日历</b></sub></td>
   </tr>
 </table>
 
@@ -165,12 +158,10 @@ Windows 上同样可用（`LinPlayer.exe`），输出需要重定向或经管道
   </tr>
   <tr>
     <td width="33%"><img src="docs/images/screenshots/phone-home.jpg" width="100%" alt="首页"><br><sub><b>首页</b></sub></td>
-    <td width="33%"><img src="docs/images/screenshots/phone-aggregate.jpg" width="100%" alt="聚合视界"><br><sub><b>聚合视界</b> —— 跨服务器的收藏 / 下载 / 排行榜 / 日历</sub></td>
-    <td width="33%"><img src="docs/images/screenshots/phone-rankings.jpg" width="100%" alt="排行榜"><br><sub><b>排行榜</b></sub></td>
+    <td width="33%"><img src="docs/images/screenshots/phone-aggregate.jpg" width="100%" alt="聚合视界"><br><sub><b>聚合视界</b> —— 跨服务器的收藏 / 下载</sub></td>
+    <td width="33%"><img src="docs/images/screenshots/phone-series-detail.jpg" width="100%" alt="剧集详情"><br><sub><b>剧集详情</b></sub></td>
   </tr>
   <tr>
-    <td><img src="docs/images/screenshots/phone-series-detail.jpg" width="100%" alt="剧集详情"><br><sub><b>剧集详情</b></sub></td>
-    <td><img src="docs/images/screenshots/phone-calendar.jpg" width="100%" alt="追剧日历"><br><sub><b>追剧日历</b></sub></td>
     <td><img src="docs/images/screenshots/phone-settings.jpg" width="100%" alt="设置"><br><sub><b>设置</b></sub></td>
   </tr>
 </table>
@@ -232,10 +223,8 @@ scripts/           构建、出包与门禁脚本（pack-win.sh / pack-linux.sh 
 ### 服务与数据源
 
 - [Emby](https://emby.media/) — 媒体服务器
-- [弹弹play (DanDanPlay)](https://www.dandanplay.com/) — 弹幕与动漫排行榜数据
-- [TMDB](https://www.themoviedb.org/) — 影视排行榜数据
-- [Bangumi (bgm.tv)](https://bgm.tv/) — 番剧放送表与收藏
-- [Trakt](https://trakt.tv/) — 影视放送表与观看记录
+- [弹弹play (DanDanPlay)](https://www.dandanplay.com/) — 弹幕数据
+- [Bangumi (bgm.tv)](https://bgm.tv/) — 番剧条目名（弹幕匹配用）
 
 ### Emby 服
 
@@ -248,9 +237,8 @@ scripts/           构建、出包与门禁脚本（pack-win.sh / pack-linux.sh 
 ### 网络与工具
 
 - [CloudflareSpeedTest](https://github.com/XIU2/CloudflareSpeedTest) — CF 优选 IP 的灵感来自 XIU2 的这个项目
-- [QuickJS](https://bellard.org/quickjs/) — 插件脚本引擎
 
-> 数据来源 TMDB 与弹弹play 的内容版权归各自所有；本项目仅作聚合展示，不存储或分发受版权保护的媒体。
+> 数据来源弹弹play 的内容版权归各自所有；本项目仅作聚合展示，不存储或分发受版权保护的媒体。
 
 ## Star History
 

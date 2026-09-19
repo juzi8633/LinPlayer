@@ -56,7 +56,7 @@ import xyz.linplayer.app.ui.theme.LpIcons
 
 val railItems = listOf(
     "搜索" to LpIcons.search, "首页" to LpIcons.home, "媒体库" to LpIcons.grid,
-    "收藏" to LpIcons.heart, "发现" to LpIcons.trophy, "下载" to LpIcons.download,
+    "收藏" to LpIcons.heart, "下载" to LpIcons.download,
     "服务器" to LpIcons.server, "设置" to LpIcons.settings,
 )
 

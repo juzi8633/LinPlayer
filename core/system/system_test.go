@@ -84,11 +84,10 @@ func TestClearCache只动缓存目录(t *testing.T) {
 	// 缓存里的:该没
 	mk(filepath.Join(paths.ImageCache(), "cover.jpg"), 1000)
 	mk(filepath.Join(paths.PrefetchCache(), "seg-0"), 2000)
-	// 不该动的:配置 / 观看记录 / 下载 / 插件
+	// 不该动的:配置 / 观看记录 / 下载
 	mustKeep := []string{
 		paths.ConfigFile(), paths.HistoryFile(),
 		filepath.Join(paths.DownloadsDir(), "某片.mkv"),
-		filepath.Join(paths.PluginsDir(), "p1", "manifest.json"),
 	}
 	for _, p := range mustKeep {
 		mk(p, 10)
@@ -148,7 +147,7 @@ func TestDataPaths(t *testing.T) {
 	if !r.OK {
 		t.Fatal(r.Msg)
 	}
-	for _, k := range []string{"root", "config", "history", "cache", "logs", "downloads", "plugins", "models", "exe_dir", "kind"} {
+	for _, k := range []string{"root", "config", "history", "cache", "logs", "downloads", "exe_dir", "kind"} {
 		v, ok := r.Data[k].(string)
 		if !ok || v == "" {
 			t.Errorf("dataPaths 缺 %q", k)
