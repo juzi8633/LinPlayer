@@ -45,6 +45,13 @@ internal static partial class AltStack
         var ss = new StackT { Sp = (nint)b.P, Flags = 0, Size = Size };
         if (SigAltStack(&ss, null) == 0) _mine = b;
     }
+
+    /// <summary>当前线程的备用信号栈:大小 + 标志(2=没有)。给 SigProbe 打现场用。</summary>
+    public static unsafe string Describe()
+    {
+        StackT cur;
+        return SigAltStack(null, &cur) != 0 ? "读不出" : $"{(ulong)cur.Size / 1024}KB flags={cur.Flags}";
+    }
 }
 
 /// <summary>
@@ -60,12 +67,19 @@ internal static partial class SigProbe
 
     public static bool Run(string dll, string version)
     {
+        // LP_SIGPROBE=gc 只加 GC 压力(用户那台的真实情形);其它值再加信号轰炸(确定性复现)
+        var spray = Environment.GetEnvironmentVariable("LP_SIGPROBE") != "gc";
+        Console.WriteLine($"SIGPROBE 主线程进 Go 前 {AltStack.Describe()}");
         var core = new CoreClient(dll, Path.Combine(Path.GetTempPath(), "lp-sigprobe"), version);
+        Console.WriteLine($"SIGPROBE 主线程进 Go 后 {AltStack.Describe()}");
         var tids = new System.Collections.Concurrent.ConcurrentDictionary<int, byte>();
         var until = DateTime.UtcNow.AddSeconds(15);
         var calls = 0L;
-        var workers = Enumerable.Range(0, 16).Select(_ => Task.Run(() =>
+        var workers = Enumerable.Range(0, 16).Select(i => Task.Run(() =>
         {
+            var before = AltStack.Describe();
+            core.CallAsync("system.dataPaths", null).Wait();
+            if (i < 3) Console.WriteLine($"SIGPROBE 线程池线程 {gettid()}:进 Go 前 {before},后 {AltStack.Describe()}");
             while (DateTime.UtcNow < until)
             {
                 tids.TryAdd(gettid(), 0);
@@ -74,18 +88,18 @@ internal static partial class SigProbe
                 Interlocked.Increment(ref calls);
             }
         })).ToArray();
-        var spray = new Thread(() =>
-        {
-            var pid = getpid();
-            while (DateTime.UtcNow < until)
+        if (spray)
+            new Thread(() =>
             {
-                foreach (var t in tids.Keys) tgkill(pid, t, SIGRTMIN);
-                Thread.Sleep(0);
-            }
-        }) { IsBackground = true };
-        spray.Start();
+                var pid = getpid();
+                while (DateTime.UtcNow < until)
+                {
+                    foreach (var t in tids.Keys) tgkill(pid, t, SIGRTMIN);
+                    Thread.Sleep(0);
+                }
+            }) { IsBackground = true }.Start();
         Task.WaitAll(workers);
-        Console.WriteLine($"SIGPROBE ✓ 活过 15 秒:{calls} 次进 Go,{tids.Count} 个线程被打信号");
+        Console.WriteLine($"SIGPROBE ✓ 活过 15 秒:{calls} 次进 Go,{tids.Count} 个线程{(spray ? "被打信号" : "(只有 GC 压力)")}");
         return true;
     }
 }

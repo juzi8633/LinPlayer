@@ -18,6 +18,6 @@ func SetSurface(kind int32, handle int64, width, height int32) int32 {
 // waitRenderCtx 用它把起播挡到就绪之后(SPEC §7.2 约束 6)。
 func videoOutReady() bool { return rctxSet.Load() }
 
-// platformOptions:桌面的平台专属选项分操作系统给(见 desktopOptions)。追加在 baseOptions
-// 之后,baseOptions 本身一字不变,它那条测试照样钉得住。
-func platformOptions() [][2]string { return desktopOptions() }
+// platformOptions:桌面没有平台专属的 mpv 选项。返回 nil 让 ensureMpv 的
+// 追加是空操作 —— baseOptions 的输出因此一字不变,它那条测试照样钉得住。
+func platformOptions() [][2]string { return nil }
