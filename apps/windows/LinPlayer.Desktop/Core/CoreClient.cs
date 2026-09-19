@@ -13,39 +13,31 @@ internal static partial class Native
 {
     private const string Lib = "lpcore";
 
-    // 每个入口先过 AltStack.Ensure():Linux 上从没进过 Go 的线程一进去就会被装上 32KB 的信号栈(issue #65)。
-    // 所以导入一律私有,外面只能走下面这层 —— 以后加导出也绕不过去
-    public static int lp_abi_version() { AltStack.Ensure(); return AbiVersion(); }
-    public static int lp_init(string configJson) { AltStack.Ensure(); return Init(configJson); }
-    public static int lp_call(long seq, string cmd, string argsJson) { AltStack.Ensure(); return Call(seq, cmd, argsJson); }
-    public static void lp_cancel(long seq) { AltStack.Ensure(); Cancel(seq); }
+    [LibraryImport(Lib)] internal static partial int lp_abi_version();
+
+    [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial int lp_init(string configJson);
+
+    [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial int lp_call(long seq, string cmd, string argsJson);
+
+    [LibraryImport(Lib)] internal static partial void lp_cancel(long seq);
 
     // 返回的是核心层用 malloc 分配的指针 —— **必须 lp_free**(SPEC §5.3)。
     // 所以这里故意返回 nint 而不是 string:让 string 编组自动释放会用错分配器,
     // 表现是随机崩溃,而且崩在与它无关的地方。
-    public static nint lp_next_event(int timeoutMs) { AltStack.Ensure(); return NextEvent(timeoutMs); }
-    public static void lp_free(nint p) { AltStack.Ensure(); Free(p); }
-    public static void lp_shutdown() { AltStack.Ensure(); Shutdown(); }
-    public static int lp_gl_init(nint getProcAddress, nint ctx) { AltStack.Ensure(); return GlInit(getProcAddress, ctx); }
-    public static int lp_gl_wants_redraw() { AltStack.Ensure(); return GlWantsRedraw(); }
-    public static int lp_gl_render(uint fbo, int w, int h, int flipY) { AltStack.Ensure(); return GlRender(fbo, w, h, flipY); }
-    public static void lp_gl_swapped() { AltStack.Ensure(); GlSwapped(); }
-    public static void lp_gl_uninit() { AltStack.Ensure(); GlUninit(); }
+    [LibraryImport(Lib)] internal static partial nint lp_next_event(int timeoutMs);
 
-    [LibraryImport(Lib, EntryPoint = "lp_abi_version")] private static partial int AbiVersion();
-    [LibraryImport(Lib, EntryPoint = "lp_init", StringMarshalling = StringMarshalling.Utf8)]
-    private static partial int Init(string configJson);
-    [LibraryImport(Lib, EntryPoint = "lp_call", StringMarshalling = StringMarshalling.Utf8)]
-    private static partial int Call(long seq, string cmd, string argsJson);
-    [LibraryImport(Lib, EntryPoint = "lp_cancel")] private static partial void Cancel(long seq);
-    [LibraryImport(Lib, EntryPoint = "lp_next_event")] private static partial nint NextEvent(int timeoutMs);
-    [LibraryImport(Lib, EntryPoint = "lp_free")] private static partial void Free(nint p);
-    [LibraryImport(Lib, EntryPoint = "lp_shutdown")] private static partial void Shutdown();
-    [LibraryImport(Lib, EntryPoint = "lp_gl_init")] private static partial int GlInit(nint getProcAddress, nint ctx);
-    [LibraryImport(Lib, EntryPoint = "lp_gl_wants_redraw")] private static partial int GlWantsRedraw();
-    [LibraryImport(Lib, EntryPoint = "lp_gl_render")] private static partial int GlRender(uint fbo, int w, int h, int flipY);
-    [LibraryImport(Lib, EntryPoint = "lp_gl_swapped")] private static partial void GlSwapped();
-    [LibraryImport(Lib, EntryPoint = "lp_gl_uninit")] private static partial void GlUninit();
+    [LibraryImport(Lib)] internal static partial void lp_free(nint p);
+    [LibraryImport(Lib)] internal static partial void lp_shutdown();
+
+    [LibraryImport(Lib)] internal static partial int lp_set_surface(int kind, long handle, int w, int h);
+
+    [LibraryImport(Lib)] internal static partial int lp_gl_init(nint getProcAddress, nint ctx);
+    [LibraryImport(Lib)] internal static partial int lp_gl_wants_redraw();
+    [LibraryImport(Lib)] internal static partial int lp_gl_render(uint fbo, int w, int h, int flipY);
+    [LibraryImport(Lib)] internal static partial void lp_gl_swapped();
+    [LibraryImport(Lib)] internal static partial void lp_gl_uninit();
 
     /// <summary>把 lpcore.dll 从指定路径预载,之后所有 P/Invoke 都命中它。</summary>
     public static void Preload(string dll)
@@ -125,6 +117,7 @@ public sealed class CoreClient : ILinPlayerCommands, IDisposable
 
         // ABI 先协商再 init(SPEC §5.0)。旧库里没有这个符号 —— **那件事本身就是信号**。
         var abi = Native.lp_abi_version();
+        GcSignal.Fix(); // Go 运行时这时已初始化完、刚改过信号表 —— issue #65
         if (abi != LinPlayerAbi.Version)
             throw new InvalidOperationException(
                 $"核心层 ABI 是 {abi},本程序按 {LinPlayerAbi.Version} 编译 —— 版本对不上,不能继续");
