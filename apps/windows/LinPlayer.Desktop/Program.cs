@@ -206,6 +206,11 @@ internal static class Program
            这里只把根传给核心层,**路径的唯一出口在 core/paths**,UI 侧不自己拼。 */
         var dataDir = Path.Combine(exeDir, "userdata");
         var dll = Path.Combine(exeDir, OperatingSystem.IsWindows() ? "lpcore.dll" : "liblpcore.so");
+        if (Environment.GetEnvironmentVariable("LP_SIGPROBE") is { Length: > 0 })
+        {
+            Environment.ExitCode = SigProbe.Run(dll, Version) ? 0 : 1;
+            return;
+        }
         if (Cli.Is(args))
         {
             Environment.ExitCode = Cli.Run(args, dll, dataDir, Version);

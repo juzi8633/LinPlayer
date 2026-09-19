@@ -234,6 +234,15 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb gdb
       - name: Unzip
         run: unzip -q dl/*.zip -d stage
+      # issue #65 真凶:进过 Go 的线程只剩 32KB 信号栈,CoreCLR 的 GC 暂停信号一落上去就 SIGSEGV。
+      # 先证明探针有牙(关掉修复必须崩),再证明修复有效
+      - name: Signal stack probe
+        working-directory: stage/LinPlayer
+        run: |
+          RC=0; LP_NO_ALTSTACK=1 LP_SIGPROBE=1 timeout 60 ./LinPlayer || RC=$?
+          if [ "$RC" -lt 128 ] || [ "$RC" = 124 ]; then echo "关掉修复却没崩(退出码 $RC):探针测不出这个死法"; exit 1; fi
+          echo "对照组:关掉修复,崩了(退出码 $RC)"
+          LP_SIGPROBE=1 timeout 60 ./LinPlayer
       - name: Open a window
         run: bash scripts/smoke-linux-gui.sh stage/LinPlayer
       # 软件渲染是崩在显卡驱动时唯一的退路(issue #65)。没人验过的退路等于没有退路
