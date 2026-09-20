@@ -51,7 +51,7 @@
 | 桌面 JVM 跑安卓 jar:用公开配置的 jar 源跑 home/search,报告跑通率与组件体积 | ① 之后 | 桌面 jar 支持 / 改「仅安卓」 | D351 |
 | ~~Android 动态加载 GeckoView~~ **已做,结论:不做**,见下 | ② 前 | 改成「缺 WebView 就明说不可用 + 指路装系统 WebView」(D560) | `11-geckoview-spike.md` |
 | ~~`<Player>` 视频层区域跟随~~ **已做**,见下 | ② | 桌面视频不是子窗口,`<Player>` 可做;约束是 render context 单例(D561) | `10-player-region-spike.md` |
-| 视频壁纸实现方式(第二个轻量 libmpv 实例 / 平台原生播放器) | ⑤ | 视频壁纸 | D443 |
+| ~~视频壁纸实现方式~~ **已做,结论:安卓做、桌面 2.0.0 不做**,见下 | ⑤ | 安卓 ExoPlayer + 独立 SurfaceView;桌面降级静态图 + Canvas/着色器(D564) | `12-video-wallpaper-spike.md` |
 
 spike 结论写进 `docs/research/plugins-v2/`,并回填本文与 DECISIONS.md。
 
@@ -94,3 +94,16 @@ TVBox 侧只有嗅探(D59)依赖它,jar / drpy / 苹果CMS / type4 四类源都�
 - 新门禁必须先红:反向注入真 bug 看它红。
 - 新增门禁:`.d.ts` ↔ Go 注册骨架比对(D514)、锚点/路由名清单 ↔ 代码登记比对(6.5)、mpv 脱敏清单测试(9.1)、manifest schema ↔ `lp check` 一致。
 - **红线**:任何 IP、域名、端口、账号、密钥、token 不进提交;测试站点、镜像前缀、自定义域名一律放被忽略的本地文件或 CI secret。
+
+### 已完成:视频壁纸(2026-09-21,`12-video-wallpaper-spike.md`)
+
+**安卓能做、桌面 2.0.0 不做。**
+
+安卓那半是现成的:`media3-exoplayer` 已经在依赖里,而且和 mpv 是**并存可切**的两套内核,
+壁纸用它不占播放那一路;垫图层用 `SurfaceView`(独立合成层),放在内容下面。
+
+桌面那半被三件事叠着否掉:一个进程只能有一条 GL 通道(`UI_PC.md:360` 记的实测:连开两条会卡死)、
+核心层的 render context 是**全局单例不是句柄**(`core/player/player.go:179`)、
+`lp_gl_uninit` 无条件销毁。这正是 D561 给 `<Player>` 标出来的同一件地基 ——
+壁纸是「一直在后台放着」的东西,比 `<Player>` 更早撞上它。桌面降级成静态图 +
+Canvas/着色器动态壁纸(SDK 里都已经有),挑了视频壁纸包时显示封面帧并说清这一端只放第一帧。
