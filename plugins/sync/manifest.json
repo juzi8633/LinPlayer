@@ -1,0 +1,45 @@
+{
+  "$schema": "../../docs/plugin-system/api/manifest.schema.json",
+  "id": "linplayer/sync",
+  "name": "Trakt / Bangumi 同步",
+  "version": "0.1.0",
+  "description": "把看过的进度同步到 Trakt 与 Bangumi:播放时 scrobble、看完标记、详情页显示同步状态、收藏与集数进度管理。账号在宿主里连,插件只借用不接触 token。",
+  "minAppVersion": "1.1.0",
+  "license": "AGPL-3.0",
+  "activation": { "load": "startup", "lifetime": "resident" },
+  "contributes": {
+    "pages": [
+      { "id": "manage", "title": "同步与收藏" }
+    ],
+    "anchors": [
+      { "anchor": "detail.ratings", "mode": "after", "block": "detailStatus" }
+    ],
+    "settingsSections": [
+      { "anchor": "settings.playback.general", "title": "Trakt / Bangumi 同步", "block": "settingsBlock" }
+    ],
+    "settings": [
+      {
+        "key": "scrobble",
+        "type": "toggle",
+        "title": "播放时同步进度",
+        "description": "Trakt 用 scrobble(开始 / 暂停 / 停止),Bangumi 在看完阈值时标单集。",
+        "default": true
+      },
+      {
+        "key": "threshold",
+        "type": "number",
+        "title": "看完阈值(百分比)",
+        "description": "播到这个百分比算看完。Trakt 那边 ≥80% 由 Trakt 自己判,这里只管 Bangumi 标单集。",
+        "default": 80
+      },
+      {
+        "key": "servers",
+        "type": "text",
+        "title": "只同步这几台服务器",
+        "description": "留空 = 全部。多台用逗号隔开,填服务器名字。",
+        "default": ""
+      }
+    ]
+  },
+  "main": "dist/main.js"
+}

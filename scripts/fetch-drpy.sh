@@ -57,4 +57,14 @@ for row in "${FILES[@]}"; do
   mv "$f.tmp" "$f"
   echo "  ✓ $dst"
 done
-[ $bad = 0 ] && echo "drpy 引擎与依赖库齐全。" || exit 1
+[ $bad = 0 ] || exit 1
+
+# 规则编辑器也要**自己带一份**(D17 SPEC 17.6:不去调 TVBox 插件)。
+# 复制而不是让它引用 TVBox 的目录:打包时各包各自带,装了编辑器没装 TVBox 也能用。
+MIRROR="$ROOT/plugins/rule-editor/assets/drpy"
+rm -rf "$MIRROR"
+mkdir -p "$(dirname "$MIRROR")"
+cp -r "$DEST" "$MIRROR"
+echo "  ✓ 同一份复制给 plugins/rule-editor"
+
+echo "drpy 引擎与依赖库齐全。"

@@ -39,6 +39,12 @@ ANDROID = [
     ROOT / "apps/android/app/src/main/kotlin/xyz/linplayer/app/ui/plugin/PluginComponents.kt",
     ROOT / "apps/android/app/src/main/kotlin/xyz/linplayer/app/ui/plugin/PluginSurface.kt",
 ]
+
+# token 表有**两份用处**,要分开查:一份是报给核心层的(plugin.setEnv),
+# 一份是渲染器解 `token:名字` 用的。合成一个文件集去搜的话,
+# 只要报的那一份里有这个名字,渲染器认不认得都看不出来 —— 实测注入过,门禁不红。
+DESKTOP_ENV = [ROOT / "apps/windows/LinPlayer.Desktop/Views/PluginShell.cs"]
+ANDROID_ENV = [ROOT / "apps/android/app/src/main/kotlin/xyz/linplayer/app/plugin/PluginEnv.kt"]
 RT_UI = ROOT / "core/plugin/rt/ui.go"
 
 # BaseProps / PressProps / FocusProps 这几个共用包里的属性名(plugin-sdk.d.ts 第 1209 行一带)
@@ -74,7 +80,12 @@ def components():
 # 走不到属性流的:children / 子元素槽由 insert op 送(壳按父子关系摆),
 # key 被 Preact 自己吃掉,压根不进 ops。
 SKIP_TYPES = ("Child",)
-SKIP_PROPS = {"children", "key"}
+# children / Child 槽由 insert op 送(壳按父子关系摆),key 被 Preact 自己吃掉;
+# 下面这两个在**JS 那一侧**就消费掉了,壳从来收不到它们:
+#   draw —— Canvas 在渲染期跑它,发给壳的是录好的 cmds(D104)
+#   renderItem —— 虚拟列表只把窗口内那一段渲成子节点发过去(D134)
+#   animate —— 逐帧由 JS 这边排(D105),壳收到的只是一帧又一帧的 cmds
+SKIP_PROPS = {"children", "key", "draw", "renderItem", "animate"}
 
 # 明确不接、而且在界面上**说清楚了**的。留在这里是为了它可被审 ——
 # 从判据里悄悄删掉和静默忽略是一回事。
@@ -91,21 +102,77 @@ EXEMPT_PROPS = {
 }
 
 
+def signature(dts, at):
+    """从 `(p:` 的左括号扫到配对的右括号。
+
+    不能用 `[^)]*` 那种写法:签名里有 `() => void` 这类嵌套括号,
+    正则在第一个右括号就截断,后面的属性一条都抽不到 ——
+    实测 41 个组件里有 18 个这么被漏掉,而门禁照样打印「属性都有人接」。
+    """
+    depth, i = 0, at
+    while i < len(dts):
+        if dts[i] == "(":
+            depth += 1
+        elif dts[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return dts[at + 1:i]
+        i += 1
+    return ""
+
+
+def top_level_props(sig):
+    """只取**属性包自己**那一层的键名。
+
+    回调参数里的对象字面量(`onScroll?: (e: { x; y }) => void`)不是组件属性,
+    算进去的话门禁会一直报 `ScrollView.x` 这种根本不存在的东西,
+    而人会开始习惯性忽略它 —— 那比没有门禁更糟。
+    做法:逐字符扫,只在「属性包大括号里、且不在任何括号里」时收键名。
+    """
+    names, depth, paren, buf, key = [], 0, 0, "", ""
+    for ch in sig:
+        if ch == "(":
+            paren += 1
+        elif ch == ")":
+            paren -= 1
+        elif ch == "{":
+            depth += 1
+            buf = ""
+            continue
+        elif ch == "}":
+            if depth == 1 and paren == 0 and key:
+                names.append((key, buf.strip()))
+            depth -= 1
+            key, buf = "", ""
+            continue
+        if depth == 1 and paren == 0:
+            if ch == ":" and not key:
+                m = re.search(r"(\w+)\??$", buf.strip())
+                key = m.group(1) if m else ""
+                buf = ""
+            elif ch in ";,":
+                if key:
+                    names.append((key, buf.strip()))
+                key, buf = "", ""
+            else:
+                buf += ch
+    if key:
+        names.append((key, buf.strip()))
+    return names
+
+
 def component_props(dts):
-    """组件名 → 它声明的属性名。取的是 `(p: ... & { a: T; b?: U })` 里的那些。"""
+    """组件名 → 它声明的属性名。"""
     out = {}
-    for m in re.finditer(r"export declare function ([A-Z]\w*)\(p: ([^)]*)\): LpElement", dts):
-        name, sig = m.group(1), m.group(2)
+    for m in re.finditer(r"export declare function ([A-Z]\w*)\(p: ", dts):
+        name = m.group(1)
         if name in EXEMPT:
             continue
-        names = []
+        sig = signature(dts, m.end() - 4)
+        names = [k for k, typ in top_level_props(sig) if typ.strip() not in SKIP_TYPES]
         for bundle, props in BUNDLES.items():
             if bundle in sig:
                 names += props
-        for lit in re.findall(r"\{([^{}]*)\}", sig):
-            for prop, typ in re.findall(r"(\w+)\??:\s*([^;]+)", lit):
-                if typ.strip() not in SKIP_TYPES:
-                    names.append(prop)
         out[name] = sorted(set(names) - SKIP_PROPS)
     return out
 
@@ -152,6 +219,33 @@ def main():
                         % (name, len(missing), " ".join(missing)))
         else:
             print("  ✓ %s:声明的组件属性都有人接" % name)
+
+    # 2.5 主题 token 名(SPEC 20.4,D556):两端都要认得那一套名字。
+    #     ☠ 桌面查不到 token 时返回的是**透明** —— 那段文字整个看不见,不报错;
+    #       安卓回落默认色。而 SDK 里写的是 `token:color.ink2`,
+    #       壳只认旧的 `Ink2` 的话,示例页自己就踩上了。
+    spec = (ROOT / "docs/plugin-system/spec/20-appendix.md").read_text(encoding="utf-8")
+    tokens = sorted(set(re.findall(
+        r"`(color\.\w+|radius\.\w+|space\.\w+|font\.size\.\w+|motion\.duration\.\w+)`", spec)))
+    if len(tokens) < 20:
+        fail.append("从 SPEC 20.4 只读到 %d 个 token 名 —— 那张表的写法变了,这一关等于没跑" % len(tokens))
+    else:
+        for name, text in (("桌面渲染器", desk_text), ("安卓渲染器", andr_text)):
+            miss = [t for t in tokens if ('"%s"' % t) not in text]
+            if miss:
+                fail.append("%s认不得这 %d 个主题 token(SPEC 20.4 D556),样式里写 token:名字 会落空:\n    %s"
+                            % (name, len(miss), " ".join(miss)))
+            else:
+                print("  ✓ %s:%d 个主题 token 都认得" % (name, len(tokens)))
+        # 报给核心层的那一侧要**引用**渲染器那张表,不是自己再抄一份 ——
+        # 抄一份的话改一个名字只会有一处失效,而那一处的表现只是「颜色不对」
+        for name, text, ref in (("桌面", read(DESKTOP_ENV), "PluginTokens"),
+                                ("安卓", read(ANDROID_ENV), "TOKEN_COLOR_NAMES")):
+            if ref not in text:
+                fail.append("%s报给核心层的那份 token 表没有引用渲染器的 %s —— "
+                            "两张表会分叉,而分叉的表现只是「颜色不对」" % (name, ref))
+            else:
+                print("  ✓ %s:报给核心层的表和渲染器用的是同一张" % name)
 
     # 3. 动效(SPEC 7.6)
     for key in ("transition", "animation"):

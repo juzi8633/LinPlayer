@@ -21,10 +21,10 @@ export function KV(props: { label: string; value: string }) {
 }
 
 /** 一条记录摊成两列。左边可以很长,右边是状态。 */
-function Line(props: { left: string; right?: string; tone?: string }) {
+function Line(props: { left: string; right?: string; tone?: string; lines?: number }) {
   return (
     <View style={{ direction: 'row', justify: 'between', align: 'start', gap: 10, paddingTop: 2, paddingBottom: 2 }}>
-      <Text style={{ color: props.tone || 'token:color.ink', grow: 1, maxLines: 2 }}>{props.left}</Text>
+      <Text style={{ color: props.tone || 'token:color.ink', grow: 1, maxLines: props.lines || 2 }}>{props.left}</Text>
       {props.right ? <Text style={{ color: 'token:color.ink3' }}>{props.right}</Text> : null}
     </View>
   )
@@ -71,9 +71,16 @@ export function LogsBlock(props: { plugin: string; tick: number }) {
         <VirtualList
           style={{ height: 320 }}
           itemCount={shown.length}
-          itemHeight={44}
+          itemHeight={shown.some((r: any) => r.level === 'error') ? 120 : 44}
           renderItem={(i: number) => (
-            <Line left={hhmmss(shown[i].ts) + '  ' + shown[i].msg} right={shown[i].level} tone={LEVEL_TONE[shown[i].level]} />
+            // 报错那一条带着栈(宿主已按 sourcemap 映射回 TS 行号,D81),
+            // 只给两行的话最有用的那几行正好被截掉
+            <Line
+              left={hhmmss(shown[i].ts) + '  ' + shown[i].msg}
+              right={shown[i].level}
+              tone={LEVEL_TONE[shown[i].level]}
+              lines={shown[i].level === 'error' ? 8 : 2}
+            />
           )}
         />
       )}

@@ -17,6 +17,7 @@ packaging/
 
 # TVBox 插件内置的 drpy 引擎与依赖库:scripts/fetch-drpy.sh 按 sha256 现拉(上游代码里有第三方域名/IP/样例密钥,不入库)
 plugins/tvbox/assets/drpy/
+plugins/rule-editor/assets/drpy/
 
 # libmpv 大二进制(117MB dll):本地构建输入,不入普通库;CI 现拉(见 .github/workflows/build.yml)
 third_party/libmpv/*.dll

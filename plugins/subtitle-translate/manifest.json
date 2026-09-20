@@ -1,0 +1,49 @@
+{
+  "$schema": "../../docs/plugin-system/api/manifest.schema.json",
+  "id": "linplayer/subtitle-translate",
+  "name": "字幕翻译",
+  "version": "0.1.0",
+  "description": "把当前字幕翻成你看得懂的语言:支持 OpenAI 兼容接口、Anthropic、百度翻译(用你自己的 key)。没有字幕时可以先用 Whisper 转写。结果按「源字幕 + 引擎 + 语言 + 排版」缓存,同一集看第二遍不再花额度。",
+  "minAppVersion": "1.1.0",
+  "license": "AGPL-3.0",
+  "activation": { "load": "lazy", "lifetime": "idle" },
+  "contributes": {
+    "playerPanels": [
+      { "id": "panel", "title": "字幕翻译" }
+    ],
+    "commands": [
+      { "id": "translateNow", "title": "翻译当前字幕" }
+    ],
+    "settings": [
+      { "key": "engine", "type": "select", "title": "翻译引擎", "default": "openai",
+        "options": [
+          { "value": "openai", "label": "OpenAI 兼容接口" },
+          { "value": "anthropic", "label": "Anthropic" },
+          { "value": "baidu", "label": "百度翻译" }
+        ] },
+      { "key": "target", "type": "select", "title": "翻成", "default": "zh-Hans",
+        "options": [
+          { "value": "zh-Hans", "label": "简体中文" },
+          { "value": "zh-Hant", "label": "繁體中文" },
+          { "value": "en", "label": "English" },
+          { "value": "ja", "label": "日本語" }
+        ] },
+      { "key": "source", "type": "text", "title": "原文语言", "description": "留空 = 自动判断。", "default": "" },
+      { "key": "layout", "type": "select", "title": "排版", "default": "bilingual",
+        "options": [
+          { "value": "bilingual", "label": "双语(译文在上)" },
+          { "value": "translated", "label": "只译文" },
+          { "value": "source", "label": "只原文" }
+        ] },
+      { "key": "openai_base", "type": "text", "title": "OpenAI 接口地址", "description": "兼容接口的根地址,不要带 /chat/completions。", "default": "" },
+      { "key": "openai_model", "type": "text", "title": "OpenAI 模型名", "default": "" },
+      { "key": "openai_key", "type": "password", "title": "OpenAI API key" },
+      { "key": "anthropic_base", "type": "text", "title": "Anthropic 接口地址", "default": "" },
+      { "key": "anthropic_model", "type": "text", "title": "Anthropic 模型名", "default": "" },
+      { "key": "anthropic_key", "type": "password", "title": "Anthropic API key" },
+      { "key": "baidu_appid", "type": "text", "title": "百度翻译 appid", "default": "" },
+      { "key": "baidu_key", "type": "password", "title": "百度翻译密钥" }
+    ]
+  },
+  "main": "dist/main.js"
+}
