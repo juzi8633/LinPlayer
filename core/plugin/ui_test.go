@@ -423,7 +423,10 @@ func repoRoot(t *testing.T) string {
 		}
 		d = filepath.Dir(d)
 	}
-	t.Skip("找不到仓库根")
+	/* ☠ 找不到仓库根是**环境坏了**,不是「这一条不适用」。
+	   t.Skip 的话,一批依赖仓库文件的判据会在 CI 上集体静默跳过,
+	   而输出里只有一行 SKIP —— 没人会去看为什么。 */
+	t.Fatal("找不到仓库根(往上六层都没有 go.mod)—— 依赖仓库文件的判据全都跑不了")
 	return ""
 }
 

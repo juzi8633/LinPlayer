@@ -56,10 +56,19 @@ func TestSourceMap报错栈映射回TS行号(t *testing.T) {
 
 // 映射本身:拿仓库里真的那份 sourcemap,查一个已知位置。
 func TestSourceMap能把打包位置换成源位置(t *testing.T) {
+	/* ☠ 不许「没 build 过就跳过」。`dist/` 是 gitignore 的,于是在干净检出
+	   与 CI 上这条**永远跳过** —— 而它量的正是 D81:报错栈里的
+	   `main.js:1:2931` 能不能换回作者写的 `src/panel.tsx:88:12`。
+	   跳过的那一版里,sourcemap 产出来了却没有消费方,没人会知道。
+	   改成**当场编一次**:Build 是 lp build 用的同一条路。 */
 	root := repoRoot(t)
-	js := filepath.Join(root, "plugins", "devtools", "dist", "main.js")
-	if _, err := os.Stat(js + ".map"); err != nil {
-		t.Skip("还没 lp build 过")
+	dir := filepath.Join(root, "plugins", "devtools")
+	res, err := Build(dir)
+	if err != nil {
+		t.Fatalf("编 plugins/devtools 失败: %v", err)
+	}
+	if len(res.SourceMap) == 0 {
+		t.Fatal("编出来了但没有 sourcemap —— D81 的那条路从源头就断了")
 	}
 	paths.SetRoot(t.TempDir())
 	if _, err := config.Load(); err != nil {
@@ -68,7 +77,7 @@ func TestSourceMap能把打包位置换成源位置(t *testing.T) {
 	h := ResetForTest()
 	h.Start("windows", "2.0.0")
 	t.Cleanup(h.Shutdown)
-	if _, err := h.DevLoad(filepath.Join(root, "plugins", "devtools")); err != nil {
+	if _, err := h.DevLoad(dir); err != nil {
 		t.Fatal(err)
 	}
 	l, err := h.get("linplayer/devtools", "test")
