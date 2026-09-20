@@ -315,6 +315,14 @@ type Prefs struct {
 	// CalendarNotify 追剧日历开播提醒:追的剧有新集发系统通知(D366)。默认开。
 	CalendarNotify bool `json:"calendar_notify"`
 
+	// CalendarUnlockOrder 追剧日历的解锁凭据:校验通过的爱发电订单号(D200)。
+	//
+	// ★ 存订单号而不是一个 bool:软锁的门槛就在「你手里有一个真订单号」,
+	//   存 bool 的话任何人改一次配置文件就解锁了,连门槛都不剩。
+	// ★ 非空 = 已解锁,**不再联网重校**(D200「只在解锁时校验一次」)——
+	//   每次进页都校验的后果是断网时付过钱的人也看不了。
+	CalendarUnlockOrder string `json:"calendar_unlock_order,omitempty"`
+
 	// EpisodeDesc 选集倒序显示的剧(D332):键 = 服务器#剧 id。只影响显示,连播仍按正序。
 	EpisodeDesc map[string]bool `json:"episode_desc,omitempty"`
 

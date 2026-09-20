@@ -45,6 +45,7 @@ import xyz.linplayer.app.tv.kit.CardPoster
 import xyz.linplayer.app.tv.kit.PanelItem
 import xyz.linplayer.app.tv.kit.ScopeChips
 import xyz.linplayer.app.tv.kit.Skel
+import xyz.linplayer.app.tv.kit.TvButton
 import xyz.linplayer.app.tv.kit.TvC
 import xyz.linplayer.app.tv.kit.TvDim
 import xyz.linplayer.app.tv.kit.TvSp
@@ -54,6 +55,7 @@ import xyz.linplayer.app.tv.kit.bleed
 import xyz.linplayer.app.tv.kit.contentArea
 import xyz.linplayer.app.tv.kit.tvType
 import xyz.linplayer.app.ui.pages.args
+import xyz.linplayer.app.ui.pages.calendarUnlocked
 import xyz.linplayer.app.ui.pages.j
 import xyz.linplayer.app.ui.pages.jsonArrayOf
 import xyz.linplayer.app.ui.pages.map
@@ -178,7 +180,16 @@ private fun CalendarPane(app: AppState, src: Int, day: Int, today: Int, onDay: (
     var login by remember(src) { mutableStateOf<Boolean?>(null) }
     // 索引 → 媒体库命中(D366)。放送表先画出来再去对库:对得慢不该拖住整页
     var hits by remember(src) { mutableStateOf<Map<String, JsonObject>>(emptyMap()) }
-    LaunchedEffect(src) {
+    // null = 还没问到:问到之前既不画门也不拉数据,否则付过钱的人每次进页都闪一下门
+    var unlocked by remember { mutableStateOf<Boolean?>(null) }
+    var sponsorUrl by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        launch { sponsorUrl = runCatching { app.call("system.afdianSponsorUrl") }.getOrNull().obj().str("url") }
+        unlocked = calendarUnlocked(app)
+    }
+    LaunchedEffect(src, unlocked) {
+        // 未解锁**连数据都不拉**(D200):拉了再盖一层门,等于白花一次上游配额
+        if (unlocked != true) return@LaunchedEffect
         launch {
             login = runCatching { app.call(if (src == 0) "sync.bangumiAccount" else "sync.traktAccount") }.getOrNull()
                 .let { it != null && it !is kotlinx.serialization.json.JsonNull && it.obj()?.isNotEmpty() == true }
@@ -197,6 +208,7 @@ private fun CalendarPane(app: AppState, src: Int, day: Int, today: Int, onDay: (
         hits = runCatching { app.call("sync.calendarLibrary", j("entries" to q)).obj() }.getOrNull()
             ?.mapNotNull { (k, v) -> v.obj()?.let { k to it } }?.toMap().orEmpty()
     }
+    if (unlocked == false) { CalendarGateTv(sponsorUrl) { unlocked = true }; return }
     val name = if (src == 0) "Bangumi" else "Trakt"
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -240,6 +252,49 @@ private fun EntryGrid(block: Block<List<Entry>>, rank: Boolean, keyPrefix: Strin
             itemsIndexed(block.value, key = { i, e -> "$i.${e.title}" }) { i, e ->
                 CardPoster(cover = { TvImage(e.image) }, title = e.title, sub = e.sub, rank = if (rank) e.rank else 0,
                     modifier = Modifier.memo("$keyPrefix.$i"), onClick = { open(e) })
+            }
+        }
+    }
+}
+
+/**
+ * 未解锁的整页门(SPEC 18.1 D200)。TV 上敲订单号靠遥控器软键盘,所以**先给二维码**:
+ * 手机扫码去赞助页,订单号再在这里输一次 —— 输一次总比在电视上找赞助页强。
+ */
+@Composable
+private fun CalendarGateTv(sponsorUrl: String?, onUnlocked: () -> Unit) {
+    val app = LocalApp.current
+    val scope = rememberCoroutineScope()
+    val t = tvType
+    var order by remember { mutableStateOf("") }
+    var err by remember { mutableStateOf<String?>(null) }
+    Row(horizontalArrangement = Arrangement.spacedBy(TvSp.x24)) {
+        Column(Modifier.width(360.dp)) {
+            TvText("追剧日历 · 赞助解锁", t.headline, TvC.fg, weight = TvW.semi)
+            Spacer(Modifier.height(TvSp.x8))
+            TvText("这是付费功能。在爱发电赞助后,用订单号解锁本机。", t.body, TvC.fg2, maxLines = 3)
+            Spacer(Modifier.height(TvSp.x16))
+            TvTextField(order, { order = it; err = null }, "爱发电订单号", 360.dp,
+                Modifier.memo("cal.gate.order", initial = true))
+            Spacer(Modifier.height(TvSp.x12))
+            TvButton("解锁", modifier = Modifier.memo("cal.gate.ok"), onClick = {
+                if (order.isBlank()) return@TvButton
+                scope.launch {
+                    val r = runCatching { app.call("system.afdianVerify", args("order_no" to order.trim())).obj() }.getOrNull()
+                    // 每一种失败都要变成一句人话:核心层为此不抛错,专门回 reason
+                    if (r.bool("valid")) {
+                        app.toast("已解锁:${r.str("plan_title").orEmpty()} ${r.str("amount").orEmpty()}".trim())
+                        onUnlocked()
+                    } else err = r.str("reason") ?: "订单号无效"
+                }
+            })
+            err?.let { Spacer(Modifier.height(TvSp.x8)); TvText(it, t.meta, TvC.bad, maxLines = 2) }
+        }
+        sponsorUrl?.let { u ->
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                QrImage(u, 180.dp)
+                Spacer(Modifier.height(TvSp.x8))
+                TvText("手机扫码去赞助", t.meta, TvC.fg3)
             }
         }
     }

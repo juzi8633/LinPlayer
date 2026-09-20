@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"linplayer/core/bus"
+	"linplayer/core/config"
 )
 
 // AfdianVerifyResult 校验结果。
@@ -61,12 +62,29 @@ func AfdianVerify(ctx context.Context, orderNo string) AfdianVerifyResult {
 	return r
 }
 
+// unlockCalendar 记下解锁凭据(D200:只在解锁时校验一次)。
+//
+// 存失败**不影响本次解锁结果** —— 用户这一刻确实付过钱、订单号也确实有效,
+// 因为写配置失败就退回上锁状态解释不通;下次启动再让他输一遍。
+func unlockCalendar(orderNo string) {
+	c := config.Current()
+	p := c.PrefsOf()
+	p.CalendarUnlockOrder = orderNo
+	if c.SetPrefs(p) == nil {
+		_ = c.Save()
+	}
+}
+
 func registerAfdian() {
 	// ★ 命令名在 `system.*` 下(契约如此),但实现留在 sync 包 ——
 	//   代理地址、共享密钥、postProxy 全在这儿。为了对齐命名把这些搬去 system
 	//   等于把注入的密钥再多铺一个包。
 	bus.Register("system.afdianVerify", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
 		s, _ := a["order_no"].(string)
-		return AfdianVerify(ctx, s), nil
+		r := AfdianVerify(ctx, s)
+		if r.Valid {
+			unlockCalendar(strings.TrimSpace(s))
+		}
+		return r, nil
 	})
 }

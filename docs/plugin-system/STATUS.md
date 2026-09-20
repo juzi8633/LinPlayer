@@ -42,16 +42,21 @@
 | 追剧日历页 | ✅ | ✅ | ✅ |
 | 「已入库 / 可播」(D366) | ✅ | ✅ | ✅ `tv/DiscoverPage.kt` `CalendarPane`,命中直接进详情/起播 |
 | 开播提醒(后台通知) | ⚠️ 已接但只在程序运行时 | ✅ `CalendarWorker.kt` | ✅ 同左 |
-| **付费解锁:订单号校验** | ❌ | ❌ | ❌ |
+| **付费解锁:订单号校验** | ✅ `CalendarPage.cs` `Start/ShowGate` | ✅ `DiscoverPages.kt` `CalendarGate` | ✅ `tv/DiscoverPage.kt` `CalendarGateTv`(带赞助二维码) |
 
 桌面开播提醒这条**是我上一版写错了**:`Views/AppJobs.cs:34` 真在调 `sync.calendarDue`,
 挂点在 `MainWindow.axaml.cs:1537` 的 `AppJobs.Start(_core)`,启动 1 分钟后一次、之后每 30 分钟。
 差的是**「应用没开时也提醒」**:桌面整个没有托盘(`grep -rn "TrayIcon" apps/windows` 无果),
 而 D502 写的就是「桌面应用退到托盘时也跑」—— 托盘本身还没建,所以这半条挂在 D502 上,不属于阶段 ①。
 
-付费这条:核心层 `core/sync/afdian.go:41` + 命令 `system.afdianVerify` 都在,**三端无人调用**,日历现在是免费的。
-`6b290d80^` 里也没有这个界面 —— 是历史欠账,不是本轮回归,但 SPEC 18.1 写了要有。
-另:手机 `DiscoverPages.kt:597` 文案承诺「赞助后可解锁『我追的番』过滤」,而该过滤控件不存在。
+付费这条 **2026-09-20 已接上三端**:`system.afdianVerify` 校验通过后把订单号落进核心层偏好
+`calendar_unlock_order`(`core/sync/afdian.go` `unlockCalendar`,先红后绿测试
+`sync/library_test.go` `TestUnlockCalendar_凭据要落盘`),三端共用、只在解锁时校验一次。
+未解锁**锁整页、连数据都不拉**(D551)。
+查下来 `system.afdianVerify` 在**任何提交、任何端都没被调用过**(`git log --all -S afdianVerify -- apps/` 空);
+旧实现在已删的 Rust 栈 `rust-final:ui/desktop/pages/CalendarPage.tsx` 里,解锁态存 WebView 的
+`localStorage["cal:afdian"]` —— 新壳读不到,所以 D228「老用户沿用」按 **D550 推翻**,老用户重输一次。
+手机 `DiscoverPages.kt` 那句「赞助后可解锁『我追的番』过滤」已改掉(手机端确实没有这个过滤;桌面有)。
 
 ## D322 四项验收
 

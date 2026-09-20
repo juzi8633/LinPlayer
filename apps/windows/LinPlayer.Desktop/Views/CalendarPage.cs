@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -31,6 +32,7 @@ public sealed class CalendarPage : PageBase
     private readonly TextBlock _status = Dim("");
     private readonly List<Button> _sourceTabs = [];
     private readonly Button _onlyMine = new() { Classes = { "chip" }, Content = "只看我追的" };
+    private readonly DockPanel _bar;
     private string _source = "bangumi";
     private List<JsonElement> _items = [];
     // 放送条目下标 → 当前 Emby 服务器上的对应物(D366「已入库 / 可播」)
@@ -66,15 +68,15 @@ public sealed class CalendarPage : PageBase
             _ = Load();
         };
 
-        var bar = new DockPanel { LastChildFill = false };
+        _bar = new DockPanel { LastChildFill = false };
         DockPanel.SetDock(_onlyMine, Dock.Right);
-        bar.Children.Add(_onlyMine);
-        bar.Children.Add(sources);
+        _bar.Children.Add(_onlyMine);
+        _bar.Children.Add(sources);
 
         Content = Scrolled(new StackPanel
         {
             Spacing = 18,
-            Children = { H1("追剧日历"), bar, _days, _status, _wall },
+            Children = { H1("追剧日历"), _bar, _days, _status, _wall },
         });
         // 空的状态行不占位:Spacing 会把它算成一行,海报墙上方平白多一道空隙
         _status.PropertyChanged += (_, e) =>
@@ -82,7 +84,82 @@ public sealed class CalendarPage : PageBase
             if (e.Property == TextBlock.TextProperty) _status.IsVisible = !string.IsNullOrEmpty(_status.Text);
         };
 
-        _ = Load();
+        _ = Start();
+    }
+
+    /// <summary>
+    /// 付费门(SPEC 18.1 D200):未解锁**连数据都不拉** —— 拉了再盖一层门,等于白花一次上游配额。
+    ///
+    /// <para>解锁凭据是校验通过的爱发电订单号,存核心层偏好里三端共用,
+    /// <b>不每次联网重校</b>:重校的后果是断网或代理挂掉时,付过钱的人照样被挡在外面。</para>
+    /// </summary>
+    private async Task Start()
+    {
+        string order = "";
+        try { order = Str(await _core.PrefsGetPrefs(), "calendar_unlock_order"); }
+        catch (Exception e) { Log.W("calendar", "读解锁状态失败: " + e.Message); }
+        if (!string.IsNullOrEmpty(order)) { _ = Load(); return; }
+
+        string sponsor = "";
+        try { sponsor = Str(await _core.SystemAfdianSponsorUrl(), "url"); }
+        catch (Exception e) { Log.W("calendar", "取赞助地址失败: " + e.Message); }
+        Dispatcher.UIThread.Post(() => ShowGate(sponsor));
+    }
+
+    private void ShowGate(string sponsorUrl)
+    {
+        var box = new TextBox { Watermark = "爱发电订单号", Width = 320 };
+        var hint = Dim("");
+        var ok = new Button { Content = "解锁" };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { ok } };
+        if (!string.IsNullOrEmpty(sponsorUrl))
+        {
+            var go = new Button { Classes = { "ghost" }, Content = "去赞助" };
+            go.Click += (_, _) =>
+            {
+                try { Process.Start(new ProcessStartInfo(sponsorUrl) { UseShellExecute = true }); }
+                catch (Exception e) { hint.Text = "打不开浏览器:" + e.Message; }
+            };
+            row.Children.Add(go);
+        }
+        ok.Click += async (_, _) =>
+        {
+            var no = box.Text?.Trim() ?? "";
+            if (no.Length == 0) return;
+            ok.IsEnabled = false;
+            hint.Text = "校验中…";
+            try
+            {
+                var r = await _core.SystemAfdianVerify(new { order_no = no });
+                // 每一种失败都要变成一句人话:核心层为此不抛错,专门回 reason
+                if (r.TryGetProperty("valid", out var v) && v.ValueKind == JsonValueKind.True)
+                {
+                    Toast.Show($"已解锁:{Str(r, "plan_title")} {Str(r, "amount")}".TrimEnd());
+                    Content = Scrolled(new StackPanel
+                    {
+                        Spacing = 18,
+                        Children = { H1("追剧日历"), _bar, _days, _status, _wall },
+                    });
+                    _ = Load();
+                    return;
+                }
+                hint.Text = Str(r, "reason") is { Length: > 0 } why ? why : "订单号无效";
+            }
+            catch (Exception e) { hint.Text = LibraryPage.Advice(e); }
+            finally { ok.IsEnabled = true; }
+        };
+
+        Content = Scrolled(new StackPanel
+        {
+            Spacing = 14,
+            Children =
+            {
+                H1("追剧日历 · 赞助解锁"),
+                Dim("这是付费功能。在爱发电赞助后,用订单号解锁本机。"),
+                box, row, hint,
+                Dim("赞助后在爱发电订单详情里复制订单号,填到上面解锁本机。"),
+            },
+        });
     }
 
     private bool OnlyMine => _onlyMine.Classes.Contains("on");
