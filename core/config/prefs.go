@@ -18,6 +18,7 @@ package config
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 )
 
@@ -55,11 +56,11 @@ const (
 	// 弹幕显示的合法区间(用户 2026-09-09 点名的九项)。
 	// ★ 缩放 / 透明度 / 速度三项**下限不是 0**:0 分别是「看不见」「全透明」
 	//   「原地不动」,那三种状态用「关掉弹幕」表达就够了,不该占一档。
-	DanmakuScaleMin   = 0.1
-	DanmakuScaleMax   = 3.0
-	DanmakuSpeedMin   = 0.1
-	DanmakuSpeedMax   = 3.0
-	DanmakuLinesMax   = 20
+	DanmakuScaleMin = 0.1
+	DanmakuScaleMax = 3.0
+	DanmakuSpeedMin = 0.1
+	DanmakuSpeedMax = 3.0
+	DanmakuLinesMax = 20
 	// DanmakuAreaMin 滚动弹幕最少占四分之一屏。
 	DanmakuAreaMin = 0.25
 
@@ -330,6 +331,17 @@ type Prefs struct {
 	//   每次进页都校验的后果是断网时付过钱的人也看不了。
 	CalendarUnlockOrder string `json:"calendar_unlock_order,omitempty"`
 
+	// ActiveTheme 选中的主题插件 id(SPEC 11.6,D69:**重启生效**)。空 = 官方主题。
+	ActiveTheme string `json:"active_theme,omitempty"`
+
+	/* ThemeFailed 上次加载崩了的主题 id(D372)。
+	   ☠ 记它是这条路上唯一能救回来的机制:主题坏了整个界面画不出来,
+	     这时候用户连「换回官方主题」的按钮都点不到。用户手动重选时清掉。 */
+	ThemeFailed string `json:"theme_failed,omitempty"`
+
+	// ActiveWallpaper 选中的壁纸插件 id(D441:**切换不用重启**)。空 = 用主题自带的。
+	ActiveWallpaper string `json:"active_wallpaper,omitempty"`
+
 	// EpisodeDesc 选集倒序显示的剧(D332):键 = 服务器#剧 id。只影响显示,连播仍按正序。
 	EpisodeDesc map[string]bool `json:"episode_desc,omitempty"`
 
@@ -417,7 +429,7 @@ func DefaultPrefs() Prefs {
 		DolbyAutoSW:                  true,
 		UpdateChannel:                "stable",
 		// 这里**不写** UpdateAutoCheck —— 零值 false 就是要的默认值(默认不自动查)
-		DetailBlur:                   40,
+		DetailBlur: 40,
 		// ★ 三个哨兵都是「不动 mpv 的默认值」,不是 0 —— 0 在这三项上分别是
 		//   「字幕缩到看不见」「字幕顶到画面最上沿」「一点描边都没有」。
 		SubPos:                  -1,
@@ -429,13 +441,30 @@ func DefaultPrefs() Prefs {
 	}
 }
 
+/*
+prefsTypedKeys 结构体上**接了**的键名。没接的键原样留着(见 MarshalJSON)。
+
+☠ 必须按 json tag 反射出来,不能拿「marshal 一个零值再看有哪些键」——
+
+	带 `omitempty` 的字段零值时根本不出现在那份 JSON 里,于是它会被当成「没接的键」
+	收进 rest;之后把它**清空**时,结构体这边省略了,rest 那边又把旧值贴回来,
+	表现是「这一项怎么都清不掉」。2026-09-21 在主题回退那条路上撞上:
+	`theme_failed` 置空之后重选主题,旧值原地复活,主题被永久拉黑。
+*/
 var prefsTypedKeys = func() map[string]bool {
 	m := map[string]bool{}
-	b, _ := json.Marshal(Prefs{})
-	var raw map[string]json.RawMessage
-	_ = json.Unmarshal(b, &raw)
-	for k := range raw {
-		m[k] = true
+	t := reflect.TypeOf(Prefs{})
+	for i := 0; i < t.NumField(); i++ {
+		tag := t.Field(i).Tag.Get("json")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		if c := strings.IndexByte(tag, ','); c >= 0 {
+			tag = tag[:c]
+		}
+		if tag != "" {
+			m[tag] = true
+		}
 	}
 	return m
 }()

@@ -390,6 +390,13 @@
 | [x] | `player.getSubtitleText` | **新增** | `track_id?` | `{format,text}` | — | <!-- 字幕轨全文(SPEC 9.7 D487):宿主带 token 拉,插件拿不到地址 -->
 | [x] | `plugin.setEnv` | **新增** | `theme_mode, theme_tokens, reduced_motion` | `—` | ✅ |
 | [x] | `plugin.shellResult` | **新增** | `id, ok, data?, error?` | `—` | ✅ |
+| [x] | `plugin.themes` | **新增** | `platform: Option<String>` | `Vec<ThemeInfo>` | ✅ | <!-- 这一端能选的主题。一包一端(D72),platform 不匹配的不列 -->
+| [x] | `plugin.activeTheme` | **新增** | `platform: Option<String>` | `Option<ThemeInfo>` | ✅ | <!-- 当前该用哪个;上次加载崩过的不再自动用(D372) -->
+| [x] | `plugin.setActiveTheme` | **新增** | `id: String` | `—` | ✅ | <!-- 空串 = 官方主题。重启生效(D69) -->
+| [x] | `plugin.themeFailed` | **新增** | `id: String, detail: Option<String>` | `—` | ✅ | <!-- 壳加载主题失败时报一次:下次启动直接用官方 -->
+| [x] | `plugin.wallpapers` | **新增** | `—` | `Vec<WallpaperInfo>` | ✅ | <!-- 能选的壁纸接管位(D441) -->
+| [x] | `plugin.activeWallpaper` | **新增** | `—` | `{id}` | ✅ |
+| [x] | `plugin.setActiveWallpaper` | **新增** | `id: String` | `—` | ✅ | <!-- 切换即时生效,不重启(D441) -->
 | [x] | `plugin.playerSurfaces` | **新增** | `kind: Option<String>` | `Vec<PlayerSurface>` | ✅ | <!-- 播放页上要挂的插件覆盖层与侧栏页。没有这张表的话壳根本不知道该挂谁 -->
 | [x] | `plugin.sidebar` | **新增** | `—` | `Vec<SidebarEntry>` | ✅ | <!-- 侧栏入口(D158 D305);id 是「插件id:入口id」 -->
 | [x] | `plugin.backRequest` | **新增** | `plugin: Option<String>` | `{handled: bool}` | ✅ | <!-- 壳按下返回键时问一次:有插件用 nav.onBack 接走就回 true(D85) -->

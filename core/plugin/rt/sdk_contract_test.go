@@ -28,7 +28,7 @@ D514 的门禁:宿主 API 的**定义源是 `docs/plugin-system/api/plugin-sdk.d
 var implementedFully = []string{
 	"storage", "secrets", "cookies", "assets", "crypt", "html", "js", "registry", "settings", "app",
 	// 阶段 ③ 做齐的:少一个成员当场红
-	"player", "nav", "ui", "events", "ext", "system", "servers", "trakt", "bangumi",
+	"player", "nav", "ui", "events", "ext", "system", "servers", "trakt", "bangumi", "wallpaper",
 }
 
 // sdkShape 问运行时:__linplayer_sdk 上真有哪些命名空间、每个下面有哪些键。
@@ -269,7 +269,6 @@ var notYetImplemented = map[string]string{
 	"oauth.refresh":      "同上",
 	"proxy.route":        "本地代理路由跟阶段 ④ 的直播一起接",
 	"proxy.url":          "同上",
-	"wallpaper.set":      "壁纸是阶段 ⑤",
 
 	// media.*(D92 的「封装好的有限接口」):要先把图片地址脱 api_key、
 	// 把跨服观看记录合并那一套接过来,阶段 ③ 和同步插件一起做。

@@ -235,6 +235,7 @@ func (r *Runtime) installSDK() error {
 	r.installServers(sdk)
 	r.installExt(sdk)
 	r.installSystem(sdk)
+	r.installWallpaper(sdk)
 	if err := r.installUI(sdk); err != nil {
 		return err
 	}

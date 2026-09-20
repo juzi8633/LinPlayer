@@ -85,20 +85,30 @@ cmp_sets() { # $1=名字 $2=实际 $3=期望
 cmp_sets "C#    " "$TMP/cs.txt" "$TMP/md.txt"
 cmp_sets "Kotlin" "$TMP/kt.txt" "$TMP/md.txt"
 
-# ★ Go 侧现在只移植了一部分,所以要求的是**子集**不是相等:
-#   Go 里有而 COMMANDS.md 里没有的 = 野命令(三端绑定里根本调不到它),必须红。
-#   反过来(还没移植的)不算错 —— 迁移完成时改成相等,那条写在 B3 出口判据里。
+# ★ 两个方向都要红(2026-09-21 起;迁移完成之前只查了一个方向):
+#   · Go 里有而 COMMANDS.md 没有 = **野命令**,三端绑定里根本调不到它;
+#   · COMMANDS.md 有而 Go 没注册 = **空头承诺**,绑定层照样会生成方法,
+#     壳调下去在运行时才报「没有这条命令」。这一头以前是放行的
+#     (理由是「Go 侧只移植了一部分」),而 Rust 栈 2026-09-04 就删干净了 ——
+#     这条豁免一直留着,于是我刚加的 5 条只写进文档没注册,门禁全绿。
 # ★ debug.* 不进契约,是**设计如此**:那是探针 / 自检用的命令(SPEC §5 的 debug 组),
 #   由 LP_DEBUG_CMDS 门控,三端绑定里不该出现它们。所以比对前先摘掉。
 #   反过来说:凡是产品要用的命令,名字里就不许带 debug —— 一旦带了,
 #   它会**静默地**从三端绑定里消失,而这个门禁还是绿的。
 ORPHAN="$(LC_ALL=C comm -23 "$TMP/go.txt" "$TMP/md.txt" | grep -v "^debug\.")"
+MISSING="$(LC_ALL=C comm -13 "$TMP/go.txt" "$TMP/md.txt")"
 if [ -n "$ORPHAN" ]; then
   echo "  Go 注册表里有 COMMANDS.md 没有的命令(三端绑定调不到它):"
   echo "$ORPHAN" | sed 's/^/    /'
   fail=$((fail + 1))
-else
-  echo "  Go    :$(grep -c . "$TMP/go.txt") / $(grep -c . "$TMP/md.txt") 条已注册,无野命令"
+fi
+if [ -n "$MISSING" ]; then
+  echo "  COMMANDS.md 里有而 Go 没注册的命令(绑定生成了、壳调下去才报没有这条命令):"
+  echo "$MISSING" | sed 's/^/    /'
+  fail=$((fail + 1))
+fi
+if [ -z "$ORPHAN" ] && [ -z "$MISSING" ]; then
+  echo "  Go    :$(grep -c . "$TMP/go.txt") / $(grep -c . "$TMP/md.txt") 条已注册,两个方向都对得上"
 fi
 
 echo

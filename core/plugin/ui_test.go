@@ -28,7 +28,16 @@ type evCapture struct {
 	mu     sync.Mutex
 	frames []map[string]any
 	states []map[string]any
+	// others 别的事件按名字存原文(壁纸切换这类只发一条 JSON 的)
+	others map[string][]string
 	stop   func()
+}
+
+// events 这个名字的事件收到过哪些(原始 JSON)。
+func (c *evCapture) events(name string) []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.others[name]...)
 }
 
 // captureUI 起一个事件消费者。事件走的是真队列(bus.NextEvent),
@@ -67,6 +76,11 @@ func captureUI(t *testing.T) *evCapture {
 				c.frames = append(c.frames, m)
 			case "plugin.ui.surface":
 				c.states = append(c.states, m)
+			default:
+				if c.others == nil {
+					c.others = map[string][]string{}
+				}
+				c.others[e.Name] = append(c.others[e.Name], string(e.Data))
 			}
 			c.mu.Unlock()
 		}

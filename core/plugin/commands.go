@@ -207,6 +207,7 @@ func RegisterCommands() {
 	})
 	registerUI()
 	registerAnchors()
+	registerTheme()
 	registerEvents()
 	// 播放类应用事件由核心层自己的 player.status 推导(见 events.go 顶部)
 	bus.Tap(ObservePlayerStatus())

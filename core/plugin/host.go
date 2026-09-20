@@ -308,6 +308,7 @@ func (h *Host) load(id, ver, dir string, m *Manifest, dev bool, reason string) (
 	host.Player = playerHooks()
 	host.Servers = serversHooks()
 	host.Ext = extHooks()
+	host.Wallpaper = wallpaperHooks()
 	host.SyncRequest = func(service, method, path string, body any) (any, error) {
 		return bus.Invoke(context.Background(), "sync."+service+"Request",
 			map[string]any{"method": method, "path": path, "body": body})

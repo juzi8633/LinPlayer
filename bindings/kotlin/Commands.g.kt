@@ -311,6 +311,13 @@ object LinPlayerCommandNames {
         "player.getSubtitleText",
         "plugin.setEnv",
         "plugin.shellResult",
+        "plugin.themes",
+        "plugin.activeTheme",
+        "plugin.setActiveTheme",
+        "plugin.themeFailed",
+        "plugin.wallpapers",
+        "plugin.activeWallpaper",
+        "plugin.setActiveWallpaper",
         "plugin.playerSurfaces",
         "plugin.sidebar",
         "plugin.backRequest",
@@ -829,7 +836,7 @@ suspend fun LinPlayerCommands.syncCalendarLibrary(args: Map<String, Any?>? = nul
 suspend fun LinPlayerCommands.syncCalendarDue(args: Map<String, Any?>? = null): JsonElement =
     call("sync.calendarDue", args)
 
-// ---- 插件 · plugin.* (48 条) ----
+// ---- 插件 · plugin.* (55 条) ----
 suspend fun LinPlayerCommands.pluginList(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.list", args)
 suspend fun LinPlayerCommands.pluginPendingRestart(args: Map<String, Any?>? = null): JsonElement =
@@ -908,6 +915,20 @@ suspend fun LinPlayerCommands.pluginSetEnv(args: Map<String, Any?>? = null): Jso
     call("plugin.setEnv", args)
 suspend fun LinPlayerCommands.pluginShellResult(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.shellResult", args)
+suspend fun LinPlayerCommands.pluginThemes(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.themes", args)
+suspend fun LinPlayerCommands.pluginActiveTheme(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.activeTheme", args)
+suspend fun LinPlayerCommands.pluginSetActiveTheme(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.setActiveTheme", args)
+suspend fun LinPlayerCommands.pluginThemeFailed(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.themeFailed", args)
+suspend fun LinPlayerCommands.pluginWallpapers(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.wallpapers", args)
+suspend fun LinPlayerCommands.pluginActiveWallpaper(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.activeWallpaper", args)
+suspend fun LinPlayerCommands.pluginSetActiveWallpaper(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.setActiveWallpaper", args)
 suspend fun LinPlayerCommands.pluginPlayerSurfaces(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.playerSurfaces", args)
 suspend fun LinPlayerCommands.pluginSidebar(args: Map<String, Any?>? = null): JsonElement =

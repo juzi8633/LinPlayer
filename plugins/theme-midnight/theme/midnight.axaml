@@ -1,0 +1,42 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!--
+    官方示范主题「午夜蓝」(桌面)。
+
+    只覆盖 token 与几条组件样式,叠在官方样式之后(SPEC 11.3)。
+    示范的是**怎么改**,不是改多少 —— 一个主题包能做的事远不止这几条。
+  -->
+  <Styles.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Dark">
+          <Color x:Key="BgColor">#0b0d12</Color>
+          <Color x:Key="PanelColor">#141822</Color>
+          <Color x:Key="PanelAltColor">#1c2230</Color>
+          <Color x:Key="LineColor">#232b3a</Color>
+          <Color x:Key="InkColor">#edf1fa</Color>
+          <Color x:Key="Ink2Color">#a9b3c7</Color>
+          <Color x:Key="Ink3Color">#6c7789</Color>
+          <Color x:Key="AccentColor">#7c9cff</Color>
+          <Color x:Key="AccentInkColor">#060a14</Color>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Light">
+          <Color x:Key="BgColor">#f6f7fb</Color>
+          <Color x:Key="PanelColor">#ffffff</Color>
+          <Color x:Key="PanelAltColor">#eef1f7</Color>
+          <Color x:Key="LineColor">#dfe4ee</Color>
+          <Color x:Key="InkColor">#151a23</Color>
+          <Color x:Key="Ink2Color">#4b5568</Color>
+          <Color x:Key="Ink3Color">#8a93a5</Color>
+          <Color x:Key="AccentColor">#3a5bd9</Color>
+          <Color x:Key="AccentInkColor">#ffffff</Color>
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Styles.Resources>
+
+  <!-- 海报按下去回一点:示范「改状态样式」,行为与结构不变(SPEC 11.2) -->
+  <Style Selector="Button.poster:pressed">
+    <Setter Property="RenderTransform" Value="scale(0.97)" />
+  </Style>
+</Styles>

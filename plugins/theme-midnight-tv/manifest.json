@@ -1,0 +1,15 @@
+{
+  "$schema": "../../docs/plugin-system/api/manifest.schema.json",
+  "id": "linplayer/theme-midnight-tv",
+  "name": "午夜蓝(TV)",
+  "version": "0.1.0",
+  "description": "官方示范主题:更深的蓝底、更亮的强调色。示范一个主题包能改什么 —— 设计 token 与组件状态样式,结构和行为不变。",
+  "minAppVersion": "1.1.0",
+  "license": "AGPL-3.0",
+  "platforms": ["android_tv"],
+  "activation": { "load": "lazy", "lifetime": "idle" },
+  "contributes": {
+    "theme": { "platform": "android_tv", "json": "theme/theme.json", "modes": ["dark", "light"] }
+  },
+  "main": "main.js"
+}

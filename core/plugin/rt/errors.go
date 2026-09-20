@@ -143,6 +143,8 @@ type Host struct {
 	Servers *ServersHooks
 	// Ext 实现 ext 命名空间(SPEC 18.5,D380~D382):大件原生运行物的装没装与下载。
 	Ext *ExtHooks
+	// Wallpaper 实现 wallpaper 命名空间(SPEC 11.5,D441~D443)。
+	Wallpaper *WallpaperHooks
 }
 
 // DebugHooks 调试面板要的四块数据。整块为 nil = 这一版不挂 debug 命名空间。

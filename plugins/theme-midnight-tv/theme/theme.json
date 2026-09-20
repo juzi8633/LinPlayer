@@ -1,0 +1,41 @@
+{
+  "$schema": "../../../docs/plugin-system/api/theme-json.schema.json",
+  "schema": 1,
+  "modes": ["dark", "light"],
+  "tokens": {
+    "dark": {
+      "color.accent": "#7C9CFFFF",
+      "color.bg": "#0B0D12FF",
+      "color.surface": "#141822FF",
+      "color.surface2": "#1C2230FF",
+      "color.ink": "#EDF1FAFF",
+      "color.ink2": "#A9B3C7FF",
+      "color.ink3": "#6C7789FF",
+      "radius.card": 10,
+      "radius.small": 6
+    },
+    "light": {
+      "color.accent": "#3A5BD9FF",
+      "color.bg": "#F6F7FBFF",
+      "color.surface": "#FFFFFFFF",
+      "color.surface2": "#EEF1F7FF",
+      "color.ink": "#151A23FF",
+      "color.ink2": "#4B5568FF",
+      "color.ink3": "#8A93A5FF",
+      "radius.card": 10,
+      "radius.small": 6
+    }
+  },
+  "components": {
+    "PosterCard": {
+      "default": { "radius": "token:radius.card" },
+      "focused": { "scale": 1.06, "borderColor": "token:color.accent", "borderWidth": 2 }
+    },
+    "Button": {
+      "default": { "radius": "token:radius.small" },
+      "focused": { "scale": 1.04, "borderColor": "token:color.accent", "borderWidth": 2 }
+    }
+  },
+  "layout": { "density": "spacious", "posterColumns": { "compact": 4, "medium": 6, "expanded": 8 } },
+  "motion": { "pageTransition": "fadeThrough" }
+}

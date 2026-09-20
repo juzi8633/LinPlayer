@@ -117,6 +117,9 @@ type Contributes struct {
 		ID    string `json:"id"`
 		Title string `json:"title"`
 	} `json:"pages"`
+	// Theme 一包一端的主题(SPEC 11.1,D72 D214 D215);Wallpaper 壁纸接管位(D441)。
+	Theme     *ThemeContrib     `json:"theme"`
+	Wallpaper *WallpaperContrib `json:"wallpaper"`
 	// PlayerOverlays 盖在画面上的层;PlayerPanels 播放页侧栏里的一页(SPEC 9.5,D65 D279 D300)。
 	PlayerOverlays []PlayerOverlay `json:"playerOverlays"`
 	PlayerPanels   []PlayerPanel   `json:"playerPanels"`
@@ -134,6 +137,20 @@ type PlayerPanel struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
 	Icon  string `json:"icon,omitempty"`
+}
+
+// ThemeContrib 主题贡献点。一包一端 —— 三端 token 分开做,官方不做跨端映射(D72)。
+type ThemeContrib struct {
+	Platform string   `json:"platform"` // desktop | android | android_tv
+	Axaml    []string `json:"axaml,omitempty"`
+	JSON     string   `json:"json,omitempty"`
+	Modes    []string `json:"modes,omitempty"`
+}
+
+// WallpaperContrib 壁纸接管位(D441)。
+type WallpaperContrib struct {
+	ID    string `json:"id"`
+	Title string `json:"title,omitempty"`
 }
 
 // SidebarEntry 侧栏入口(D158 D305)。
