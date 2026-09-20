@@ -224,6 +224,8 @@ fun LpButton(
     enabled: Boolean = true,
     /** 加载中:**保持原尺寸**(尺寸跳变比转圈更烦人)。 */
     loading: Boolean = false,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    onLongClick: (() -> Unit)? = null,
 ) {
     val c = Lp.colors
     val bg = when (kind) {
@@ -243,11 +245,19 @@ fun LpButton(
         m.heightIn(min = Dim.tap)
             .graphicsLayer { alpha = if (on) 1f else 0.45f }
             .then(skin)
-            .pressable(onClick, on)
+            .pressable(onClick, onLongClick, on)
             .padding(horizontal = Sp.x20, vertical = Sp.x12),
         contentAlignment = Alignment.Center,
     ) {
-        Text(if (loading) "…" else text, color = fg, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(Sp.x6),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (icon != null) Icon(icon, null, Modifier.size(18.dp), tint = fg)
+            if (text.isNotEmpty() || loading) Text(
+                if (loading) "…" else text, color = fg, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+            )
+        }
     }
 }
 
@@ -266,6 +276,7 @@ fun LpField(
     /** >1 = 多行(屏蔽词那种一行一条的列表)。给参数不另造一个组件:
      *  另造一个的下场是两份配色、两份错误位置,而改的人只会记得改一份。 */
     lines: Int = 1,
+    enabled: Boolean = true,
 ) {
     val c = Lp.colors
     Column(m) {
@@ -273,6 +284,7 @@ fun LpField(
         OutlinedTextField(
             value = value,
             onValueChange = onChange,
+            enabled = enabled,
             placeholder = { Dim3(placeholder) },
             singleLine = lines <= 1,
             minLines = lines,

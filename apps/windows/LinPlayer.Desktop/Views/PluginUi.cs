@@ -36,9 +36,17 @@ public sealed class PluginSurface : UserControl
     private readonly Dictionary<int, object> _nodes = [];
     private readonly Border _host = new();
     private string _surface = "";
-    /// <summary>挂载起点。首帧预算(D543 的 300ms)量的是这里到第一批 ops 画完。</summary>
-    private readonly System.Diagnostics.Stopwatch _since = System.Diagnostics.Stopwatch.StartNew();
+    /* 首帧预算(D543,口径见 SPEC 7.12):**起点是 nav.push,终点是真正上屏**。
+       起点取 PluginPageHost 构造那一刻(nav.push 的同一次调用里),不是 surface 构造 ——
+       整页容器与标题也算在用户等的那段里。 */
+    private readonly System.Diagnostics.Stopwatch _since;
     private bool _firstFrameLogged;
+
+    /// <summary>nav.push 那一刻的表。整页容器建好后立刻交给它自己的 surface。</summary>
+    internal static System.Diagnostics.Stopwatch? PendingNavClock;
+
+    /// <summary>本进程里挂过的插件。冷热要分开记 —— 冷的那一次还要装运行时、现编 TS。</summary>
+    private static readonly HashSet<string> Warmed = [];
 
     public PluginSurface(CoreClient core, string plugin, string target, string kind = "block", object? props = null)
     {
@@ -47,6 +55,8 @@ public sealed class PluginSurface : UserControl
         _target = target;
         _kind = kind;
         _props = props;
+        _since = PendingNavClock ?? System.Diagnostics.Stopwatch.StartNew();
+        PendingNavClock = null;
         // 首帧之前是官方骨架屏(D271):留白比转圈更像「内容马上就来」
         _host.Child = Skeleton();
         Content = _host;
@@ -99,8 +109,20 @@ public sealed class PluginSurface : UserControl
         {
             surface = _surface, width = size.Width, height = size.Height,
             breakpoint = bp, formFactor = "desktop",
-            insets = new { top = 0, right = 0, bottom = 0, left = 0 },
+            insets = SafeArea(),
         });
+    }
+
+    /// <summary>
+    /// 安全区(SPEC 7.7 D426)。桌面窗口通常整块都能用,所以这里多半是 0 ——
+    /// 但**问平台**而不是写死:同一份渲染器在 Linux 全屏壳、将来的平板模式下
+    /// 都要拿到真值,写死 0 的话插件的 edgeToEdge 页会被系统栏盖掉而没人知道。
+    /// 平台没实现 InsetsManager(Win32 就没有)时它是 null,退回 0。
+    /// </summary>
+    private object SafeArea()
+    {
+        var p = TopLevel.GetTopLevel(this)?.InsetsManager?.SafeAreaPadding ?? default;
+        return new { top = p.Top, right = p.Right, bottom = p.Bottom, left = p.Left };
     }
 
     private void Unmount()
@@ -170,7 +192,19 @@ public sealed class PluginSurface : UserControl
         if (!_firstFrameLogged)
         {
             _firstFrameLogged = true;
-            Log.I("插件UI", $"{_plugin}/{_target} 首帧 {_since.ElapsedMilliseconds} ms,{_nodes.Count} 个节点");
+            var nodes = _nodes.Count;
+            var warm = !Warmed.Add(_plugin);
+            /* ☠ 终点**不能**打在这儿:这里只是控件树改完,布局和绘制都还没跑,
+               量出来的数字必然偏小 —— 而 SPEC 7.12 量的是「到首帧上屏」。
+               RequestAnimationFrame 的回调在下一次合成帧上跑,那才是画面真的变了。 */
+            var top = TopLevel.GetTopLevel(this);
+            void Done()
+            {
+                var ms = _since.ElapsedMilliseconds;
+                Log.I("插件UI", $"{_plugin}/{_target} 首帧上屏({(warm ? "热" : "冷")}) {ms} ms,{nodes} 个节点");
+            }
+            if (top != null) top.RequestAnimationFrame(_ => Done());
+            else Dispatcher.UIThread.Post(Done, DispatcherPriority.Render);
         }
     }
 
@@ -285,6 +319,9 @@ public sealed class PluginSurface : UserControl
     /// <summary>能装子节点的容器:面板直接给集合;单子控件包一层面板,免得「第二个子节点静默消失」。</summary>
     private Avalonia.Controls.Controls? ChildrenOf(Control c) => c switch
     {
+        // PluginPart 的 Border.Child 是它自己的版式,子节点只能进 Slot,
+        // 否则 actions / trailing 会和结构化内容混在一起,下一次 Refresh 把它们冲掉
+        PluginPart part => part.Slot.Children,
         Panel p => p.Children,
         ScrollViewer sv => (sv.Content as Panel ?? Wrap(sv)).Children,
         Border b => (b.Child as Panel ?? Wrap(b)).Children,
@@ -329,7 +366,14 @@ public sealed class PluginSurface : UserControl
         "Row" => new FlexPanel { Horizontal = true },
         "Stack" => new Panel(),
         "ScrollView" => new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled },
-        "Text" => new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Tok.Of("Ink") },
+        /* 一律建可选中的那一种,但默认不吃指针也不吃焦点:
+           SelectableTextBlock 的构造把 Focusable 打开了,每个文本节点都能被 Tab 到的话,
+           TV 上方向键会在一屏文字里绕不出来。selectable 声明时才把这两样放开。 */
+        "Text" => new SelectableTextBlock
+        {
+            TextWrapping = TextWrapping.Wrap, Foreground = Tok.Of("Ink"),
+            Focusable = false, IsHitTestVisible = false,
+        },
         "Image" => new Image { Stretch = Stretch.UniformToFill },
         "Canvas" => new PluginCanvas(),
         "Divider" => new Border { Height = 1, Background = Tok.Of("Line") },
@@ -345,10 +389,21 @@ public sealed class PluginSurface : UserControl
         "Slider" => new Slider(),
         "Select" => new ComboBox(),
         "ProgressBar" => new ProgressBar { Height = 4 },
-        "Chip" => new Border { Classes = { "chip" }, Padding = new Thickness(10, 6), CornerRadius = new CornerRadius(6), Background = Tok.Of("PanelAlt") },
+        /* 从 Border 换成 Button:Controls.axaml 里的 chip 样式挂在 Button 上,
+           Border 套同名 class 一条都不命中 —— 选中态、悬停态、点击全是哑的。 */
+        "Chip" => new Button { Classes = { "chip" } },
         "ChipGroup" => new WrapPanel { ItemSpacing = 6, LineSpacing = 6 },
-        "SettingsGroup" or "PosterRow" => new FlexPanel { Gap = 10 },
-        "PosterGrid" or "EpisodeGrid" => new WrapPanel { ItemSpacing = 14, LineSpacing = 14 },
+        "SettingsGroup" => new FlexPanel { Gap = 10 },
+        "Icon" => new PluginIcon(),
+        "Markdown" => new Border(),
+        "WebView" => NewWebView(),
+        // Player 是**认领了但没接上**:桌面视频是独立子窗口,区域跟随还没做(D268)。
+        // 认领这一支才分得开「这一端没做」和「这一端太老」—— 后者走 Unknown 的兜底
+        "Player" => PluginPlayer.Slot(),
+        // 下面这一族的内容来自结构化 props 而不是子节点,统一交给 PluginPart
+        "PosterCard" or "PosterRow" or "PosterGrid" or "EpisodeGrid" or "DetailHeader"
+            or "EmptyState" or "FilterPanel" or "LineTabs" or "RatingList" or "ServerCard"
+            or "SettingsRow" or "Tabs" => NewPart(type),
         /* 大列表(D134):壳只画可见范围,并把范围回报给 JS。
            桌面这一版用 ScrollViewer + FlexPanel:JS 那边已经只给一窗的节点,
            所以这里画的本来就只有几十个 —— 真正的虚拟化收益在 JS 那一侧。
@@ -358,8 +413,8 @@ public sealed class PluginSurface : UserControl
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             Content = new FlexPanel(),
         },
-        "Badge" => new Border { Padding = new Thickness(6, 2), CornerRadius = new CornerRadius(999), Background = Tok.Of("Accent") },
-        // ★ 未知组件不是错误,是**版本差**(D319):画一块说明,别让整页空掉
+        "Badge" => PluginButton.Badge(),
+        // 未知组件不是错误,是**版本差**(D319):画一块说明,别让整页空掉
         _ => Unknown(type),
     };
 
@@ -388,6 +443,18 @@ public sealed class PluginSurface : UserControl
         },
     };
 
+    private PluginPart NewPart(string type) => new(type, _core, Emit);
+
+    private PluginWebView NewWebView()
+    {
+        var w = new PluginWebView();
+        w.SetEmit(Emit);
+        return w;
+    }
+
+    private void Emit(int fn, object[] args) =>
+        _ = _core.PluginUiEvent(new { surface = _surface, fn, args });
+
     private static Control Skeleton() => new Border
     {
         Height = 72,
@@ -415,6 +482,7 @@ public sealed class PluginSurface : UserControl
         if (op.TryGetProperty("set", out var set) && set.ValueKind == JsonValueKind.Object)
             foreach (var p in set.EnumerateObject())
                 SetProp(c, p.Name, p.Value, false);
+        (c as PluginPart)?.Refresh();
     }
 
     private void SetProp(Control c, string name, JsonElement v, bool unset)
@@ -429,12 +497,32 @@ public sealed class PluginSurface : UserControl
             Wire(c, name, unset ? default : v);
             return;
         }
+        if (name is "focusable" or "autoFocus" or "focusGroup"
+            or "nextFocusUp" or "nextFocusDown" or "nextFocusLeft" or "nextFocusRight")
+        {
+            PluginFocus.Apply(c, name, v, unset);
+            return;
+        }
+        /* 结构化 props 只攒不画,整条 props op 应用完再 Refresh(见 PluginPart)。
+           必须 Clone:JsonElement 背后的 JsonDocument 在这一帧之后就释放了,
+           下一帧 Refresh 读它会拿到已释放的缓冲区。 */
+        if (c is PluginPart part && name != "a11yLabel")
+        {
+            if (unset) part.Props.Remove(name);
+            else part.Props[name] = v.Clone();
+            return;
+        }
         switch (name)
         {
-            case "title" or "label":
-                if (c is Button b) b.Content = unset ? null : v.ToString();
+            case "title" or "label" or "text":
+                if (c is Button b) PluginButton.SetText(b, unset ? "" : v.ToString());
                 else if (c is TextBlock t) t.Text = unset ? "" : v.ToString();
-                else if (c is Border bd && TextHostOf(bd) is { } bt) bt.Text = unset ? "" : v.ToString();
+                else if (c is Border bd && TextHostOf(bd) is { } bt)
+                {
+                    bt.Text = unset ? "" : v.ToString();
+                    // 文字节点刚建出来,底色早一步设过的话字色还没跟上(props 的顺序由插件那边的写法定)
+                    PluginButton.ApplyToneInk(bd);
+                }
                 break;
             // Switch / Checkbox 在定义源里就叫 value(不是 checked)——
             // 名字对不上的表现是「开关画出来了但永远是关的」,不报错
@@ -443,15 +531,74 @@ public sealed class PluginSurface : UserControl
                 else if (c is TextBox tb) tb.Text = unset ? "" : v.ToString();
                 else if (c is Slider sl && !unset && v.ValueKind == JsonValueKind.Number) sl.Value = v.GetDouble();
                 else if (c is ProgressBar pb && !unset && v.ValueKind == JsonValueKind.Number) pb.Value = v.GetDouble() * 100;
+                else if (c is ComboBox cbv && !unset) SelectOptions.Select(cbv, v.ToString());
                 break;
             case "placeholder":
                 if (c is TextBox tb2) tb2.Watermark = unset ? null : v.ToString();
                 break;
             case "src":
                 if (c is Image img && !unset) LoadImage(img, v.ToString());
+                else if (c is PluginIcon ic && !unset) ic.SetSrc(_core, v.ToString());
+                else if (c is PluginWebView wv && !unset) wv.SetSrc(v.ToString());
+                break;
+            case "name":
+                if (c is PluginIcon ic2 && !unset) ic2.SetName(v.ToString());
+                break;
+            case "size":
+                if (c is PluginIcon ic3 && !unset && v.ValueKind == JsonValueKind.Number) ic3.SetSize(v.GetDouble());
+                else if (c is ProgressBar sp && !unset && v.ValueKind == JsonValueKind.Number) sp.Height = v.GetDouble();
+                break;
+            case "color":
+                if (c is PluginIcon ic4 && !unset) ic4.SetColor(BrushOf(v.ToString()) ?? Tok.Of("Ink"));
+                break;
+            case "source":
+                // Markdown 的正文。壳这边是一块 Border,每次整段重画 —— 说明文本不长
+                if (c is Border md && md is not PluginPart && !unset) md.Child = PluginMarkdown.Render(v.ToString());
+                break;
+            case "options":
+                if (c is ComboBox cb && !unset) SelectOptions.Fill(cb, v);
+                else if (c is PluginWebView wv3 && !unset) wv3.SetOptions(v);
+                break;
+            case "injectScript":
+                if (c is PluginWebView wv2 && !unset) wv2.SetInject(v.ToString());
+                break;
+            case "ref":
+                // 句柄(postMessage / evaluate)桌面端没有对应通道。认领这一支是为了让它
+                // 出现在日志里:静默忽略的话插件那边只看到「回调从来没被调用」
+                if (c is PluginWebView && !unset) Log.W("插件UI", "WebView 的 ref 句柄这一端不可用");
+                break;
+            case "min" or "max" or "step":
+                // 三件套不接的表现是「拖到哪都是 0~100」,而插件写的量程根本没生效
+                if (c is Slider sd && !unset && v.ValueKind == JsonValueKind.Number)
+                {
+                    if (name == "min") sd.Minimum = v.GetDouble();
+                    else if (name == "max") sd.Maximum = v.GetDouble();
+                    else { sd.TickFrequency = v.GetDouble(); sd.IsSnapToTickEnabled = true; }
+                }
                 break;
             case "disabled":
                 c.IsEnabled = unset || v.ValueKind != JsonValueKind.True;
+                break;
+            case "icon":
+                if (c is Button ib) PluginButton.SetIcon(ib, unset ? "" : v.ToString());
+                break;
+            case "variant":
+                if (c is Button vb) PluginButton.SetVariant(vb, unset ? "secondary" : v.ToString());
+                break;
+            case "selected":
+                // Chip 的选中态就是 chip.on 那一条;不接的表现是「选中的和没选中的一个样」
+                if (c is Button sb) sb.Classes.Set("on", !unset && v.ValueKind == JsonValueKind.True);
+                break;
+            case "tone":
+                if (c is Border tb3) PluginButton.SetTone(tb3, unset ? "neutral" : v.ToString());
+                break;
+            case "selectable":
+                // 能选中就得能吃指针:不放开命中测试,鼠标从文字上划过去什么都不会发生
+                if (c is SelectableTextBlock stb)
+                {
+                    stb.IsHitTestVisible = !unset && v.ValueKind == JsonValueKind.True;
+                    stb.Focusable = stb.IsHitTestVisible;
+                }
                 break;
             case "itemCount" or "itemHeight" or "firstIndex":
                 // 大列表的三件套记在控件上:滚动回调要算可见范围,占位要算上下留白
@@ -493,6 +640,13 @@ public sealed class PluginSurface : UserControl
                     btn.Tag = fn;
                     if (fn >= 0) btn.Click += OnClick;
                 }
+                else if (c is PluginPart pt) pt.Fn = fn;
+                break;
+            /* PressProps 的另外三个(SDK 里所有可点组件共有)。接在 Control 上而不是
+               逐个组件接:Button / Chip / PosterCard / SettingsRow … 只要是控件就都算,
+               漏掉一个的表现是「这一个组件长按没反应」,截图上看不出来。 */
+            case "onLongPress" or "onFocus" or "onBlur":
+                PluginPress.Wire(c, name, fn, Emit);
                 break;
             case "onRange":
                 if (c is ScrollViewer sv3)
@@ -511,12 +665,38 @@ public sealed class PluginSurface : UserControl
                     if (fn >= 0) tb.LostFocus += OnTextCommit;
                 }
                 break;
-            case "onToggle" or "onChange":
+            case "onToggle" or "onChange" or "onSelect" or "onItemPress":
                 if (c is ToggleButton tg)
                 {
                     tg.Tag = fn;
                     tg.IsCheckedChanged -= OnToggle;
                     if (fn >= 0) tg.IsCheckedChanged += OnToggle;
+                }
+                else if (c is Slider sl)
+                {
+                    sl.Tag = fn;
+                    sl.PropertyChanged -= OnSlide;
+                    if (fn >= 0) sl.PropertyChanged += OnSlide;
+                }
+                else if (c is ComboBox cb)
+                {
+                    cb.Tag = fn;
+                    cb.SelectionChanged -= OnSelect;
+                    if (fn >= 0) cb.SelectionChanged += OnSelect;
+                }
+                else if (c is PluginPart pp) pp.Fn = fn;
+                break;
+            case "onMessage":
+                if (c is PluginWebView pw) pw.SetMessageFn(fn);
+                break;
+            /* 滚到底发一次(D134 的另一半)。判据是「这一屏的底」而不是「有没有在滑」:
+               列表短到不用滚时也该发,否则第二页永远拉不出来。 */
+            case "onEndReached":
+                if (c is ScrollViewer se)
+                {
+                    VirtualInfo.SetEndFn(se, fn);
+                    se.ScrollChanged -= OnEndReached;
+                    if (fn >= 0) se.ScrollChanged += OnEndReached;
                 }
                 break;
             // 其余事件随组件逐个接;没接上的**不许装作接上了** ——
@@ -528,7 +708,8 @@ public sealed class PluginSurface : UserControl
 
     private void OnClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (sender is Control c && c.Tag is int fn && fn >= 0)
+        // 长按刚发过就别再发一次 onPress:松手时 Click 照样会来,插件那边看到的是「按一下触发了两件事」
+        if (sender is Control c && !PluginPress.TookLongPress(c) && c.Tag is int fn && fn >= 0)
             _ = _core.PluginUiEvent(new { surface = _surface, fn, args = Array.Empty<object>() });
     }
 
@@ -549,6 +730,38 @@ public sealed class PluginSurface : UserControl
     {
         if (sender is TextBox tb && tb.Tag is int fn && fn >= 0)
             _ = _core.PluginUiEvent(new { surface = _surface, fn, args = new object[] { tb.Text ?? "" } });
+    }
+
+    /// <summary>拖动条按帧节流(D135):按下不放时 Value 一秒变几十次,每次都发等于自己刷自己。</summary>
+    private void OnSlide(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property != RangeBase.ValueProperty || sender is not Slider sl || sl.Tag is not int fn || fn < 0) return;
+        if (!VirtualInfo.Arm(sl)) return;
+        Dispatcher.UIThread.Post(() =>
+        {
+            VirtualInfo.Disarm(sl);
+            _ = _core.PluginUiEvent(new { surface = _surface, fn, args = new object[] { sl.Value } });
+        }, DispatcherPriority.Background);
+    }
+
+    private void OnSelect(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not ComboBox cb || cb.Tag is not int fn || fn < 0) return;
+        if (cb.SelectedItem is not SelectOptions.Item it) return;
+        _ = _core.PluginUiEvent(new { surface = _surface, fn, args = new object[] { it.Value } });
+    }
+
+    private void OnEndReached(object? sender, ScrollChangedEventArgs e)
+    {
+        if (sender is not ScrollViewer sv) return;
+        var fn = VirtualInfo.EndFn(sv);
+        if (fn < 0) return;
+        const double Tail = 64;
+        var atEnd = sv.Offset.Y + sv.Viewport.Height >= sv.Extent.Height - Tail
+            || sv.Offset.X + sv.Viewport.Width >= sv.Extent.Width - Tail;
+        // 内容没变就不再发:到底之后每一条滚动事件都还在「底」,不防抖就是一路连发
+        if (!atEnd || !VirtualInfo.TakeEnd(sv)) return;
+        _ = _core.PluginUiEvent(new { surface = _surface, fn, args = Array.Empty<object>() });
     }
 
     private void OnToggle(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -590,6 +803,11 @@ public sealed class PluginSurface : UserControl
             tb4.FontWeight = fw.ToString() is "bold" or "600" or "700" ? FontWeight.SemiBold : FontWeight.Normal;
         if (s.TryGetProperty("textAlign", out var ta) && c is TextBlock tb5)
             tb5.TextAlignment = ta.ToString() switch { "center" => TextAlignment.Center, "end" or "right" => TextAlignment.Right, _ => TextAlignment.Left };
+        Motion.Transform(c, s);
+        // 动效由原生端跑,不过 JS 桥(SPEC 7.6)。transition 先挂上,下一次属性变化才看得见
+        if (s.TryGetProperty("transition", out var tr) && tr.ValueKind == JsonValueKind.Object) Motion.Transition(c, tr);
+        if (s.TryGetProperty("animation", out var an) && an.ValueKind == JsonValueKind.Object) Motion.Animate(c, an);
+
         if (c is FlexPanel fl)
         {
             if (s.TryGetProperty("direction", out var dir)) fl.Horizontal = dir.ToString() == "row";
@@ -632,10 +850,11 @@ public sealed class PluginSurface : UserControl
     }
 
     /// <summary>颜色:`token:名字` 走主题(D89),`#rrggbb` 直接解析。</summary>
-    private static IBrush? Brush(JsonElement s, string k)
+    private static IBrush? Brush(JsonElement s, string k) =>
+        s.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? BrushOf(v.GetString() ?? "") : null;
+
+    internal static IBrush? BrushOf(string text)
     {
-        if (!s.TryGetProperty(k, out var v) || v.ValueKind != JsonValueKind.String) return null;
-        var text = v.GetString() ?? "";
         if (text.StartsWith("token:", StringComparison.Ordinal)) return Tok.Of(text[6..]);
         return Color.TryParse(text, out var col) ? new SolidColorBrush(col) : null;
     }
@@ -649,6 +868,8 @@ public sealed class PluginPageHost : PageBase
 {
     public PluginPageHost(CoreClient core, string plugin, string pageId, string title)
     {
+        // 首帧的表从这里起:本构造函数跑在 nav.push 的同一次调用里(SPEC 7.12 的口径)
+        PluginSurface.PendingNavClock = System.Diagnostics.Stopwatch.StartNew();
         Content = Scrolled(new StackPanel
         {
             Spacing = 14,
@@ -683,10 +904,38 @@ internal static class VirtualInfo
         else if (name == "firstIndex") c.SetValue(FirstP, v);
     }
 
+    private static readonly AttachedProperty<int> EndFnP =
+        AvaloniaProperty.RegisterAttached<Control, Control, int>("VEndFn", -1);
+    private static readonly AttachedProperty<double> EndAtP =
+        AvaloniaProperty.RegisterAttached<Control, Control, double>("VEndAt");
+    private static readonly AttachedProperty<bool> PendingP =
+        AvaloniaProperty.RegisterAttached<Control, Control, bool>("VPending");
+
     internal static void SetRangeFn(Control c, int fn) => c.SetValue(FnP, fn);
 
+    internal static void SetEndFn(Control c, int fn) => c.SetValue(EndFnP, fn);
+    internal static int EndFn(Control c) => c.GetValue(EndFnP);
+
+    /// <summary>同一段内容只报一次到底:内容长长了(JS 补了下一页)才允许再报。</summary>
+    internal static bool TakeEnd(ScrollViewer sv)
+    {
+        if (Math.Abs(sv.GetValue(EndAtP) - sv.Extent.Height) < 0.5) return false;
+        sv.SetValue(EndAtP, sv.Extent.Height);
+        return true;
+    }
+
+    /// <summary>一帧一条(D135):已经排了一条就别再排。</summary>
+    internal static bool Arm(Control c)
+    {
+        if (c.GetValue(PendingP)) return false;
+        c.SetValue(PendingP, true);
+        return true;
+    }
+
+    internal static void Disarm(Control c) => c.SetValue(PendingP, false);
+
     /* 上下各垫一块空白:上面 firstIndex 项、下面剩下的那些。
-       ☠ 不垫的话窗口一滑,壳画的那几十条永远贴在顶上,而滚动位置还停在别处 ——
+       不垫的话窗口一滑,壳画的那几十条永远贴在顶上,而滚动位置还停在别处 ——
        表现是「滑着滑着内容跳回去了」,而且不报错。滚动条长度也靠这两块撑出来。 */
     internal static void Respace(ScrollViewer sv)
     {

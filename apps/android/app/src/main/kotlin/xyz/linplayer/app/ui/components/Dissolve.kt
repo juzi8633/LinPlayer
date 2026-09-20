@@ -220,6 +220,7 @@ fun ToneChip(
     label: String,
     on: Boolean,
     m: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val c = Lp.colors
@@ -227,7 +228,7 @@ fun ToneChip(
         label,
         m.clip(RoundedCornerShape(R.pill))
             .background(if (on) c.acc else c.s2)
-            .pressable(onClick)
+            .pressable(onClick, onLongClick)
             .padding(horizontal = Sp.x16, vertical = Sp.x8),
         color = if (on) c.accFg else c.fg2, fontSize = 13.sp, maxLines = 1,
         fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,

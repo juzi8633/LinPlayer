@@ -524,6 +524,8 @@ internal fun copyToCache(ctx: Context, uri: Uri, name: String): String? = runCat
 @Composable
 fun PluginHostPage(nav: NavController, entry: NavBackStackEntry) {
     val r = entry.toRoute<Route.PluginPage>()
+    // 首帧的表从进这一页起(SPEC 7.12 的起点)。remember 一次:重组不重新起表
+    androidx.compose.runtime.remember(r.id, r.page) { xyz.linplayer.app.ui.plugin.PluginNavClock.start() }
     LpScaffold(r.title, onBack = { nav.popBackStack() }) { pad ->
         androidx.compose.foundation.lazy.LazyColumn(
             Modifier.fillMaxSize(),

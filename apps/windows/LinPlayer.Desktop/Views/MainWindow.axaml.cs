@@ -317,7 +317,13 @@ public partial class MainWindow : Window
         if (string.IsNullOrEmpty(want) || _core is null) return;
         // 自检:先用开发版加载一个本地插件目录(不必先打包再安装)
         if (Environment.GetEnvironmentVariable("LP_SELFCHECK_DEVPLUGIN") is { Length: > 0 } devDir)
+        {
+            // 加载开发版插件本身就是开发者模式在做的事(SPEC 16.4),顺手把闸打开:
+            // 不打的话 `debug` 命名空间不挂,调试面板那一页只画一句「去打开开发者模式」,
+            // 截图里看不到那四块 —— 而那正是这次自检要看的东西
+            _core.PrefsSetPrefs(new { dev_mode = true }).GetAwaiter().GetResult();
             _core.PluginDevLoad(new { dir = devDir }).GetAwaiter().GetResult();
+        }
         var arg = want.Contains(':') ? want[(want.IndexOf(':') + 1)..] : "";
         var srv = Nav.Session?.server ?? "";
         switch (want.Split(':')[0])
@@ -375,6 +381,12 @@ public partial class MainWindow : Window
                     var pluginId = slash > 0 ? arg[..slash] : arg;
                     var pageId = slash > 0 ? arg[(slash + 1)..] : "panel";
                     Nav.Push(new PluginPageHost(_core, pluginId, pageId, "插件页"));
+                    /* 再进一次,量**热路径**:SPEC 7.12 的 300ms 写的是「插件已加载的前提下」,
+                       而第一次进那一趟还要装运行时、现编 TS,和热路径不是一个量级。
+                       两个数分开记,自检只拿热的那档比门槛。 */
+                    DispatcherTimer.RunOnce(
+                        () => Nav.Push(new PluginPageHost(_core, pluginId, pageId, "插件页")),
+                        TimeSpan.FromSeconds(2));
                     break;
                 }
             // 造法也给上 —— 不给的话自检跳过去的页刷新按钮不画,
@@ -1549,6 +1561,10 @@ public partial class MainWindow : Window
         }
         // 插件宿主要知道壳能做什么(WebView / jar);开播提醒和插件事件挂在这里
         PluginShell.ReportCapabilities(_core);
+        // 主题明暗与 token 表要在第一个插件 surface 挂起来**之前**到位:
+        // 晚一步的话插件的首帧用的是默认深色,切到浅色主题的用户会看见一帧错的配色
+        PluginShell.ReportEnv(_core);
+        ActualThemeVariantChanged += (_, _) => PluginShell.ReportEnv(_core);
         AppJobs.Start(_core);
 
         try

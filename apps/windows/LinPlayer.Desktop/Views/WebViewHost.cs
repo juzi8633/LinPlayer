@@ -38,7 +38,8 @@ internal static class WebViewHost
         }
     }
 
-    private static Task<CoreWebView2Environment> Env() => _env ??= CoreWebView2Environment.CreateAsync(
+    /// <summary>插件页里的内嵌 WebView(<see cref="PluginWebView"/>)和这里共用一份环境与磁盘目录。</summary>
+    internal static Task<CoreWebView2Environment> Env() => _env ??= CoreWebView2Environment.CreateAsync(
         null, Path.Combine(Program.DataDir, "webview"));
 
     public sealed record SniffOpts(string? UserAgent, Dictionary<string, string> Headers, string[] Match, string[] Block,

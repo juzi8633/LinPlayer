@@ -69,7 +69,7 @@ internal static class Mi
 /// </summary>
 public sealed class SourceCard : Button
 {
-    public SourceCard(CoreClient core, JsonElement item, Action<JsonElement> onOpen, string shape = "portrait", string badge = "", double progress = -1)
+    public SourceCard(CoreClient core, JsonElement item, Action<JsonElement> onOpen, string shape = "portrait", string badge = "", double progress = -1, bool showRemarks = true)
     {
         var (w, h) = Mi.Shape(shape);
         Classes.Add("media");
@@ -79,7 +79,7 @@ public sealed class SourceCard : Button
         var img = new Image { Stretch = Stretch.UniformToFill, Opacity = 0, Classes = { "art" } };
         var layers = new Panel { Children = { img } };
         var remarks = Mi.Str(item, "remarks");
-        if (remarks.Length > 0)
+        if (remarks.Length > 0 && showRemarks)
             layers.Children.Add(new Border
             {
                 HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,

@@ -142,21 +142,31 @@ fun PluginSurface(
     var state by remember(plugin, target) { mutableStateOf("loading") }
     var error by remember(plugin, target) { mutableStateOf("") }
 
+    val view = androidx.compose.ui.platform.LocalView.current
     DisposableEffect(plugin, target) {
-        // 首帧预算(D543 的 300ms)量的是这里到第一批 ops 进树
-        val since = android.os.SystemClock.uptimeMillis()
+        /* 首帧预算的口径是 SPEC 7.12:**起点 nav.push,终点真正上屏**。
+           起点取 PluginNavClock(导航那一刻起表),取不到才退回这里 ——
+           DisposableEffect 跑在第一次组合之后,拿它当起点会把导航到组合那一段漏掉。 */
+        val since = PluginNavClock.take()
         val job = app.bg.launch {
             runCatching {
                 app.call("plugin.ui.mount", args("plugin" to plugin, "target" to target, "kind" to kind))
             }.onSuccess { r ->
                 // 首帧跟着 mount 的返回值来:等事件的话会漏掉它(见 core/plugin/ui.go 那条)
                 tree.apply(r.obj()?.get("ops").arr())
-                xyz.linplayer.app.core.Logs.d(
-                    "插件UI",
-                    "$plugin/$target 首帧 ${android.os.SystemClock.uptimeMillis() - since} ms,${tree.nodes.size} 个节点",
-                )
                 surfaceId = r.obj().str("surface")
                 if (state == "loading") state = "ready"
+                val warm = PluginNavClock.markLoaded(plugin)
+                onFirstFrameDrawn(view) {
+                    /* 冷热分开记(SPEC 7.12 的 300ms 写明「插件已加载的前提下」):
+                       冷的那一次还要把插件装进运行时、现编 TS,和热路径不是一个量级。
+                       合成一个数的话门槛只能按冷路径放宽,等于热路径根本没有门槛。 */
+                    xyz.linplayer.app.core.Logs.w(
+                        "插件UI",
+                        "$plugin/$target 首帧上屏(${if (warm) "热" else "冷"}) " +
+                            "${android.os.SystemClock.uptimeMillis() - since} ms,${tree.nodes.size} 个节点",
+                    )
+                }
             }
                 .onFailure { state = "error"; error = it.message ?: "挂不上" }
         }
@@ -216,9 +226,14 @@ fun PluginSurface(
 
     // 这一块里第一个可交互元素吃初始焦点(TV);0 = 还没人认领
     val firstFocus = remember(plugin, target) { mutableStateOf(0) }
+    val focusKeys = remember(plugin, target) { androidx.compose.runtime.mutableStateMapOf<
+        String, androidx.compose.ui.focus.FocusRequester>() }
 
     Box(modifier) {
-        androidx.compose.runtime.CompositionLocalProvider(LocalPluginFirstFocus provides firstFocus) {
+        androidx.compose.runtime.CompositionLocalProvider(
+            LocalPluginFirstFocus provides firstFocus,
+            LocalPluginFocusKeys provides focusKeys,
+        ) {
         when {
             state == "error" -> PluginError(error)
             state == "loading" && tree.root.children.isEmpty() -> PluginSkeleton()
@@ -268,9 +283,64 @@ internal fun jsonOf(v: Any?): JsonElement = when (v) {
     is Boolean -> JsonPrimitive(v)
     is Number -> JsonPrimitive(v)
     is String -> JsonPrimitive(v)
+    // JsonObject/JsonArray 本身就是 Map/List,必须排在它们**前面**:
+    // 落到下面那两条会把里层的 JsonElement 逐个 toString,JS 收到的是一串引号
+    is JsonElement -> v
     is Map<*, *> -> JsonObject(v.entries.associate { (k, x) -> k.toString() to jsonOf(x) })
     is Iterable<*> -> JsonArray(v.map { jsonOf(it) })
     else -> JsonPrimitive(v.toString())
 }
 
 internal fun JsonObject?.dblOf(k: String): Double? = this.dbl(k)
+
+/**
+ * 首帧计时的起点(SPEC 7.12):导航到插件页那一刻。
+ *
+ * ☠ 不能拿 `DisposableEffect` 当起点 —— 它跑在第一次组合**之后**,
+ * 导航 → 组合这一段(LpScaffold、LazyColumn、主题)全被漏掉,量出来必然偏小。
+ */
+object PluginNavClock {
+    @Volatile private var mark = 0L
+
+    /** 导航那一刻调一次。 */
+    fun start() { mark = android.os.SystemClock.uptimeMillis() }
+
+    /** 取走起点;没人起过表就以现在算(块级 surface 不经导航)。 */
+    fun take(): Long {
+        val m = mark
+        mark = 0L
+        return if (m == 0L) android.os.SystemClock.uptimeMillis() else m
+    }
+
+    private val loaded = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+    /** 这个插件在本进程里挂过没有。返回 true = 热路径。 */
+    fun markLoaded(plugin: String): Boolean = !loaded.add(plugin)
+}
+
+/**
+ * 内容**真正画到屏幕上**之后回调一次。
+ *
+ * ☠ 终点不能打在「ops 进树」那一刻:那时候组合、布局、绘制都还没跑。
+ * API 29 起用 `registerFrameCommitCallback` —— 它在这一帧提交给显示管线之后才回,
+ * 是这台机器上能拿到的最接近「上屏」的信号;更老的机器退回下一次绘制回调。
+ */
+private fun onFirstFrameDrawn(view: android.view.View, done: () -> Unit) {
+    view.post {
+        val vto = view.viewTreeObserver
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            vto.registerFrameCommitCallback(object : Runnable {
+                override fun run() = done()
+            })
+            view.invalidate()
+            return@post
+        }
+        vto.addOnDrawListener(object : android.view.ViewTreeObserver.OnDrawListener {
+            override fun onDraw() {
+                view.post { runCatching { view.viewTreeObserver.removeOnDrawListener(this) } }
+                done()
+            }
+        })
+        view.invalidate()
+    }
+}

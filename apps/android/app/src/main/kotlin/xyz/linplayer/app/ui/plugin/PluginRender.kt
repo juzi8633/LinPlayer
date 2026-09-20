@@ -1,6 +1,8 @@
 package xyz.linplayer.app.ui.plugin
 
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.horizontalScroll
@@ -27,6 +29,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.scale
@@ -38,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.serialization.json.JsonObject
 import xyz.linplayer.app.data.AppState
 import xyz.linplayer.app.tv.memo
+import xyz.linplayer.app.ui.components.BtnKind
 import xyz.linplayer.app.ui.components.NetImage
 import xyz.linplayer.app.ui.components.pressable
 import xyz.linplayer.app.ui.theme.Lp
@@ -60,6 +68,9 @@ import xyz.linplayer.app.ui.theme.Lp
  */
 val LocalPluginTv = androidx.compose.runtime.staticCompositionLocalOf { false }
 
+/** 插件没给高度时,可滚动容器兜的那一档。要别的自己写 `style.height`。 */
+private val ScrollFallbackH = 360.dp
+
 /**
  * 这一块 UI 里**第一个**可交互元素的节点 id。
  *
@@ -67,12 +78,18 @@ val LocalPluginTv = androidx.compose.runtime.staticCompositionLocalOf { false }
  * 完全看不出来(按钮画得好好的,只是按不到)。谁先渲染谁认领,认领过就不再变:
  * 重渲染时焦点不许被抢回第一个元素上(用户可能已经挪走了)。
  */
+/** key → FocusRequester:`nextFocusUp` 这几条指的是 key,移焦时要按 key 查回来(SPEC 7.8)。 */
+internal val LocalPluginFocusKeys =
+    androidx.compose.runtime.staticCompositionLocalOf<
+        androidx.compose.runtime.snapshots.SnapshotStateMap<String, androidx.compose.ui.focus.FocusRequester>
+        > { androidx.compose.runtime.mutableStateMapOf() }
+
 internal val LocalPluginFirstFocus =
     androidx.compose.runtime.staticCompositionLocalOf<androidx.compose.runtime.MutableState<Int>?> { null }
 
 /** 这个节点要不要吃初始焦点。 */
 @Composable
-private fun claimsInitialFocus(id: Int): Boolean {
+internal fun claimsInitialFocus(id: Int): Boolean {
     val slot = LocalPluginFirstFocus.current ?: return false
     if (slot.value == 0) slot.value = id
     return slot.value == id
@@ -80,15 +97,25 @@ private fun claimsInitialFocus(id: Int): Boolean {
 
 @Composable
 internal fun RenderNode(n: UiNode, surface: String, app: AppState) {
-    val m = styleOf(n)
+    // PressProps 的 onFocus/onBlur 在这一处接完:TV 上移焦是主交互,漏一个组件就是一块哑区
+    val m = styleOf(n).a11y(n).focusOf(n).plugFocusEvents(n, surface, app)
     val tv = LocalPluginTv.current
     if (tv && renderTv(n, m, surface, app)) return
     when (n.type) {
         "#root", "View", "Column", "SettingsGroup" -> Stack(n, m, surface, app, row = n.style().dirRow())
         "Row", "ChipGroup" -> Stack(n, m, surface, app, row = true, wrapScroll = n.type == "ChipGroup")
         "Stack" -> Box(m) { n.children.forEach { RenderNode(it, surface, app) } }
-        "ScrollView" -> Column(m.verticalScroll(rememberScrollState())) {
-            n.children.forEach { RenderNode(it, surface, app) }
+        /* ☠ 和 VirtualList 同一条:高度无界的可滚动容器 Compose 是**当场抛异常**而不是画不出来,
+           而插件页宿主本身就是个 LazyColumn —— 插件不写 style.height 就必崩。 */
+        "ScrollView" -> if (n.bool("horizontal")) {
+            Row(m.horizontalScroll(rememberScrollState())) {
+                n.children.forEach { RenderNode(it, surface, app) }
+            }
+        } else {
+            val bounded = if (n.style().numOf("height") != null) m else m.height(ScrollFallbackH)
+            Column(bounded.verticalScroll(rememberScrollState())) {
+                n.children.forEach { RenderNode(it, surface, app) }
+            }
         }
         "Text" -> PluginText(n, m)
         "Image" -> NetImage(n.str("src").orEmpty(), null, m)
@@ -99,31 +126,76 @@ internal fun RenderNode(n: UiNode, surface: String, app: AppState) {
             n.str("title") ?: n.str("label") ?: textOf(n),
             { fire(app, surface, n.fn("onPress")) },
             m,
+            kind = variantOf(n.str("variant")),
             enabled = !n.bool("disabled"),
+            // 图标走官方稳定名那张表(D211 D549),和 Icon 组件同一份 —— 名字对不上就只剩文字
+            icon = iconByName(n.str("icon")),
+            onLongClick = longPressOf(n, surface, app),
         )
-        "Pressable" -> Box(m.pressable({ fire(app, surface, n.fn("onPress")) })) {
-            n.children.forEach { RenderNode(it, surface, app) }
-        }
+        /* disabled 是**所有**可交互组件的属性(.d.ts 的 BaseProps 一层),不是 Button 专有。
+           只压暗不断回调等于「看着点不了、其实点得动」—— 那比没有禁用更糟。 */
+        "Pressable" -> Box(
+            m.pressable(
+                { fire(app, surface, n.fn("onPress")) },
+                longPressOf(n, surface, app),
+                enabled = !n.bool("disabled"),
+            )
+        ) { n.children.forEach { RenderNode(it, surface, app) } }
         "TextInput" -> xyz.linplayer.app.ui.components.LpField(
             n.str("defaultValue").orEmpty(), { fire(app, surface, n.fn("onChangeText"), it) },
             n.str("placeholder").orEmpty(), m.fillMaxWidth(),
             password = n.bool("secret"),
+            lines = if (n.bool("multiline")) 3 else 1,
+            enabled = !n.bool("disabled"),
         )
         "Switch", "Checkbox" -> {
             val on = n.bool("value") || n.bool("checked")
-            androidx.compose.material3.Switch(on, { v -> fire(app, surface, n.fn("onChange") ?: n.fn("onToggle"), v) }, m)
+            androidx.compose.material3.Switch(
+                on, { v -> fire(app, surface, n.fn("onChange") ?: n.fn("onToggle"), v) }, m,
+                enabled = !n.bool("disabled"),
+            )
         }
         "Chip" -> xyz.linplayer.app.ui.components.ToneChip(
             n.str("label") ?: textOf(n), on = n.bool("selected"), m,
-        ) { fire(app, surface, n.fn("onPress")) }
-        "Badge" -> Box(m.clip(RoundedCornerShape(999.dp)).background(Lp.colors.acc).padding(horizontal = 6.dp, vertical = 2.dp)) {
-            Text(n.str("label") ?: textOf(n), color = Lp.colors.accFg, fontSize = 11.sp)
+            onLongClick = longPressOf(n, surface, app),
+        ) { if (!n.bool("disabled")) fire(app, surface, n.fn("onPress")) }
+        "Badge" -> {
+            val (bg, fg) = badgeTone(n.str("tone"))
+            Box(m.clip(RoundedCornerShape(999.dp)).background(bg).padding(horizontal = 6.dp, vertical = 2.dp)) {
+                Text(n.str("text") ?: n.str("label") ?: textOf(n), color = fg, fontSize = 11.sp)
+            }
         }
         "Canvas" -> PluginCanvas(n, m)
         "VirtualList", "VirtualGrid" -> VirtualList(n, m, surface, app)
         "ProgressBar" -> androidx.compose.material3.LinearProgressIndicator(
             progress = { (n.num("value") ?: 0.0).toFloat() }, modifier = m.fillMaxWidth(),
         )
+        "PosterCard" -> PosterCard(
+            n.id, 0, m, n.props["item"] as? JsonObject, n.str("shape"),
+            { if (!n.bool("disabled")) fire(app, surface, n.fn("onPress")) },
+            showRemarks = n.bool("showRemarks"), progress = n.num("progress") ?: 0.0,
+            onLongPress = longPressOf(n, surface, app),
+        )
+        "PosterRow" -> PosterRow(n, m, surface, app)
+        "PosterGrid" -> PosterGrid(n, m, surface, app)
+        "EpisodeGrid" -> EpisodeGrid(n, m, surface, app)
+        "Tabs" -> PlugTabs(n, m, surface, app, lines = false)
+        "LineTabs" -> PlugTabs(n, m, surface, app, lines = true)
+        "FilterPanel" -> FilterPanel(n, m, surface, app)
+        "RatingList" -> RatingList(n, m)
+        "ServerCard" -> ServerCard(n, m, surface, app)
+        "DetailHeader" -> DetailHeader(n, m, surface, app)
+        "SettingsRow" -> SettingsRow(n, m, surface, app)
+        "EmptyState" -> EmptyState(n, m, surface, app)
+        "Select" -> PlugSelect(n, m, surface, app)
+        "Slider" -> PlugSlider(n, m, surface, app)
+        "Icon" -> PlugIcon(n, m)
+        "Markdown" -> PlugMarkdown(n, m)
+        "WebView" -> PlugWebView(n, m, surface, app)
+        /* 视频层跟随区域还是未完成的 spike(D268),所以这里画的是「不可用」。
+           但它必须**认领**这个类型:落进 UnknownComponent 的意思是「老宿主遇到新组件」,
+           和「这一端确实还没做」是两回事,而两者在截图上长得一模一样。 */
+        "Player" -> PlugPlayer(n, m)
         else -> UnknownComponent(n.type, m)
     }
 }
@@ -142,12 +214,15 @@ private fun Stack(n: UiNode, m: Modifier, surface: String, app: AppState, row: B
         }
     } else {
         Column(m, verticalArrangement = colArrange(s, gap), horizontalAlignment = crossAlignCol(s)) {
-            n.children.forEach { c -> RenderNode(c, surface, app) }
+            n.children.forEach { c -> GrowBox(c) { RenderNode(c, surface, app) } }
         }
     }
 }
 
-/** grow 在 Compose 里是 weight,而 weight 只能在 Row/Column 作用域里给。 */
+/**
+ * grow 在 Compose 里是 weight,而 weight 只能在 Row/Column 作用域里给 ——
+ * 所以两个作用域各要一份。**少写一份的表现是那个方向上 grow 静默失效**,不报错。
+ */
 @Composable
 private fun RowScope.GrowBox(n: UiNode, content: @Composable () -> Unit) {
     val g = n.style().numOf("grow") ?: 0.0
@@ -155,7 +230,24 @@ private fun RowScope.GrowBox(n: UiNode, content: @Composable () -> Unit) {
 }
 
 @Composable
+private fun ColumnScope.GrowBox(n: UiNode, content: @Composable () -> Unit) {
+    val g = n.style().numOf("grow") ?: 0.0
+    if (g > 0) Box(Modifier.weight(g.toFloat())) { content() } else content()
+}
+
+@Composable
 private fun PluginText(n: UiNode, m: Modifier) {
+    // selectable:长按选中 + 复制。整棵树包一层 SelectionContainer 不行 ——
+    // 那样没声明的文字也跟着能选,长按手势还会被它吃掉,卡片的长按菜单就打不开了
+    if (n.bool("selectable")) {
+        androidx.compose.foundation.text.selection.SelectionContainer { PlainText(n, m) }
+        return
+    }
+    PlainText(n, m)
+}
+
+@Composable
+private fun PlainText(n: UiNode, m: Modifier) {
     val s = n.style()
     Text(
         textOf(n),
@@ -216,17 +308,87 @@ private fun colorOf(s: JsonObject?, k: String): Color? {
 
 @Composable
 private fun styleOf(n: UiNode): Modifier {
-    val s = n.style() ?: return Modifier
+    val s = n.style()
+    val dim = n.bool("disabled")
+    if (s == null) return if (dim) Modifier.alpha(DisabledAlpha) else Modifier
+    val a = motionOf(s)
     var m: Modifier = Modifier
-    s.numOf("width")?.let { m = m.width(it.dp) }
-    s.numOf("height")?.let { m = m.height(it.dp) }
+    (a.width ?: s.numOf("width")?.toFloat())?.let { m = m.width(it.dp) }
+    (a.height ?: s.numOf("height")?.toFloat())?.let { m = m.height(it.dp) }
+    /* 透明度与变换合并成**一层** graphicsLayer,并且排在 background 之前:
+       排在后面的话 alpha 只罩住内容,底色仍然是实的 —— 半透明的块看上去像没生效。 */
+    if (a.layered) m = m.graphicsLayer {
+        alpha = a.opacity
+        translationX = a.tx.dp.toPx(); translationY = a.ty.dp.toPx()
+        scaleX = a.scale; scaleY = a.scale
+        rotationZ = a.rotate
+    }
     s.numOf("radius")?.let { m = m.clip(RoundedCornerShape(it.dp)) }
     colorOf(s, "background")?.let { m = m.background(it) }
     // padding 要在 background 之后:反过来的话底色只铺内容那一块,留白处是透的
     edge(s, "padding")?.let { m = m.padding(it) }
     edge(s, "margin")?.let { m = m.padding(it) }
-    s.numOf("opacity")?.let { m = m.alpha(it.toFloat()) }
+    // disabled 对**所有**可交互组件生效,不只是 Button:压暗在这里做一次
+    if (dim) m = m.alpha(DisabledAlpha)
     return m
+}
+
+/** 动效跑到这一帧的值(SPEC 7.6)。 */
+private class Motion(
+    val opacity: Float, val tx: Float, val ty: Float, val scale: Float, val rotate: Float,
+    val width: Float?, val height: Float?, val layered: Boolean,
+)
+
+private fun JsonObject?.fl(k: String, d: Float): Float = (this.numOf(k) ?: d.toDouble()).toFloat()
+
+private fun easingOf(name: String?): androidx.compose.animation.core.Easing = when (name) {
+    "decelerate" -> xyz.linplayer.app.ui.theme.LpEasing.standardDecelerate
+    "accelerate" -> xyz.linplayer.app.ui.theme.LpEasing.standardAccelerate
+    "linear" -> androidx.compose.animation.core.LinearEasing
+    else -> xyz.linplayer.app.ui.theme.LpEasing.standard
+}
+
+/**
+ * `transition`:属性一变原生端自己插值,不过 JS 桥(SPEC 7.6)。
+ * `animation`:关键帧按等距停靠点插值。
+ *
+ * ☠ D428 —— 系统开了「减少动态效果」(动画时长倍率 0)时两者**直接跳到终态**:
+ * transition 的时长乘 0,关键帧直接取最后一帧。不是「跑快一点」,是不跑。
+ */
+@Composable
+private fun motionOf(s: JsonObject?): Motion {
+    val ms = xyz.linplayer.app.ui.theme.LocalMotionScale.current
+    val base = Motion(
+        s.fl("opacity", 1f), s.fl("translateX", 0f), s.fl("translateY", 0f),
+        s.fl("scale", 1f), s.fl("rotate", 0f),
+        s.numOf("width")?.toFloat(), s.numOf("height")?.toFloat(),
+        layered = s.numOf("opacity") != null || s.numOf("translateX") != null ||
+            s.numOf("translateY") != null || s.numOf("scale") != null || s.numOf("rotate") != null,
+    )
+    (s?.get("animation") as? JsonObject)?.let { return keyframed(it, base, ms) }
+    val tr = s?.get("transition") as? JsonObject ?: return base
+    val props = (tr["props"] as? kotlinx.serialization.json.JsonArray)
+        .orEmpty().mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }.toSet()
+    val spec = androidx.compose.animation.core.tween<Float>(
+        ((tr.numOf("duration") ?: 0.0) * ms).toInt().coerceAtLeast(0),
+        ((tr.numOf("delay") ?: 0.0) * ms).toInt().coerceAtLeast(0),
+        easingOf(tr.strOf("easing")),
+    )
+    val op by androidx.compose.animation.core.animateFloatAsState(base.opacity, spec, label = "op")
+    val tx by androidx.compose.animation.core.animateFloatAsState(base.tx, spec, label = "tx")
+    val ty by androidx.compose.animation.core.animateFloatAsState(base.ty, spec, label = "ty")
+    val sc by androidx.compose.animation.core.animateFloatAsState(base.scale, spec, label = "sc")
+    val ro by androidx.compose.animation.core.animateFloatAsState(base.rotate, spec, label = "ro")
+    val w by androidx.compose.animation.core.animateFloatAsState(base.width ?: 0f, spec, label = "w")
+    val h by androidx.compose.animation.core.animateFloatAsState(base.height ?: 0f, spec, label = "h")
+    fun <T> pick(k: String, animated: T, still: T) = if (k in props) animated else still
+    return Motion(
+        pick("opacity", op, base.opacity), pick("translateX", tx, base.tx),
+        pick("translateY", ty, base.ty), pick("scale", sc, base.scale),
+        pick("rotate", ro, base.rotate),
+        base.width?.let { pick("width", w, it) }, base.height?.let { pick("height", h, it) },
+        layered = true,
+    )
 }
 
 /** padding / margin:给一个数是四边,给 *Top 这类单独覆盖那一边。 */
@@ -305,7 +467,7 @@ private fun VirtualList(n: UiNode, m: Modifier, surface: String, app: AppState) 
     /* ☠ 插件没给高度时必须兜一个:可滚动容器嵌在可滚动容器里、高度无界,
        Compose 是**当场抛异常**而不是画不出来。插件页宿主本身就是个 LazyColumn,
        所以这条一定会被踩到 —— 兜 360dp,插件想要别的自己写 style.height。 */
-    val bounded = if (n.style().numOf("height") != null) m else m.height(360.dp)
+    val bounded = if (n.style().numOf("height") != null) m else m.height(ScrollFallbackH)
     val tv = LocalPluginTv.current
     androidx.compose.foundation.lazy.LazyColumn(bounded, state, verticalArrangement = Arrangement.spacedBy(gap)) {
         items(total, key = { it }) { i ->
@@ -349,31 +511,41 @@ private fun hasInteractive(n: UiNode): Boolean =
  * TV 形态下的交互组件。返回 true = 这一类已经画过了,不用再走通用那条。
  *
  * 只覆盖**需要焦点**的那几种;纯展示的(Text / Image / Divider)两端共用一份。
+ *
+ * 业务组件(PosterCard / Tabs / Select…)不在这里:它们自己就分两端画 —— TV 上落到
+ * `CardPoster` / `TvButton` / [plugPress],焦点与记忆都在那一份里。再在这里抄一遍
+ * 等于同一个组件两处实现,改一处的那次就分叉了。
  */
 @Composable
 private fun renderTv(n: UiNode, m: Modifier, surface: String, app: AppState): Boolean {
     val key = "plug.${n.id}"
     val interactive = n.type in interactiveTypes
     val initial = interactive && claimsInitialFocus(n.id)
+    val enabled = !n.bool("disabled")
+    val long = longPressOf(n, surface, app)
     when (n.type) {
+        /* variant 在 TV 上只分「主 / 不主」:那边的焦点态本身就是最强的视觉区分,
+           再按四档配四套底色,聚焦框一压上去谁是谁都看不出来。 */
         "Button" -> xyz.linplayer.app.tv.kit.TvButton(
             n.str("title") ?: n.str("label") ?: textOfNode(n),
-            modifier = m.memo(key, initial),
+            icon = iconByName(n.str("icon")),
+            primary = variantOf(n.str("variant")) == BtnKind.Primary,
+            modifier = m.memo(key, initial), enabled = enabled, onLongClick = long,
         ) { fire(app, surface, n.fn("onPress")) }
         "Chip" -> xyz.linplayer.app.tv.kit.TvButton(
             n.str("label") ?: textOfNode(n),
-            modifier = m.memo(key, initial),
+            modifier = m.memo(key, initial), enabled = enabled, onLongClick = long,
         ) { fire(app, surface, n.fn("onPress")) }
-        "Pressable" -> xyz.linplayer.app.tv.kit.TvButton("", modifier = m.memo(key, initial)) {
-            fire(app, surface, n.fn("onPress"))
-        }
+        "Pressable" -> xyz.linplayer.app.tv.kit.TvButton(
+            "", modifier = m.memo(key, initial), enabled = enabled, onLongClick = long,
+        ) { fire(app, surface, n.fn("onPress")) }
         "Switch", "Checkbox" -> {
             /* ☠ 别映射成 PanelItem:那是**整行**的设置项,而插件常把开关摆在一行里,
                整行会把旁边的文字挤成一列竖字。这里要的只是「一个能聚焦、按了会翻」的东西。 */
             val on = n.bool("value") || n.bool("checked")
             xyz.linplayer.app.tv.kit.TvButton(
                 listOfNotNull(n.str("label"), if (on) "开" else "关").joinToString(" "),
-                modifier = m.memo(key, initial),
+                modifier = m.memo(key, initial), enabled = enabled,
             ) { fire(app, surface, n.fn("onChange") ?: n.fn("onToggle"), !on) }
         }
         else -> return false
@@ -450,3 +622,118 @@ private fun PluginCanvas(n: UiNode, m: Modifier) {
 private fun parseColor(v: String): Color? = runCatching {
     if (v.startsWith("token:")) null else Color(android.graphics.Color.parseColor(v))
 }.getOrNull()
+
+/**
+ * 关键帧动画。停靠点**等距**:n 帧的第 i 帧落在 i/(n-1)。
+ *
+ * 减少动态效果时直接停在最后一帧 —— 关键帧动画的「终态」就是它。
+ */
+@Composable
+private fun keyframed(an: JsonObject, base: Motion, ms: Float): Motion {
+    val kf = (an["keyframes"] as? kotlinx.serialization.json.JsonArray)
+        .orEmpty().mapNotNull { it as? JsonObject }
+    if (kf.size < 2 || ms == 0f) return frameAt(kf.lastOrNull(), kf.lastOrNull(), 0f, base)
+    val dur = ((an.numOf("duration") ?: 0.0) * ms).toInt().coerceAtLeast(1)
+    val iter = an.numOf("iterations")?.toInt()?.takeIf { it > 0 }
+    val p = if (iter == null) {
+        androidx.compose.animation.core.rememberInfiniteTransition(label = "kf").animateFloat(
+            0f, 1f,
+            androidx.compose.animation.core.infiniteRepeatable(
+                androidx.compose.animation.core.tween(dur, easing = androidx.compose.animation.core.LinearEasing)
+            ),
+            label = "kf",
+        ).value
+    } else {
+        val a = androidx.compose.runtime.remember(dur, iter) {
+            androidx.compose.animation.core.Animatable(0f)
+        }
+        androidx.compose.runtime.LaunchedEffect(a) {
+            a.animateTo(
+                iter.toFloat(),
+                androidx.compose.animation.core.tween(dur * iter, easing = androidx.compose.animation.core.LinearEasing),
+            )
+        }
+        if (a.value >= iter) 1f else a.value % 1f
+    }
+    val pos = p.coerceIn(0f, 1f) * (kf.size - 1)
+    val i = pos.toInt().coerceIn(0, kf.size - 2)
+    return frameAt(kf[i], kf[i + 1], easingOf(an.strOf("easing")).transform(pos - i), base)
+}
+
+/** 两帧之间插值;关键帧里没写的属性回落到节点自己的静态值。 */
+private fun frameAt(from: JsonObject?, to: JsonObject?, f: Float, base: Motion): Motion {
+    fun v(k: String, d: Float): Float {
+        val a = from.numOf(k)?.toFloat() ?: d
+        val b = to.numOf(k)?.toFloat() ?: d
+        return a + (b - a) * f
+    }
+    return Motion(
+        v("opacity", base.opacity), v("translateX", base.tx), v("translateY", base.ty),
+        v("scale", base.scale), v("rotate", base.rotate),
+        base.width?.let { v("width", it) }, base.height?.let { v("height", it) },
+        layered = true,
+    )
+}
+
+/** D445:所有组件都能带 `a11yLabel`;文字类没给就用自身文字。 */
+@Composable
+private fun Modifier.a11y(n: UiNode): Modifier {
+    val label = n.str("a11yLabel") ?: defaultLabel(n) ?: return this
+    if (label.isEmpty()) return this
+    return this.semantics { contentDescription = label }
+}
+
+private fun defaultLabel(n: UiNode): String? = when (n.type) {
+    "Text" -> textOfNode(n)
+    "Markdown" -> n.str("source")
+    "Button" -> n.str("title") ?: n.str("label")
+    "Chip" -> n.str("label")
+    "Badge" -> n.str("text") ?: n.str("label")
+    "EmptyState" -> n.str("text")
+    "SettingsRow" -> n.str("title")
+    "Icon" -> n.str("name")
+    else -> null
+}
+
+/**
+ * SPEC 7.8 的 FocusProps。
+ *
+ * `nextFocusUp` 这几条指向的是**别的节点的 key**,所以要一张 key → FocusRequester 的表;
+ * 查表放在 `focusProperties` 的 lambda 里 —— 它在移焦那一刻才执行,那时目标才一定已经注册过。
+ */
+@Composable
+private fun Modifier.focusOf(n: UiNode): Modifier {
+    val key = n.str("key")
+    val group = n.str("focusGroup")
+    val can = (n.prop("focusable") as? kotlinx.serialization.json.JsonPrimitive)?.content?.toBooleanStrictOrNull()
+    val auto = n.bool("autoFocus")
+    val up = n.str("nextFocusUp"); val down = n.str("nextFocusDown")
+    val left = n.str("nextFocusLeft"); val right = n.str("nextFocusRight")
+    val any = key != null || group != null || can != null || auto ||
+        up != null || down != null || left != null || right != null
+    if (!any) return this
+
+    val keys = LocalPluginFocusKeys.current
+    val fr = androidx.compose.runtime.remember(n.id) { androidx.compose.ui.focus.FocusRequester() }
+    if (key != null) androidx.compose.runtime.DisposableEffect(key) {
+        keys[key] = fr
+        onDispose { if (keys[key] === fr) keys.remove(key) }
+    }
+    if (auto) androidx.compose.runtime.LaunchedEffect(n.id) {
+        // 头几帧里目标还没进树,requestFocus 会失败 —— 重试到进树为止
+        repeat(10) {
+            androidx.compose.runtime.withFrameNanos { }
+            if (runCatching { fr.requestFocus() }.getOrDefault(false)) return@LaunchedEffect
+        }
+    }
+    var m = this.focusProperties {
+        if (can == false) canFocus = false
+        up?.let { k -> this.up = keys[k] ?: androidx.compose.ui.focus.FocusRequester.Default }
+        down?.let { k -> this.down = keys[k] ?: androidx.compose.ui.focus.FocusRequester.Default }
+        left?.let { k -> this.left = keys[k] ?: androidx.compose.ui.focus.FocusRequester.Default }
+        right?.let { k -> this.right = keys[k] ?: androidx.compose.ui.focus.FocusRequester.Default }
+    }.focusRequester(fr)
+    if (group != null) m = m.focusGroup()
+    if (can == true) m = m.focusable()
+    return m
+}

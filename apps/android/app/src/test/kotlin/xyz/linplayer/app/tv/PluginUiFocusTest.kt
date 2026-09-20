@@ -125,9 +125,13 @@ class PluginUiFocusTest {
      */
     @Test fun 示例页用到的组件一个都不许降级成占位() {
         val types = listOf(
-            "Column", "Row", "View", "Text", "Button", "TextInput", "Switch",
-            "Divider", "Chip", "ChipGroup", "Canvas", "VirtualList", "Image",
-            "Spinner", "Skeleton", "Pressable", "Badge", "ProgressBar",
+            "Badge", "Button", "Canvas", "Checkbox", "Chip", "ChipGroup", "Column",
+            "DetailHeader", "Divider", "EmptyState", "EpisodeGrid", "FilterPanel", "Icon",
+            "Image", "LineTabs", "Markdown", "Player", "PosterCard", "PosterGrid",
+            "PosterRow", "Pressable", "ProgressBar", "RatingList", "Row", "ScrollView",
+            "Select", "ServerCard", "SettingsGroup", "SettingsRow", "Skeleton", "Slider",
+            "Spinner", "Stack", "Switch", "Tabs", "Text", "TextInput", "View",
+            "VirtualGrid", "VirtualList", "WebView",
         )
         val core = FakeCore().loggedIn()
         core.on("plugin.ui.mount") {

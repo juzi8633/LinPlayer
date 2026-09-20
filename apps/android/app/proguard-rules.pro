@@ -37,3 +37,9 @@
 -keep class com.github.catvod.** { *; }
 -keep class okhttp3.** { *; }
 -keep class okio.** { *; }
+
+# WebView 的 @JavascriptInterface 方法只有 JS 调,R8 同样看不到调用点(上面第一条的同一个坑)。
+# 裁掉的表现是网页里 LinPlayer.post 是 undefined —— release 静默失灵,debug 正常。
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}

@@ -82,6 +82,9 @@ class MainActivity : ComponentActivity() {
             LpTheme(darkOverride = when (xyz.linplayer.app.data.UiPrefs.theme.value) {
                 "dark" -> true; "light" -> false; else -> null
             }) {
+                // 主题与「减少动态效果」报给插件宿主。挂在主题里面:切深浅色时这里会重组,
+                // 报的就是切完之后那一套(D558)
+                xyz.linplayer.app.plugin.ReportPluginEnv(app)
                 // TV 草稿画廊:`am start ... -e lp_page 'tvdrafts:<n>'`。不连网,不看登录态,手机上也能打开
                 val tvDraft = SelfCheck.page?.takeIf { it.startsWith("tvdrafts") }
                 when {

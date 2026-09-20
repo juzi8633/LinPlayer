@@ -114,6 +114,8 @@ fun MediaCard(
     /** 长按菜单项。**null = 这一处不给长按菜单**(跨服结果就是这样,理由见 §7.5)。 */
     menu: List<CardAction>? = null,
     showCaption: Boolean = true,
+    /** 长按交给调用方(插件的 `onLongPress`)。[menu] 在时以菜单为准:同一块区域只能有一个长按。 */
+    onLongPress: (() -> Unit)? = null,
 ) {
     val c = Lp.colors
     val haptic = LocalHapticFeedback.current
@@ -127,9 +129,15 @@ fun MediaCard(
                 Modifier.fillMaxWidth().aspectRatio(if (thumb) 16f / 9f else 2f / 3f)
                     .combinedClickable(
                         onClick = onOpen,
-                        onLongClick = if (menu != null) {
-                            { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuOpen = true }
-                        } else null,
+                        onLongClick = when {
+                            menu != null -> {
+                                { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuOpen = true }
+                            }
+                            onLongPress != null -> {
+                                { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onLongPress() }
+                            }
+                            else -> null
+                        },
                     )
             ) {
                 NetImage(imageUrl, item.name, Modifier.fillMaxSize())
