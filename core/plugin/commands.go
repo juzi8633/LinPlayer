@@ -190,8 +190,7 @@ func RegisterCommands() {
 		}
 		return nil, l.rt.SetCookies(s(a, "jar"), s(a, "url"), cs)
 	})
-	reg("plugin.backRequest", func(ctx context.Context, a map[string]any) (any, error) { return h().backRequest(ctx, a) })
-	reg("plugin.playerKey", func(ctx context.Context, a map[string]any) (any, error) { return h().playerKey(ctx, a) })
+	registerKeys()
 
 	reg("plugin.shellResult", func(ctx context.Context, a map[string]any) (any, error) {
 		id, _ := a["id"].(float64)

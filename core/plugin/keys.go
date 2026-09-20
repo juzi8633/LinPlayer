@@ -12,6 +12,7 @@ package plugin
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"linplayer/core/bus"
@@ -21,6 +22,21 @@ import (
 // keyBudget 按键/返回键的回答上限。比 BudgetHook(300ms)再紧一点:
 // 这是用户按下去到画面反应的时间,超过这个数就已经「按起来发黏」了。
 const keyBudget = 200 * time.Millisecond
+
+// registerKeys 只装一次。单测里各自建 Host,但命令总线是全局的。
+var keysOnce sync.Once
+
+func registerKeys() {
+	keysOnce.Do(func() {
+		h := func() *Host { return Default() }
+		bus.Register("plugin.backRequest", func(ctx context.Context, _ int64, a map[string]any) (any, error) {
+			return h().backRequest(ctx, a)
+		})
+		bus.Register("plugin.playerKey", func(ctx context.Context, _ int64, a map[string]any) (any, error) {
+			return h().playerKey(ctx, a)
+		})
+	})
+}
 
 // backRequest 壳按下返回键时问一次。回 {handled:true} 就别退了。
 func (h *Host) backRequest(ctx context.Context, a map[string]any) (any, error) {

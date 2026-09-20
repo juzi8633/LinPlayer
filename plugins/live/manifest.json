@@ -1,0 +1,31 @@
+{
+  "$schema": "../../docs/plugin-system/api/manifest.schema.json",
+  "id": "linplayer/live",
+  "name": "直播",
+  "version": "0.1.0",
+  "description": "看直播:贴一条 m3u / txt 地址就能用,装了 TVBox 插件的话它配置里的直播源也会自动出现。同名频道合并成「源 1/2/3」,播不动自动换下一条并记住能用的那条;XMLTV 节目单、回看/时移、收藏与自定义频道号;TV 上按 TVBox 的习惯操作(上下换台、数字键输号、确认呼出列表)。",
+  "minAppVersion": "1.1.0",
+  "license": "AGPL-3.0",
+  "lan": true,
+  "activation": { "load": "lazy", "lifetime": "idle" },
+  "contributes": {
+    "pages": [
+      { "id": "live", "title": "直播" }
+    ],
+    "sidebar": [
+      { "id": "live", "title": "直播", "page": "live" }
+    ],
+    "playerOverlays": [
+      { "id": "osd", "interactive": true }
+    ],
+    "commands": [
+      { "id": "openLast", "title": "打开直播" }
+    ],
+    "settings": [
+      { "key": "merge", "type": "toggle", "title": "合并同名频道", "description": "同一个台的多条地址合成「源 1/2/3」。清晰度后缀(4K / 高清)不合并。", "default": true },
+      { "key": "invertUpDown", "type": "toggle", "title": "上下键方向反过来", "description": "默认「上」= 上一个频道。习惯反过来的在这里改。", "default": false },
+      { "key": "epgRefreshHours", "type": "number", "title": "节目单刷新间隔(小时)", "default": 6 }
+    ]
+  },
+  "main": "dist/main.js"
+}
