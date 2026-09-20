@@ -363,7 +363,17 @@ public sealed class PluginSurface : UserControl
         _ => Unknown(type),
     };
 
-    private static Control Unknown(string type) => new Border
+    /* 未知组件是**版本差**,不是错误,所以画占位而不是崩(D319)。
+       但它必须留下一条日志:三端里只要有一端把某个组件降级成占位,
+       「三端示例页长得一样」这句话就不成立了,而占位块小得不容易在截图上发现。
+       自检脚本抓这一行。 */
+    private static Control Unknown(string type)
+    {
+        Log.W("插件UI", $"未知组件 {type} —— 这一端把它降级成了占位");
+        return UnknownBox(type);
+    }
+
+    private static Control UnknownBox(string type) => new Border
     {
         Padding = new Thickness(10, 6),
         CornerRadius = new CornerRadius(6),

@@ -172,8 +172,14 @@ private fun PluginText(n: UiNode, m: Modifier) {
 private fun textOf(n: UiNode): String =
     n.text + n.children.filter { it.type == "#text" }.joinToString("") { it.text }
 
+/* 未知组件是**版本差**,不是错误,所以画占位而不是崩(D319)。
+   但它必须留下一条日志:三端里只要有一端把某个组件降级成占位,
+   「三端示例页长得一样」这句话就不成立了,而占位块小得不容易在截图上发现。 */
 @Composable
 private fun UnknownComponent(type: String, m: Modifier) {
+    androidx.compose.runtime.LaunchedEffect(type) {
+        xyz.linplayer.app.core.Logs.w("插件UI", "未知组件 $type —— 这一端把它降级成了占位")
+    }
     Box(m.clip(RoundedCornerShape(6.dp)).background(Lp.colors.s2).padding(horizontal = 10.dp, vertical = 6.dp)) {
         Text("这一块需要更新 LinPlayer($type)", color = Lp.colors.fg2, fontSize = 12.sp)
     }
@@ -293,7 +299,11 @@ private fun VirtualList(n: UiNode, m: Modifier, surface: String, app: AppState) 
         }
     }
 
-    androidx.compose.foundation.lazy.LazyColumn(m, state, verticalArrangement = Arrangement.spacedBy(gap)) {
+    /* ☠ 插件没给高度时必须兜一个:可滚动容器嵌在可滚动容器里、高度无界,
+       Compose 是**当场抛异常**而不是画不出来。插件页宿主本身就是个 LazyColumn,
+       所以这条一定会被踩到 —— 兜 360dp,插件想要别的自己写 style.height。 */
+    val bounded = if (n.style().numOf("height") != null) m else m.height(360.dp)
+    androidx.compose.foundation.lazy.LazyColumn(bounded, state, verticalArrangement = Arrangement.spacedBy(gap)) {
         items(total, key = { it }) { i ->
             val k = i - first
             // 窗口外的项 JS 还没给:占位撑住高度,否则滚动条会在数据补上来时乱跳

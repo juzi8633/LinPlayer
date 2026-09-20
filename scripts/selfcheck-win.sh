@@ -313,6 +313,13 @@ if [ -n "${LP_BURST:-}" ]; then
 fi
 powershell -NoProfile -ExecutionPolicy Bypass -File "$ROOT/scripts/shot-window.ps1" \
   -ProcName LinPlayer -Out "$ROOT/build/$SHOT.png"
+# 插件 UI:哪个组件被降级成占位了要当场说出来。
+# ☠ 占位块小得不容易在截图上发现,而「三端示例页长得一样」这句话正是被它破掉的。
+DESKLOG="$BIN/userdata/logs/desktop.log"
+if [ -f "$DESKLOG" ] && grep -q "未知组件" "$DESKLOG"; then
+  echo "  ✗ 有组件被降级成占位:"
+  grep "未知组件" "$DESKLOG" | tail -5 | sed 's/^/      /'
+fi
 # ★ **优雅关闭**,不是 Stop-Process。
 #   Kill 掉的话退出路径(lp_shutdown:停 mpv + 上报进度 + 写历史)根本不会跑,
 #   而「看一半退出续播不落地」正是这条路断掉的唯一表现。

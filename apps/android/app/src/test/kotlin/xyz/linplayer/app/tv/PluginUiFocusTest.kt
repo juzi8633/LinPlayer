@@ -116,6 +116,56 @@ class PluginUiFocusTest {
         rule.onNode(hasTestTag("plug.2")).assertIsFocused()
     }
 
+    /*
+     * 「三端示例页一致」的**真判据**(D543):不是像素相同 —— 三端主题、密度、字体本来就不同 ——
+     * 而是**没有哪一端把组件悄悄降级成占位**。
+     *
+     * ☠ 占位块只有一行小字,截图上一眼扫过去发现不了,而它正好破掉「三端长得一样」这句话。
+     * 这里把示例页用到的组件挨个喂一遍,任何一个渲染成占位都算红。
+     */
+    @Test fun 示例页用到的组件一个都不许降级成占位() {
+        val types = listOf(
+            "Column", "Row", "View", "Text", "Button", "TextInput", "Switch",
+            "Divider", "Chip", "ChipGroup", "Canvas", "VirtualList", "Image",
+            "Spinner", "Skeleton", "Pressable", "Badge", "ProgressBar",
+        )
+        val core = FakeCore().loggedIn()
+        core.on("plugin.ui.mount") {
+            val ops = mutableListOf<JsonObject>()
+            ops += JsonObject(mapOf(
+                "op" to JsonPrimitive("create"), "id" to JsonPrimitive(1), "type" to JsonPrimitive("Column")))
+            ops += JsonObject(mapOf(
+                "op" to JsonPrimitive("insert"), "parent" to JsonPrimitive(0), "id" to JsonPrimitive(1)))
+            types.forEachIndexed { i, t ->
+                val id = 10 + i
+                ops += JsonObject(mapOf(
+                    "op" to JsonPrimitive("create"), "id" to JsonPrimitive(id), "type" to JsonPrimitive(t)))
+                ops += JsonObject(mapOf(
+                    "op" to JsonPrimitive("insert"), "parent" to JsonPrimitive(1), "id" to JsonPrimitive(id)))
+            }
+            JsonObject(mapOf(
+                "surface" to JsonPrimitive("s1"), "frame" to JsonPrimitive(1),
+                "ops" to JsonArray(ops),
+            ))
+        }
+        core.ret("plugin.ui.unmount", JsonObject(emptyMap()))
+        core.ret("plugin.ui.event", JsonObject(emptyMap()))
+        core.ret("plugin.ui.viewport", JsonObject(emptyMap()))
+        val app = AppState(core, CoroutineScope(SupervisorJob() + Dispatchers.Main))
+        runBlocking { app.boot() }
+        val nav = TvNav().apply { push(TvRoute.PluginPage("alice/demo", "p", "插件页")) }
+        rule.mainClock.autoAdvance = false
+        rule.setContent { TvFrame(app) { TvShell(nav) } }
+        advance(rule, 1200)
+
+        // 占位块上写着「需要更新 LinPlayer」—— 一个都不该有
+        rule.onAllNodes(hasText("需要更新 LinPlayer", substring = true)).fetchSemanticsNodes().let { bad ->
+            if (bad.isNotEmpty()) {
+                throw AssertionError("有 ${bad.size} 个组件被降级成占位 —— 这一端和别的端画的不是同一页")
+            }
+        }
+    }
+
     @Test fun 按下确认把回调号原样发回核心层() {
         val core = mountPluginPage()
         press(rule, Key.Enter)
