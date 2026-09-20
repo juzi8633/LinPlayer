@@ -58,6 +58,7 @@ import xyz.linplayer.app.ui.pages.ServersPage
 import xyz.linplayer.app.ui.pages.SettingsPage
 import xyz.linplayer.app.ui.pages.SettingsSubPage
 import xyz.linplayer.app.ui.player.PlayerPage
+import xyz.linplayer.app.data.str
 import xyz.linplayer.app.ui.switchTab
 import xyz.linplayer.app.ui.theme.LpEasing
 import xyz.linplayer.app.ui.theme.Lp
@@ -90,6 +91,7 @@ fun PhoneRoot(app: AppState) {
                 true -> MainShell()
             }
             }
+            xyz.linplayer.app.ui.plugin.PhonePluginDialog()
             ToastHost()
         }
     }
@@ -117,6 +119,21 @@ private fun MainShell() {
     LaunchedEffect(Unit) { newVersion = xyz.linplayer.app.ui.pages.autoCheckUpdate(app) }
     xyz.linplayer.app.ui.pages.UpdateFlow(newVersion) { newVersion = null }
 
+    /* 插件的 nav.* 接到这个栈上(SPEC 7.9)。绑在 MainShell 而不是 PhoneRoot:
+       闸口页还没有栈,这时插件跳页无处可去,报「界面还没起来」比静默丢掉清楚。 */
+    androidx.compose.runtime.DisposableEffect(nav) {
+        xyz.linplayer.app.plugin.PluginNav.host = object : xyz.linplayer.app.plugin.PluginNav.Host {
+            override fun push(route: String, params: kotlinx.serialization.json.JsonObject, replace: Boolean): Boolean {
+                val r = officialRoute(route) { k -> params.str(k) } ?: return false
+                if (replace) nav.popBackStack()
+                nav.navigate(r)
+                return true
+            }
+            override fun back() { nav.popBackStack() }
+        }
+        onDispose { xyz.linplayer.app.plugin.PluginNav.host = null }
+    }
+
     val route = entry?.destination?.route.orEmpty()
     val tab = when {
         route.endsWith("Home") -> 0
@@ -138,31 +155,26 @@ private fun MainShell() {
         if (p.startsWith("tvbox:")) { xyz.linplayer.app.ui.pages.selfCheckTvbox(app, nav, p.removePrefix("tvbox:")); return@LaunchedEffect }
         val parts = p.split(":")
         when (parts[0]) {
-            "aggregate" -> nav.navigate(Route.Aggregate)
-            "servers" -> nav.navigate(Route.Servers)
             "favoritesTab" -> nav.switchTab(Route.Favorites)
-            "search" -> nav.navigate(Route.Search())
-            "favorites" -> nav.navigate(Route.Favorites)
-            "downloads" -> nav.navigate(Route.Downloads)
-            "plugins" -> nav.navigate(Route.Plugins(parts.getOrElse(1) { "0" }.toIntOrNull() ?: 0))
-            "extensions" -> nav.navigate(Route.Extensions)
             "srcfav" -> nav.navigate(Route.SourceFavorites)
-            "history" -> nav.navigate(Route.History)
+            "browse" -> nav.navigate(Route.Browse)
+            "addServer" -> nav.navigate(Route.AddServer)
+            "extensions" -> nav.navigate(Route.Extensions)
+            "settingsSub" -> nav.navigate(Route.SettingsSub(parts.getOrElse(1) { "about" }))
             // pluginpage:<插件id>/<页面id> —— 插件 id 自带一个「/」,页面 id 取最后一段
             "pluginpage" -> {
                 val raw = p.removePrefix("pluginpage:")
                 val at = raw.lastIndexOf('/')
                 if (at > 0) nav.navigate(Route.PluginPage(raw.substring(0, at), raw.substring(at + 1), "插件页"))
             }
-            "ranking" -> nav.navigate(Route.Ranking)
-            "calendar" -> nav.navigate(Route.Calendar)
-            "settings" -> nav.navigate(Route.Settings)
-            "browse" -> nav.navigate(Route.Browse)
-            "addServer" -> nav.navigate(Route.AddServer)
-            "library" -> nav.navigate(Route.Library(parts.getOrElse(1) { "" }, parts.getOrElse(2) { "媒体库" }))
-            "detail" -> nav.navigate(Route.Detail(parts.getOrElse(1) { "" }, parts.getOrElse(2) { "Series" }))
-            "player" -> nav.navigate(Route.Player(parts.getOrElse(1) { "" }, parts.getOrElse(2) { "自检" }))
-            "settingsSub" -> nav.navigate(Route.SettingsSub(parts.getOrElse(1) { "about" }))
+            // 其余走插件那张官方路由表:自检的第 2 / 3 段按位置喂进去,省得同一份映射写两遍
+            else -> officialRoute(parts[0]) { k ->
+                when (k) {
+                    "id", "tab" -> parts.getOrNull(1)
+                    "title", "type" -> parts.getOrNull(2)
+                    else -> null
+                }
+            }?.let { nav.navigate(it) }
         }
     }
 
@@ -292,4 +304,38 @@ private fun ToastHost() {
             )
         }
     }
+}
+
+/**
+ * 官方路由名(插件 SPEC 20.3)→ 手机路由对象。**这是那张表在手机端唯一的一份**,
+ * 插件的 `nav.push` 和真机自检直达都从这里出。认不出来回 null,调用方负责报错。
+ *
+ * 凭据页(`server.add` `login`)**能跳但不能接管**(D407):跳的是添加服务器那一版。
+ */
+internal fun officialRoute(route: String, p: (String) -> String?): Any? = when (route) {
+    "home" -> Route.Home
+    "aggregate" -> Route.Aggregate
+    "library" -> Route.Library(p("id") ?: p("viewId") ?: "", p("title") ?: "媒体库")
+    "detail" -> Route.Detail(p("id") ?: p("itemId") ?: "", p("type") ?: "Series")
+    "search" -> Route.Search(p("viewId"), p("q"))
+    "history" -> Route.History
+    "favorites" -> Route.Favorites
+    "downloads" -> Route.Downloads
+    "ranking" -> Route.Ranking
+    "calendar" -> Route.Calendar
+    "servers" -> Route.Servers
+    "player" -> Route.Player(p("id") ?: p("itemId") ?: "", p("title") ?: "播放")
+    "plugins" -> Route.Plugins(p("tab")?.toIntOrNull() ?: 0)
+    "settings" -> Route.Settings
+    "settings.extensions" -> Route.Extensions
+    "server.add", "login" -> Route.AddServer
+    // 手机上「账号」就是服务器列表(一台服务器一个账号),没有独立的账号页
+    "settings.account" -> Route.Servers
+    // 设置二级页在手机上按功能分组,组名和锚点名一一对应(见 SettingsSubPage 的 anchor)
+    "settings.appearance" -> Route.SettingsSub("appearance")
+    "settings.playback" -> Route.SettingsSub("player")
+    "settings.danmaku" -> Route.SettingsSub("danmaku")
+    "settings.storage" -> Route.SettingsSub("storage")
+    "settings.about" -> Route.SettingsSub("about")
+    else -> null
 }

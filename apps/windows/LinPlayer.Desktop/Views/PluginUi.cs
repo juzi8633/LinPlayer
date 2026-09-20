@@ -950,19 +950,67 @@ public sealed class PluginSurface : UserControl
 /// </summary>
 public sealed class PluginPageHost : PageBase
 {
+    private readonly TextBlock _title;
+    private bool _immersive;
+    private bool _awake;
+
     public PluginPageHost(CoreClient core, string plugin, string pageId, string title)
     {
         // 首帧的表从这里起:本构造函数跑在 nav.push 的同一次调用里(SPEC 7.12 的口径)
         PluginSurface.PendingNavClock = System.Diagnostics.Stopwatch.StartNew();
+        _title = H1(title);
         Content = Scrolled(new StackPanel
         {
             Spacing = 14,
             Children =
             {
-                H1(title),
+                _title,
                 new PluginSurface(core, plugin, pageId, "page"),
             },
         });
+        /* 「离开页面自动恢复」(D219)。栈里的插件页不销毁(D133),换页只是
+           从视觉树上摘下来 —— 所以挂在 attach/detach 上:换下去就撤,换回来照原样加回。
+           不撤的话插件跳一次详情页,侧栏就再也回不来了。 */
+        AttachedToVisualTree += (_, _) => Apply(true);
+        DetachedFromVisualTree += (_, _) => Apply(false);
+    }
+
+    /// <summary>
+    /// <c>nav.setPageOptions</c>(D219)。桌面没有屏幕旋转、窗口也没有系统栏,
+    /// <c>orientation</c> / <c>edgeToEdge</c> 在这一端无处可落,收下不动。
+    /// </summary>
+    internal void SetOptions(string title, bool immersive, bool keepAwake)
+    {
+        if (title.Length > 0) _title.Text = title;
+        _immersive = immersive;
+        _awake = keepAwake;
+        Apply(true);
+    }
+
+    private void Apply(bool on)
+    {
+        if (_immersive) Nav.Immersive?.Invoke(on);
+        if (_awake) Awake.Keep(on);
+    }
+}
+
+/// <summary>
+/// 屏幕常亮(<c>nav.setPageOptions</c> 的 keepAwake)。
+///
+/// <para>ES_CONTINUOUS 记的是<b>线程</b>的状态,所以只能在 UI 线程上调 ——
+/// 在别的线程上开,那条线程一结束系统就把常亮收回去了。</para>
+/// </summary>
+internal static class Awake
+{
+    private const uint EsContinuous = 0x80000000, EsSystem = 0x00000001, EsDisplay = 0x00000002;
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern uint SetThreadExecutionState(uint flags);
+
+    internal static void Keep(bool on)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        SetThreadExecutionState(on ? EsContinuous | EsSystem | EsDisplay : EsContinuous);
     }
 }
 

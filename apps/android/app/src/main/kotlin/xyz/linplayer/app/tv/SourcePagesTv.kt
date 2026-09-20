@@ -500,8 +500,9 @@ fun ExtensionsPageTv() {
 fun PluginHostPageTv(r: TvRoute.PluginPage) {
     // 插件 UI 在 TV 上必须走可聚焦的那一套,否则遥控器进不去这一页
     androidx.compose.runtime.CompositionLocalProvider(xyz.linplayer.app.ui.plugin.LocalPluginTv provides true) {
+        val opts = xyz.linplayer.app.ui.plugin.pluginPageOptions(r.title)
         LazyColumn(Modifier.contentArea(), contentPadding = PaddingValues(bottom = TvSp.x20)) {
-            item { PageHead(r.title) }
+            if (!opts.immersive) item { PageHead(opts.title) }
             item { xyz.linplayer.app.ui.plugin.PluginSurface(r.id, r.page, "page", modifier = Modifier.fillMaxWidth()) }
         }
     }

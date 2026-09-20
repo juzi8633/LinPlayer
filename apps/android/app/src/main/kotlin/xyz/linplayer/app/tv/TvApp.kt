@@ -87,6 +87,22 @@ fun TvRoot(app: AppState) {
     TvFrame(app, tvConfig) {
         val loggedIn by app.loggedIn.collectAsStateWithLifecycle()
         val nav = remember { TvNav() }
+        // 插件的 nav.*(SPEC 7.9)接到 TV 这个自管栈上。轨上的平级页走 rail(),其余入栈
+        androidx.compose.runtime.DisposableEffect(nav) {
+            xyz.linplayer.app.plugin.PluginNav.host = object : xyz.linplayer.app.plugin.PluginNav.Host {
+                override fun push(route: String, params: kotlinx.serialization.json.JsonObject, replace: Boolean): Boolean {
+                    val r = tvOfficialRoute(route) { k -> params.str(k) } ?: return false
+                    when {
+                        replace -> nav.replaceTop(r)
+                        r.rail >= 0 && railRoute(r.rail) == r -> nav.rail(r)
+                        else -> nav.push(r)
+                    }
+                    return true
+                }
+                override fun back() { nav.pop() }
+            }
+            onDispose { xyz.linplayer.app.plugin.PluginNav.host = null }
+        }
         LaunchedEffect(Unit) {
             // 自检:先用开发版加载一个本地插件目录(和手机那条同一个开关)
             xyz.linplayer.app.MainActivity.SelfCheck.devPlugin?.let { dir ->
@@ -147,6 +163,8 @@ fun TvFrame(app: AppState, config: ViewConfiguration = LocalViewConfiguration.cu
         MaterialTheme(colorScheme = darkColorScheme(background = TvC.bg, surface = TvC.surface2, onSurface = TvC.fg)) {
             Box(Modifier.fillMaxSize().background(TvC.bg)) {
                 content()
+                // 对话框排在 content 后面:它的 BackHandler 组合得更晚,返回键先给它(§3.4)
+                TvPluginDialog()
                 TvToastHost()
             }
         }

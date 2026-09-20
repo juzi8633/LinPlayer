@@ -18,9 +18,15 @@ public static class PluginShell
 {
     private static readonly Dictionary<long, CancellationTokenSource> Running = [];
 
-    /// <summary>启动时报壳能力。桌面暂不跑 jar / Python spider(D351 spike 之后再定)。</summary>
+    /// <summary>
+    /// 启动时报壳能力。桌面暂不跑 jar / Python spider(D351 spike 之后再定)。
+    ///
+    /// <para><c>shell</c> 是 nav / ui 对话框那一组的闸门:报 true 之前
+    /// 下面的 op 必须都接上了 —— 只报不接的话插件要等满 60 秒才拿到超时,
+    /// 而那条错误看起来像是它自己的参数写错了。</para>
+    /// </summary>
     public static void ReportCapabilities(CoreClient core) =>
-        _ = core.PluginSetCapabilities(new { webview = WebViewHost.Available, spider_jar = false, spider_py = false });
+        _ = core.PluginSetCapabilities(new { webview = WebViewHost.Available, spider_jar = false, spider_py = false, shell = true });
 
     /// <summary>
     /// 报运行环境:主题明暗 + token 表(SPEC 20.4)+ 系统「减少动态效果」(D558 D556 D428)。
@@ -66,6 +72,15 @@ public static class PluginShell
                     "webview.sniff" => await Sniff(args, cts.Token),
                     "webview.evaluate" => await Evaluate(args, cts.Token),
                     "webview.open" => await Open(args),
+                    "nav.push" => await Navigate(args, false),
+                    "nav.replace" => await Navigate(args, true),
+                    "nav.back" => await Back(),
+                    "nav.setPageOptions" => await PageOptions(args),
+                    "nav.setBadge" => throw new NotSupportedException("桌面侧栏还没有插件入口,角标没地方挂"),
+                    "ui.confirm" => await Confirm(args),
+                    "ui.prompt" => await Prompt(args),
+                    "ui.select" => await Select(args),
+                    "ui.notify" => await Notify(args),
                     _ => throw new NotSupportedException("桌面端不支持 " + op),
                 };
                 await core.PluginShellResult(new { id, ok = true, data });
@@ -126,6 +141,123 @@ public static class PluginShell
         // ExecuteScriptAsync 把 JSON.stringify 的结果再编码成一个 JSON 字符串字面量:先解出字符串,再解析
         var inner = JsonSerializer.Deserialize<string>(ls) ?? "{}";
         return new { cookies, localStorage = JsonDocument.Parse(inner).RootElement.Clone(), finalUrl };
+    }
+
+    // ---------------------------------------------------------------- nav / ui(SPEC 7.9 7.10)
+
+    private static bool Bool(JsonElement e, string k) =>
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.True;
+
+    private static string Or(JsonElement e, string k, string fallback) =>
+        Mi.Str(e, k) is { Length: > 0 } s ? s : fallback;
+
+    /// <summary>对话框和导航都得在 UI 线程上跑,而 shell 请求是在 Task.Run 里回来的。</summary>
+    private static Task<T> OnUi<T>(Func<Task<T>> f) => Dispatcher.UIThread.InvokeAsync(f);
+
+    /// <summary>
+    /// 跳一页。路由名不认识要<b>报回去</b> —— 静默不动的表现是「点了没反应」,
+    /// 而插件作者在自己这边查不到任何线索。
+    /// </summary>
+    private static async Task<object?> Navigate(JsonElement args, bool replace)
+    {
+        var route = Mi.Str(args, "route");
+        var p = args.TryGetProperty("params", out var pv) ? pv : default;
+        var ok = await Dispatcher.UIThread.InvokeAsync(() =>
+            Program.MainWindowRef is MainWindow w && w.RouteTo(route, Target(p), Mi.Str(p, "title"), replace));
+        if (!ok) throw new ArgumentException($"跳不过去:不认识的路由「{route}」(官方路由名见 SPEC 20.3)");
+        return null;
+    }
+
+    /// <summary>参数里哪一个是「要打开的那个东西」。SDK 没把键名定死,三种写法都收。</summary>
+    private static string Target(JsonElement p) =>
+        Mi.Str(p, "id") is { Length: > 0 } id ? id
+        : Mi.Str(p, "itemId") is { Length: > 0 } iid ? iid
+        : p.ValueKind == JsonValueKind.Object && p.TryGetProperty("item", out var it) ? Mi.Str(it, "id") : "";
+
+    /// <summary>返回。播放页要走它自己的离场(D459),不然 mpv 不停,留个孤儿在出声。</summary>
+    private static async Task<object?> Back()
+    {
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (Nav.Current is PlayerPage p) p.RequestLeave();
+            else Nav.Back();
+        });
+        return null;
+    }
+
+    /// <summary>页面选项(D219)。当前页不是插件页就没得设 —— 这组选项只属于插件自己的页。</summary>
+    private static async Task<object?> PageOptions(JsonElement args)
+    {
+        var o = args.TryGetProperty("options", out var v) ? v : default;
+        await Dispatcher.UIThread.InvokeAsync(() =>
+            (Nav.Current as PluginPageHost)?.SetOptions(Mi.Str(o, "title"), Bool(o, "immersive"), Bool(o, "keepAwake")));
+        return null;
+    }
+
+    /// <summary>确认框。复用全站那一份 <see cref="Dialogs"/>,不另画一套。</summary>
+    private static Task<object?> Confirm(JsonElement args) => OnUi<object?>(async () =>
+        Program.MainWindowRef is { } w
+        && await Dialogs.Show(w, Mi.Str(args, "title"),
+            new Avalonia.Controls.TextBlock
+            {
+                Text = Mi.Str(args, "message"), Classes = { "dim" }, MaxWidth = 380,
+                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            },
+            Or(args, "ok", "确定"), Or(args, "cancel", "取消"), Bool(args, "danger")));
+
+    private static Task<object?> Prompt(JsonElement args) => OnUi<object?>(async () =>
+    {
+        if (Program.MainWindowRef is not { } w) return null;
+        var box = new Avalonia.Controls.TextBox
+        {
+            Classes = { "field" }, Text = Mi.Str(args, "value"), Watermark = Mi.Str(args, "placeholder"),
+        };
+        if (Bool(args, "secret")) box.PasswordChar = '●';
+        var body = Body(Mi.Str(args, "message"), box);
+        return await Dialogs.Show(w, Mi.Str(args, "title"), body, "确定", "取消") ? box.Text ?? "" : null;
+    });
+
+    private static Task<object?> Select(JsonElement args) => OnUi<object?>(async () =>
+    {
+        if (Program.MainWindowRef is not { } w) return null;
+        var opts = Mi.Arr(args, "options");
+        var list = new Avalonia.Controls.ListBox
+        {
+            MaxHeight = 260, SelectedIndex = 0,
+            ItemsSource = opts.Select(o => Or(o, "label", Mi.Str(o, "value"))).ToList(),
+        };
+        var ok = await Dialogs.Show(w, Mi.Str(args, "title"), Body(Mi.Str(args, "message"), list), "确定", "取消");
+        return ok && list.SelectedIndex >= 0 && list.SelectedIndex < opts.Count
+            ? Mi.Str(opts[list.SelectedIndex], "value") : null;
+    });
+
+    /// <summary>一句说明 + 一个控件。说明是空的就不画那行 —— 空 TextBlock 会撑出一段没来由的留白。</summary>
+    private static Avalonia.Controls.Control Body(string message, Avalonia.Controls.Control input)
+    {
+        var panel = new Avalonia.Controls.StackPanel { Spacing = 10, MaxWidth = 380 };
+        if (message.Length > 0)
+            panel.Children.Add(new Avalonia.Controls.TextBlock
+            {
+                Text = message, Classes = { "dim" }, TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            });
+        panel.Children.Add(input);
+        return panel;
+    }
+
+    /// <summary>
+    /// 系统通知。桌面壳没有托盘,按 SPEC 7.10 降级成 Toast,并留一行日志。
+    ///
+    /// <para>日志是必须的:降级之后 <c>actions</c> 那几颗按钮和 <c>command</c> 都落不了地,
+    /// 插件那边看到的却是「发成功了」—— 不记的话没人查得出用户为什么没点到那颗按钮。</para>
+    /// </summary>
+    private static Task<object?> Notify(JsonElement args)
+    {
+        var title = Mi.Str(args, "title");
+        var body = Mi.Str(args, "body");
+        var dropped = Mi.Arr(args, "actions").Count + (Mi.Str(args, "command").Length > 0 ? 1 : 0);
+        Log.W("插件通知", $"{Mi.Str(args, "plugin")}:{title} / {body}(降级成 Toast,丢掉 {dropped} 个动作)");
+        Toast.Show(body.Length > 0 ? $"{title} — {body}" : title);
+        return Task.FromResult<object?>(null);
     }
 
     /// <summary>[去验证](D323):整页 WebView 过盾,Cookie 进该源的罐子,回来后由调用方重试。</summary>

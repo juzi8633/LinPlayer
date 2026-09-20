@@ -155,3 +155,27 @@ fun Modifier.memo(key: String, initial: Boolean = false): Modifier {
     }
     return this.testTag(key).focusRequester(fr).onFocusChanged { if (it.isFocused) mem.key = key }
 }
+
+/**
+ * 官方路由名(插件 SPEC 20.3)→ TV 路由对象。TV 只有八格轨,表里有几页这里就没有:
+ * 排行榜 / 追剧日历 / 演员页在 TV 上不存在,回 null 让调用方报错,别静默不动。
+ */
+fun tvOfficialRoute(route: String, p: (String) -> String?): TvRoute? = when (route) {
+    "home" -> TvRoute.Home
+    "search" -> TvRoute.Search
+    "library" -> TvRoute.Library(p("id") ?: p("viewId"), p("title") ?: "")
+    "detail" -> TvRoute.Detail(p("id") ?: p("itemId") ?: "", p("type") ?: "Series")
+    "favorites" -> TvRoute.Favorites
+    "aggregate" -> TvRoute.Discover
+    "downloads" -> TvRoute.Downloads
+    "servers" -> TvRoute.Servers
+    "history" -> TvRoute.History
+    "player" -> TvRoute.Player(p("id") ?: p("itemId") ?: "", p("title") ?: "播放")
+    "plugins" -> TvRoute.Plugins
+    "settings.extensions" -> TvRoute.Extensions
+    // TV 的设置是一页多节,没有二级页;凭据页就是添加服务器那一版(D407 能跳不能接管)
+    "settings", "settings.playback", "settings.danmaku", "settings.subtitle",
+    "settings.appearance", "settings.shortcuts", "settings.storage", "settings.about" -> TvRoute.Settings
+    "server.add", "login", "settings.account" -> TvRoute.AddServer
+    else -> null
+}

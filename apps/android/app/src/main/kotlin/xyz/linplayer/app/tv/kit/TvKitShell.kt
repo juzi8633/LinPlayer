@@ -102,6 +102,7 @@ fun Rail(
                     Spacer(Modifier.height(TvSp.x6))
                 }
                 RailItem(label, icon, on = i == current, expanded = expanded, focused = i == focused,
+                    badge = xyz.linplayer.app.plugin.PluginNav.badges[railTargets[i]],
                     modifier = Modifier.focusRequester(reqs[i]), onClick = { onSelect(i) })
             }
         }
@@ -109,11 +110,15 @@ fun Rail(
     }
 }
 
+/** 轨上第 i 项对应的官方路由名(插件 SPEC 20.3),角标按它认入口。 */
+private val railTargets = listOf(
+    "search", "home", "library", "favorites", "aggregate", "downloads", "servers", "settings")
+
 /** 轨项。收起 48×44 只有图标;展开 184×44 图标 + 文字。**不放大**:轨里放大会撑破边界。 */
 @Composable
 fun RailItem(
     label: String, icon: ImageVector, on: Boolean, expanded: Boolean, focused: Boolean = false, fake: Boolean = false,
-    modifier: Modifier = Modifier, onClick: () -> Unit = {},
+    badge: String? = null, modifier: Modifier = Modifier, onClick: () -> Unit = {},
 ) {
     Surface(
         onClick = onClick,
@@ -136,6 +141,11 @@ fun RailItem(
             if (expanded) {
                 Spacer(Modifier.width(TvSp.x12))
                 Text(label, fontSize = tvType.body, fontWeight = if (on) TvW.semi else TvW.medium, maxLines = 1)
+            }
+            // 收起态只剩 48dp 宽,角标跟在图标右边 —— 轨里不许叠在图标上,焦点框会把它切掉
+            if (badge != null) {
+                Spacer(Modifier.width(TvSp.x4))
+                Badge(badge, TvC.bad, Color.White)
             }
         }
     }

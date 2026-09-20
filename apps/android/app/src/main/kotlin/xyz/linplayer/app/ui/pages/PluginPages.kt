@@ -526,10 +526,13 @@ fun PluginHostPage(nav: NavController, entry: NavBackStackEntry) {
     val r = entry.toRoute<Route.PluginPage>()
     // 首帧的表从进这一页起(SPEC 7.12 的起点)。remember 一次:重组不重新起表
     androidx.compose.runtime.remember(r.id, r.page) { xyz.linplayer.app.ui.plugin.PluginNavClock.start() }
-    LpScaffold(r.title, onBack = { nav.popBackStack() }) { pad ->
+    val opts = xyz.linplayer.app.ui.plugin.pluginPageOptions(r.title)
+    // 沉浸态摘掉标题但**留着返回箭头**:系统栏已经藏了,再把唯一的出口也拿掉就是把用户关在里面
+    val side = if (opts.edgeToEdge) Sp.x0 else Sp.x16
+    LpScaffold(if (opts.immersive) null else opts.title, onBack = { nav.popBackStack() }) { pad ->
         androidx.compose.foundation.lazy.LazyColumn(
             Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(Sp.x16, Sp.x8, Sp.x16, pad.calculateBottomPadding()),
+            contentPadding = PaddingValues(side, Sp.x8, side, pad.calculateBottomPadding()),
         ) {
             item {
                 xyz.linplayer.app.ui.plugin.PluginSurface(r.id, r.page, "page", modifier = Modifier.fillMaxWidth())

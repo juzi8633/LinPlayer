@@ -2628,6 +2628,14 @@ public sealed class PlayerPage : UserControl
         _caption.IsVisible = !_full;
     }
 
+    /// <summary>
+    /// 插件 <c>nav.back</c> 落在播放页时走这条(D459)。
+    ///
+    /// <para>不能让它直接 <c>Nav.Back()</c>:那样 mpv 没停、全屏没退,
+    /// 弹出去的只是那棵控件树,留下一个还在出声的孤儿播放器。</para>
+    /// </summary>
+    internal void RequestLeave() => Fire("player.leave");
+
     private void Leave()
     {
         if (_leaving) return;

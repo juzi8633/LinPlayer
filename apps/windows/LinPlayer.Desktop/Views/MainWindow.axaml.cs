@@ -236,6 +236,58 @@ public partial class MainWindow : Window
         this.FindControl<RadioButton>("NavDownload")!.IsChecked = true;
     }
 
+    /// <summary>
+    /// 官方路由名 → 页面(SPEC 20.3)。自检台和插件 <c>nav.push</c> 共用这<b>一份</b>。
+    ///
+    /// <para>两处各写一份的话,插件能去的页和自检真验过的页会一路分叉 ——
+    /// 而分叉的那几个只会在用户装了插件之后才现形。认不出来回 <c>false</c>,
+    /// 由调用方报错:静默不动的表现是「点了没反应」,插件作者查不到。</para>
+    /// </summary>
+    internal bool RouteTo(string route, string arg, string title = "", bool replace = false)
+    {
+        if (_core is null) return false;
+        var srv = Nav.Session?.server ?? "";
+        void Go(Control p) { if (replace) Nav.Replace(p); else Nav.Push(p); }
+
+        // `作者/名字:页面id` = 插件自己的页(SPEC 7.9)。官方路由名里一个冒号都没有
+        if (route.IndexOf(':') is var c && c > 0)
+        {
+            Go(new PluginPageHost(_core, route[..c], route[(c + 1)..], title.Length > 0 ? title : "插件页"));
+            return true;
+        }
+        switch (route)
+        {
+            case "home": GoDefaultPage(); return true;
+            case "library": return ShortcutNav("NavLibrary");
+            case "search": return ShortcutNav("NavSearch");
+            case "favorites": return ShortcutNav("NavFavorites");
+            case "aggregate": return ShortcutNav("NavAggregate");
+            case "history": return ShortcutNav("NavHistory");
+            case "downloads": return ShortcutNav("NavDownload");
+            case "ranking": return ShortcutNav("NavRanking");
+            case "calendar": return ShortcutNav("NavCalendar");
+            case "browse": return ShortcutNav("NavBrowse");
+            case "settings": return ShortcutNav("NavSettings");
+            case "servers": GoServers(); return true;
+            // 凭据页能跳不能接管(D407)。桌面上「账号 / 网络」是服务器弹窗的两个抽屉
+            case "server.add" or "login": GoAddServer(); return true;
+            case "settings.account": GoServers(srv, "edit"); return true;
+            case "settings.network": GoServers(srv, "lines"); return true;
+            case "plugins": Go(new PluginPage(_core, int.TryParse(arg, out var tab) ? tab : 0)); return true;
+            case "detail": Go(new DetailPage(_core, srv, arg)); return true;
+            case "person": Go(new PersonPage(_core, srv, arg, title.Length > 0 ? title : "演员")); return true;
+            /* 续播位置只有自检台会给。产品路径上插件跳播放一律从头 ——
+               带 start= 和不带是两条不同的 loadfile,自检要验的正是带的那条。 */
+            case "player":
+                Go(new PlayerPage(_core, arg, title.Length > 0 ? title : "播放",
+                    double.TryParse(Environment.GetEnvironmentVariable("LP_SELFCHECK_RESUME"), out var rs) ? rs : 0));
+                return true;
+            // settings.playback 这些子页都落在设置页:壳还没有分节锚点,
+            // 但路由名是公开契约,认得出来就不该回「不认识」
+            default: return route.StartsWith("settings.") && ShortcutNav("NavSettings");
+        }
+    }
+
     private void SelfCheckJump() => SelfCheckJump(Environment.GetEnvironmentVariable("LP_SELFCHECK_PAGE"));
 
     private async Task SelfCheckSource(string kw, bool play, string line)
@@ -328,27 +380,27 @@ public partial class MainWindow : Window
         var srv = Nav.Session?.server ?? "";
         switch (want.Split(':')[0])
         {
-            case "library": this.FindControl<RadioButton>("NavLibrary")!.IsChecked = true; break;
+            case "library": RouteTo("library", arg); break;
             case "search":
-                this.FindControl<RadioButton>("NavSearch")!.IsChecked = true;
+                RouteTo("search", arg);
                 // search:某 → 填词并让它自己搜一遍。空态和结果态是**两种不同的样子**,
                 // 只截空态等于结果那半从来没被看过。
                 if (arg.Length > 0) (Nav.Current as SearchPage)?.SelfCheckQuery(arg);
                 break;
-            case "favorites": this.FindControl<RadioButton>("NavFavorites")!.IsChecked = true; break;
-            case "plugins": Nav.Push(new PluginPage(_core, int.TryParse(arg, out var tab) ? tab : 0)); break;
+            case "favorites": RouteTo("favorites", arg); break;
+            case "plugins": RouteTo("plugins", arg); break;
             // tvbox:<插件目录>|<订阅地址>|<之后落到哪页>:开发版加载 → 订阅 → 全部勾上 → 切到第一个源
             case "tvbox": _ = SelfCheckTvbox(arg.Split('|')); break;
             // srcdetail:<词> / srcplay:<词>:在当前数据源里搜,打开第一条(srcplay 顺带起播第 1 集)
             case "srcdetail" or "srcplay": _ = SelfCheckSource(arg.Split(':')[0], want.StartsWith("srcplay"), arg.Split(':').ElementAtOrDefault(1) ?? ""); break;
-            case "settings": this.FindControl<RadioButton>("NavSettings")!.IsChecked = true; break;
-            case "aggregate": this.FindControl<RadioButton>("NavAggregate")!.IsChecked = true; break;
-            case "history": this.FindControl<RadioButton>("NavHistory")!.IsChecked = true; break;
-            case "download": this.FindControl<RadioButton>("NavDownload")!.IsChecked = true; break;
-            case "ranking": this.FindControl<RadioButton>("NavRanking")!.IsChecked = true; break;
-            case "calendar": this.FindControl<RadioButton>("NavCalendar")!.IsChecked = true; break;
+            case "settings": RouteTo("settings", arg); break;
+            case "aggregate": RouteTo("aggregate", arg); break;
+            case "history": RouteTo("history", arg); break;
+            case "download": RouteTo("downloads", arg); break;
+            case "ranking": RouteTo("ranking", arg); break;
+            case "calendar": RouteTo("calendar", arg); break;
             case "browse":
-                this.FindControl<RadioButton>("NavBrowse")!.IsChecked = true;
+                RouteTo("browse", arg);
                 // 带参数(browse:空文件夹)时再点进那个子目录 —— 「空目录说空目录」要验得到
                 if (arg.Length > 0 && Nav.Current is BrowsePage bp) bp.SelfCheckEnter(arg);
                 break;
@@ -356,8 +408,8 @@ public partial class MainWindow : Window
                 要看的是**选中态落在哪一行** —— 用户 2026-09-04 报的正是
                  「点添加服务器,悬浮效果还停在已添加的服务器上」。
                  光看「添加页画出来了没有」是看不出这件事的。 */
-            case "addserver": GoAddServer(); break;
-            case "servers": GoServers(); break;
+            case "addserver": RouteTo("server.add", arg); break;
+            case "servers": RouteTo("servers", arg); break;
             /* 自检:右键菜单那条路 —— **只编辑当前这一台**,抽屉直接拉开。
                 和 servers: 是两页不同的版式(有没有全表、有没有「添加」按钮),
                 只截前者的话「定点编辑」这一版从来没被看过。 */
@@ -396,7 +448,7 @@ public partial class MainWindow : Window
                     () => new LibraryGridPage(_core, srv, arg, "自检库"));
                 break;
             case "detail":
-                Nav.Push(new DetailPage(_core, srv, arg));
+                RouteTo("detail", arg);
                 /* 自检:选第 N 个版本再按播放。
                     判据不在界面上,在**服务器实际被请求的那条流**里 ——
                     看 fakeemby 日志里的 mediaSourceId。 */
@@ -420,7 +472,7 @@ public partial class MainWindow : Window
                 Nav.Push(new DetailPage(_core, srv, arg));
                 if (Nav.Current is DetailPage dpp) dpp.SelfCheckPlay(4000);
                 break;
-            case "person": Nav.Push(new PersonPage(_core, srv, arg, "自检人物")); break;
+            case "person": RouteTo("person", arg, "自检人物"); break;
             // 自检:进详情页 → 点「下载」 → 跳下载页。整条链一次走完
             case "dl":
                 Nav.Push(new DetailPage(_core, srv, arg));
@@ -430,11 +482,7 @@ public partial class MainWindow : Window
                这不是可有可无的开关:<b>带 <c>start=</c> 的那条 loadfile 和不带的是两条路</b>,
                而 2026-09-03 那个「继续观看点了就 loadfile 失败」的 bug
                **只在带 start= 的那条上**。一直传 0 的自检永远照不到它。 */
-            case "player":
-                Nav.Push(new PlayerPage(_core, arg, "自检片",
-                    double.TryParse(Environment.GetEnvironmentVariable("LP_SELFCHECK_RESUME"),
-                        out var rs) ? rs : 0));
-                break;
+            case "player": RouteTo("player", arg, "自检片"); break;
         }
     }
 

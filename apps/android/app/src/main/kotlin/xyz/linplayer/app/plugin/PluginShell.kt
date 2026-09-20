@@ -31,7 +31,10 @@ object PluginShell {
         scope.launch {
             runCatching {
                 app.core.callJson("plugin.setCapabilities", toJsonObject(mapOf(
-                    "webview" to WebShell.available(activity), "spider_jar" to true, "spider_py" to false)))
+                    "webview" to WebShell.available(activity), "spider_jar" to true, "spider_py" to false,
+                    // ☠ 这一位是 nav / ui 对话框的闸门(rt/navui.go):报 true 而下面 when 里没接,
+                    //   插件会等满 60 秒再收到一个看起来像参数写错的超时
+                    "shell" to true)))
             }.onFailure { Logs.w("plugin", "报壳能力失败:" + it.message) }
         }
         scope.launch {
@@ -56,7 +59,9 @@ object PluginShell {
         val args = req["args"].obj() ?: JsonObject(emptyMap())
         running[id] = scope.launch {
             val reply: Map<String, Any?> = try {
-                val data: JsonElement = withTimeout(120_000) {
+                // 对话框等的是**人**:给它 120 秒的话,用户去倒杯水回来插件已经收到「超时」了
+                val data: JsonElement = if (op in dialogOps) dispatch(activity, app, op, args)
+                else withTimeout(120_000) {
                     when (op) {
                         "webview.sniff" -> WebShell.sniff(activity, args)
                         "webview.evaluate" -> WebShell.evaluate(activity, args)
@@ -64,7 +69,7 @@ object PluginShell {
                         "spider.load" -> SpiderHost.load(activity, args)
                         "spider.call" -> SpiderHost.call(activity, args)
                         "spider.dispose" -> { SpiderHost.dispose(args); JsonNull }
-                        else -> throw UnsupportedOperationException("安卓端不支持 $op")
+                        else -> dispatch(activity, app, op, args)
                     }
                 }
                 mapOf("id" to id, "ok" to true, "data" to data)
@@ -83,6 +88,17 @@ object PluginShell {
             runCatching { app.core.callJson("plugin.shellResult", toJsonObject(reply)) }
         }
     }
+
+    private val dialogOps = setOf("ui.confirm", "ui.prompt", "ui.select")
+
+    /** 导航、页面选项、角标、通知 —— 走这里,和上面那几条一样回 `plugin.shellResult`。 */
+    private suspend fun dispatch(activity: Activity, app: AppState, op: String, args: JsonObject): JsonElement =
+        when (op) {
+            "nav.push", "nav.replace", "nav.back", "nav.setPageOptions", "nav.setBadge" -> PluginNav.handle(op, args)
+            in dialogOps -> PluginDialogs.ask(op, args)
+            "ui.notify" -> PluginNotify.show(activity, app, args)
+            else -> throw UnsupportedOperationException("安卓端不支持 $op")
+        }
 
     private fun errorOf(id: Long, kind: String, msg: String) =
         mapOf("id" to id, "ok" to false, "error" to mapOf("kind" to kind, "message" to msg))

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -207,13 +208,13 @@ fun LpTabBar(current: Int, onPick: (Int) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Tab("首页", if (current == 0) LpIcons.homeOn else LpIcons.home, current == 0,
-                Modifier.weight(1f)) { onPick(0) }
-            Tab("聚合视界", LpIcons.globe, current == 1, Modifier.weight(1f)) { onPick(1) }
+                Modifier.weight(1f), badge("home")) { onPick(0) }
+            Tab("聚合视界", LpIcons.globe, current == 1, Modifier.weight(1f), badge("aggregate")) { onPick(1) }
             /* 第三格是**收藏**不是服务器【用户定 2026-09-12】。
                服务器一台一台加完就不再动了,而收藏是每天要看「哪部更新了」的地方 ——
                底栏只有三格,给一个用一次的入口是浪费。服务器挪去聚合页那排快捷入口。 */
             Tab("收藏", if (current == 2) LpIcons.heartOn else LpIcons.heart, current == 2,
-                Modifier.weight(1f)) { onPick(2) }
+                Modifier.weight(1f), badge("favorites")) { onPick(2) }
         }
         Spacer(Modifier.height(
             WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -231,6 +232,7 @@ private fun Tab(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     on: Boolean,
     m: Modifier,
+    badge: String? = null,
     onClick: () -> Unit,
 ) {
     val c = Lp.colors
@@ -251,6 +253,12 @@ private fun Tab(
                 Modifier.size(21.dp).graphicsLayer { val s = 1f + z * .08f; scaleX = s; scaleY = s },
                 tint = if (on) c.acc else c.fg3,
             )
+            if (badge != null) Text(
+                badge, color = Color.White, fontSize = 10.sp,
+                modifier = Modifier.align(Alignment.TopEnd).offset(x = 14.dp, y = (-8).dp)
+                    .clip(RoundedCornerShape(R.pill)).background(c.bad)
+                    .padding(horizontal = 6.dp, vertical = 1.dp),
+            )
         }
         Spacer(Modifier.height(3.dp))
         Text(
@@ -259,6 +267,9 @@ private fun Tab(
         )
     }
 }
+
+/** 插件挂在这个入口上的角标(D158);没有就是 null。 */
+private fun badge(target: String) = xyz.linplayer.app.plugin.PluginNav.badges[target]
 
 /** 让页面能拿到底栏高度做自己的留白(网格 / 自绘列表)。 */
 @Composable
