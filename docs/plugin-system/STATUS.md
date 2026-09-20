@@ -190,3 +190,44 @@
 ✅ 这一轮的改动里没有 IP / 域名 / 端口 / 账号 / 密钥;
 真实站点仍只在被 `.gitignore` 挡住的 `docs/plugin-system/tvbox-test-sites.local`;
 安卓自检里的 `10.0.2.2` 是模拟器访问宿主机的**固定保留地址**,不是任何真实主机。
+
+---
+
+# 阶段 ② 的第三方反向审计(2026-09-21)
+
+> 做法照上一轮的教训:**给它代码,不给它我的结论**(明确禁止它读 STATUS)。
+> 它反向注入验了四条,抓到的东西按严重度排在下面。已修的标 ✅,还没修的进「欠账」。
+
+## 一、它抓到的(都复核过,不是误报)
+
+| # | 问题 | 我复核的方式 | 处置 |
+|---|---|---|---|
+| 1 | `'token:名字'` 在两端都解不出 SPEC 20.4 的名字:桌面 `Tok.Of("color.ink2")` 查不到 → `Tok.cs:38` 返回 **透明**,那段文字整个看不见;安卓 `PluginRender.kt:297` 的 `when` 只认 `Accent`/`Ink2` 那套旧名 | 读两端代码确认 | ✅ 桌面走 `PluginShell.ColorTokens` / `NumberTokens`(和 `plugin.setEnv` **同一张表**,D556),数值 token 也认了;安卓同法 |
+| 2 | `check-plugin-ui.py` 的「属性都有人接」是假绿:判据在**两个壳文件拼起来的整段文本**里搜字符串,不分组件 | 自己注入过:把桌面 `ProgressBar` 的 value 实现改成永假 → 门禁 `exit 0`,7 条 ✓ 一条没少 | ⚠️ **修了一半**:见下 |
+| 3 | `([^)]*)` 在第一个右括号截断,**18 个组件的属性一条都没查**(签名里有 `() => void`) | 改成配对扫描后当场多出 9 条真缺口 | ✅ `check-plugin-ui.py` `signature()` / `top_level_props()` |
+| 4 | `nav` 整个命名空间不存在;`ui` 只挂了 `toast` | 临时探针确认 | ✅ `core/plugin/rt/navui.go`;壳没接时**当场**抛 unsupported,不排一条注定超时的请求 |
+| 5 | 门禁只有单向判据(挂上的必须在定义源里有),「定义源声明了、运行时一个没挂」完全看不见 | — | ✅ 反方向判据 `TestSDK定义源里的命名空间要么全挂要么在账上`:缺的成员要么挂上,要么记在 `notYetImplemented` 上**并写明理由**。当场逼出 40 条真账 |
+| 6 | `paddingX/Y` `marginX/Y` 在最小 DOM 的白名单里就没有 —— **连一条 op 都不发**,壳再实现也没用 | 补进白名单后新增的用例当场从红转绿 | ✅ `dom.js` + `TestUI样式白名单与定义源逐键对齐`(gen.mjs 产 `SDKStyleKeys`,两边无共同源)。反向注入:去掉 `paddingX/Y` → 当场红 |
+| 7 | `DECISIONS.md` 的 D268 原行没按表头自己的规矩改写(D561 已作废它的前提);`spec/07-ui.md` 7.4.1 写「待 spike」而 `19-plan.md` 写「已完成」,同一份 SPEC 自相矛盾 | 读两处确认 | ✅ D268 原行改写 + 7.4.1 改写 |
+| 8 | 错误边界少了 D136 明文的 `[重试] [禁用]` 两个按钮(安卓那个重试按钮的代码就摆在 `Base.kt:599`,只是没传 `onRetry`) | — | ❌ **欠账**(下一轮壳侧一起做) |
+| 9 | `Style` 61 个键里 20 多个两端都不读(`position/inset/zIndex/aspectRatio/shadow/backdropBlur/overflow/fit/tint/lineHeight/fontFamily/letterSpacing/borderWidth/borderColor` + 渐变背景) | 门禁第 3 关只查 `transition`/`animation` 两个键 | ❌ **欠账** |
+| 10 | `TextInput` 两端行为**互为反面**(桌面失焦才发、安卓每敲一个字就发),D135 要的防抖 + `live` + `onSubmit` 两端都没有;`Checkbox` 在安卓画成拨动开关 | 门禁现在把 `TextInput.live` / `onSubmit` 列成真缺口 | ✅ 桌面接齐 `defaultValue` / `secret` / `multiline` / `live` / `onSubmit`(默认**不逐字**,声明 `live` 才逐字,D135);安卓两条同法。`Checkbox` 仍是欠账 |
+| 11 | SPEC 16.5「报错栈经 sourcemap 映射回 TS 行号」完全没做:sourcemap 产出来、打进包,**没有任何消费方** | — | ✅ `core/plugin/rt/sourcemap.go`(自己解 VLQ,不引依赖);错误与 surface error 两条路都过映射;报错也进日志环,调试面板的「日志」那一块才看得到错误。反向注入:关掉映射 → 当场红 |
+| 12 | 安卓 `PluginSurface(props:)` 是死参数(mount 从不转发);两端也只挂过 `page` 一种 surface,SPEC 7.2 的另外五种没有宿主挂载点 | — | ❌ **欠账**(锚点块这一轮刚接上,是第二种) |
+| 13 | SPEC 16.4 的四条开发者 warn 只实现了「未知组件」一条;「未知属性」那条代码里还有注释明说不要记,和 D319 原文相反 | — | ❌ **欠账**,和 #2 一起修 |
+
+## 二、#2 为什么只修了一半
+
+配对扫描修掉了「18 个组件根本没查」,但**按组件分帐**没修:
+判据仍是「这个属性名在两个壳文件的整段文本里出现过」,所以
+`Image.placeholder` 一直被 `TextInput` 的水印顶着。
+
+真正的修法不是把正则写得更花,是让**壳自己报**它认得哪些属性 ——
+而且那张表要**被渲染器自己用**(SPEC 16.4 的「未知属性报 warn」正需要它),
+表和行为才不会分叉。这件事和 #13 是同一件,一起做。
+
+## 三、它查过、确认没问题的(免得下一个人重查)
+
+- `core/plugin/ui.go:120` 的安全区:注入写死 0 → 那条测试当场红,是真判据。
+- rt 那几条渲染器用例(合批、回调号回收、错误边界)反向注入都红,判据为真。
+- 41 个组件在两端都有**真分支**,不是落进 `Unknown()` 兜底。

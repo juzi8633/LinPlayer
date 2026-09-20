@@ -277,7 +277,7 @@
 | D265 | id 规则:作者与名字都只许小写字母/数字/连字符。进官方索引时 CI 校验作者名 = PR 提交者的 GitHub 用… | 03 04 15 | manifest.schema.json plugin-sdk.d.ts |
 | D266 | 官方插件作者名 = linplayer(如 linplayer/tvbox、linplayer/live);官方市场 C… | 04 15 17 | manifest.schema.json |
 | D267 | 自动设置页(D35)的项:开关 / 文本 / 下拉 / 数字,另加:密码/密钥(圆点显示,值存密钥区,备份规则同 D49… | 04 05 13 | manifest.schema.json plugin-sdk.d.ts |
-| D268 | 插件页可内嵌播放器:<Player> 组件。全局仍只有一个 mpv 实例,放了 <Player> 就把视频层定位到这块区… | 02 07 19 | plugin-sdk.d.ts |
+| D268 | ~~<Player>:全局只有一个 mpv 实例……桌面视频是独立子窗口,壳要做区域跟随~~ 前提已作废(D561):桌… | 02 07 19 | plugin-sdk.d.ts |
 | D269 | 插件页可内嵌网页:<WebView> 组件(显示论坛/评论/登录页),插件可往里注 JS、收消息;WebView 不可用… | 07 | plugin-sdk.d.ts |
 | D270 | 不做「整页用 HTML/CSS 写」的模式;UI 只有 JSX → 原生组件一条路(D23),真要网页就用 <WebVi… | 01 07 | plugin-sdk.d.ts |
 | D271 | 插件页首帧出来前宿主显示官方通用骨架屏,首帧到了再换 | 07 | ui-protocol.d.ts |
@@ -570,5 +570,5 @@
 | D558 | 壳向核心层报运行环境(plugin.setEnv:主题明暗 + token 表 + 系统「减少动态效果」),与 plug… | 07 | —(壳/渲染器行为) |
 | D559 | linplayer/devtools 插件不限平台,但里面只有面板那一页限桌面(D367 原意):手机/TV 打开它显示… | 17 | —(官方插件内部实现) |
 | D560 | 推翻 D375:不做「下载 GeckoView 动态加载」。GeckoView 主体是原生 libxul.so + 一整… | 05 19 | —(运行时内部行为) |
-| D561 | D268 的前提作废:桌面视频不是独立子窗口(那是已删除的 Rust + Tauri 栈),现在是视觉树里的 OpenG… | 19 | —(实施计划与验收) |
+| D561 | D268 的前提作废:桌面视频不是独立子窗口(那是已删除的 Rust + Tauri 栈),现在是视觉树里的 OpenG… | 07 19 | —(壳/渲染器行为) |
 | D562 | <ProgressBar> 补一个可选的 value(0~1):不给就绑当前播放进度(D161 原意,原生直接读 mpv… | 07 | —(壳/渲染器行为) |
