@@ -365,3 +365,75 @@
 | `<Player>` 两端仍是「不可用」占位 | D561 的结论要给 GL 初始化/销毁加引用计数 + 前台仲裁 |
 | 两端壳还没接 `player.openPanel` / `player.setOsdVisible` / `plugin.backRequest` / `plugin.playerKey` | 核心层这一侧已经齐了;壳侧跟阶段 ④ 的直播 TV 操作一起做 |
 | 审计提的 `NowPlaying` 之外的契约核对 | 这一轮只对齐了 `NowPlaying`;`.d.ts` 与宿主载荷的**逐个**核对要做成门禁 |
+
+---
+
+# 阶段 ④ 验收对账(2026-09-21)
+
+> 对照 D544:**公开 IPTV 源本地测能播能换台、XMLTV 节目单正确、回看/时移至少一种格式跑通、
+> TV 遥控全流程(上下换台、数字键、确认呼出列表、返回两次退出)**。
+
+## 做到的
+
+| 项 | 判据在哪 | 反向注入 |
+|---|---|---|
+| m3u / txt 解析,频道级请求头两种写法都认 | `core/plugin/live_parse_test.go:96` —— 拿**真的 `plugins/live/src/m3u.ts`** 编出来在 goja 里跑 | 丢掉 `#EXTVLCOPT` 的头 → 当场红「UA 丢了:map[]」 |
+| 同名频道合并保留清晰度后缀(D466) | 同上 `:146` | —— |
+| 回看四种格式(append / shift / default / flussonic) | 同上 `:191`;认不出来的模板**回空串**,界面据此不显示回看入口 | flussonic 不换段名 → 当场红 |
+| XMLTV 时区当偏移解 | 同上 `:226`,以及 `live_plugin_test.go:290` 的端到端那条 | 符号反过来 → 端到端那条红在「没有『正在播:』那一行」 |
+| 播不动自动换下一条并**记住能用的那条**(D61) | `core/plugin/live_plugin_test.go:177` —— 判据是「第一条不出画时真的换到了第二条」,不是「playUrl 没抛错」 | 不等出画就算成功 → 红 |
+| TV 遥控:上下换台 / 数字键输号 / 确认呼出列表 / 返回两次才退 | `live_plugin_test.go:207 / :228 / :242`,走的是**真实那条路**(壳调 `plugin.playerKey` → 插件 `player.onKey` 回 consumed) | 返回键一次就放行 → 红 |
+| 两端壳接上按键、返回问询、播放器覆盖层与侧边面板 | 桌面 `Views/PluginShell.cs` + `PlayerPage.cs`;安卓 `ui/plugin/PluginKeys.kt` + `PluginPlayerSurfaces.kt` | 安卓侧两条、桌面侧一条,各自当场红 |
+| 覆盖层真的挂得出来(这一版最大的洞) | 桌面真机日志:`[插件UI] linplayer/live/osd 首帧上屏(冷) 29 ms,1 个节点` | —— |
+
+## 没做到的
+
+| 项 | 为什么 |
+|---|---|
+| **用公开 IPTV 源在真机上跑一遍**(D544 第一句) | 判据里的「能播能换台」是拿**本地假源**验的(起一个 httptest 服务器吐 m3u,一条地址永不出画)。真源要联网,而且地址不能进仓库(红线)—— 这一条要你本机拿一条真源点一遍 |
+| 手机上插件收不到遥控器按键 | 手机播放页本来就没有按键处理(纯触摸)。闸门只接在 TV 播放页上,**没有为手机凭空造一条按键路径** |
+| 代理直播(`proxy://do=live`,D534) | 要 jar 环境;注册表里读到这种源时不静默丢掉,界面上灰显 |
+
+---
+
+# 阶段 ⑤ 验收对账(2026-09-21,核心层完成,壳侧在做)
+
+> 对照 D546:**各端一套官方示范主题、主题出错回退先红后绿测试、壁纸与视频壁纸跑通**。
+
+## 做到的
+
+| 项 | 判据在哪 |
+|---|---|
+| D443 的 spike 出结论(**这是阶段 ⑤ 的前置**) | `docs/research/plugins-v2/12-video-wallpaper-spike.md`,结论追成 D564:安卓做、桌面 2.0.0 不做 |
+| 主题加载失败**回退官方并记住** | `core/plugin/theme_test.go:24` —— 判据是「重启之后 `ActiveTheme` 回的是空」,不是「有没有打日志」;用户手动重选时清掉那条记录 |
+| 一包一端(D72) | `theme_test.go:69` |
+| 各端一套官方示范主题 | `plugins/theme-midnight`(桌面 .axaml)/ `-phone` / `-tv`(JSON);`theme_test.go:120` 逐端验「列得出来 + 文件真在包里」 |
+| 壁纸只有**当前选中的那个插件**换得动(D441) | `theme_test.go:87` |
+| 壁纸切换**不重启**、认不出来的 kind 当场报 | `theme_test.go:125` |
+
+## 没做到的
+
+| 项 | 为什么 |
+|---|---|
+| 桌面视频壁纸 | D564 定案不做:一个进程只能有一条 GL 通道,而核心层的 render context 是全局单例 —— 和 `<Player>`(D561)是同一件地基。桌面降级成静态图 + Canvas/着色器 |
+| 两端壳把主题真画出来、壁纸真垫上 | 核心层这一侧齐了(挑哪个、文件在哪、崩过没有);壳侧**在做** |
+| 主题 JSON 的 `motion` / `icons` / `fonts` 三段 | 这一版壳先解释 `tokens` 与 `layout`;解释不了的段落跳过并记日志,不算加载失败 |
+
+---
+
+# 发布就绪(2026-09-21)
+
+「一条命令就能发 2.0.0」:`bash scripts/release.sh` —— 门禁 → 出三端包 → 生成更新说明,
+**最后停在「可以推了」**。推是外发操作,脚本不碰。
+
+| 件 | 在哪 | 状态 |
+|---|---|---|
+| Release 说明(人写的那半) | `docs/plugin-system/RELEASE-2.0.0.md` | ✅ 含「已知的没做到」一节 |
+| 发版手册(含要你点头的四件事) | `docs/plugin-system/RELEASE-RUNBOOK.md` | ✅ |
+| 官方仓库内容 | `plugin-repo/`(**没推到任何远端**) | ✅ 结构、README、许可证口径 |
+| 上架 CI(index 校验 + 可信作者自动合并) | `plugin-repo/.github/workflows/validate-pr.yml` + `tools/validate-index.mjs` | ✅ 四条自测:三拒一放行 |
+| SDK / CLI 发 pnpm | `scripts/publish-sdk.sh`(**默认只演练**) | ✅ 演练列出每一个会发出去的文件 |
+| 官方仓库同步 | `scripts/sync-plugin-repo.sh` | ✅ 单向:主仓库是正本 |
+| 红线门禁 | `scripts/check-secrets.sh` | ✅ 新增的一律红;存量进欠账清单(只存哈希) |
+| Pages 站(Astro) | `plugin-repo/site/` | ⚠️ **在做** |
+| `VERSION` 改成 2.0.0 | 仓库根 `VERSION` | ⏸ **故意没改** —— 改它就等于发版,那一下留给你 |
