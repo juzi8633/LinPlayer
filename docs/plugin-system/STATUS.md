@@ -91,3 +91,48 @@
 ## 红线
 
 ✅ 新增六个提交里没有 IP / 域名 / 端口 / 账号 / 密钥;`docs/plugin-system/tvbox-test-sites.local` 与 `scripts/drpy-source.local` 被 `.gitignore:15` 挡住,`git log --all` 查无此文件。
+
+---
+
+# 阶段 ② 验收对账(2026-09-20,进行中)
+
+> 对照 [`spec/19-plan.md`](spec/19-plan.md) 19.3 的 ② 行(D543)。
+> 标记同上:✅ 做完并有证据 · ⚠️ 部分 · ❌ 没做 · ⏸ 按计划不到期。
+
+## 交付物
+
+| # | 交付物 | 状态 | 证据 |
+|---|---|---|---|
+| 1 | `core/plugin/ui` 渲染器(ops 协议) | ✅ | `core/plugin/ui.go`;`plugin.ui.mount/unmount/event` 三条命令;两层合批各有测试 |
+| 2 | SDK 的 Preact / 最小 DOM / JSX | ✅ | `tools/uibundle/` → `rt/uiruntime.js`(embed);41 个组件名 + h/hooks 从定义源生成 |
+| 3 | 桌面渲染器 | ✅ | `Views/PluginUi.cs` + `FlexPanel.cs`;真渲染截图 |
+| 4 | 手机渲染器 | ✅ | `ui/plugin/PluginSurface.kt` + `PluginRender.kt`;模拟器实测 250 条 op |
+| 5 | TV 渲染器(焦点) | ⚠️ 交互元素已换成可聚焦的那一套并有截图;**焦点顺序 / 焦点记忆没有测试** | `PluginRender.kt` `renderTv` |
+| 6 | 官方调试面板插件 | ✅ 三页(面板 / 组件示例 / 一千项) | `plugins/debug-panel/` |
+| 7 | `VirtualList` / `VirtualGrid`(D134) | ✅ | 1000 项首帧只建 24 个节点、127 条 op |
+| 8 | `Canvas`(D104) | ❌ | `canvas` op 两端都没接 |
+| 9 | 安全区 / 视口(D217 D425 D426) | ❌ | `plugin.ui.viewport` 命令没实现 |
+
+## D543 的四条数字验收
+
+| 验收 | 状态 | 实测 |
+|---|---|---|
+| 调试面板桌面跑通 | ✅ | `docs/images/plugin-ui/desktop-panel.png`、`desktop-gallery.png` |
+| 三端同一组示例页截图**一致** | ⚠️ 三端截图都有且结构一致(布局 / 输入 / 列表 / 错误边界),但**没有自动比对** | `desktop-gallery` / `phone-gallery` / `tv-gallery` |
+| TV 1000 项 VirtualList ≥50fps | ⚠️ 核心层这半有证据(一次局部更新 2 条 op,20 项与 1000 项相同;首帧只建 24 个节点);**帧率没在 TV 上量过** | `rt/ui_bench_test.go` |
+| 插件页首帧 < 300ms | ⚠️ 核心层 **7ms**(60 节点示例页);**壳把 ops 变成控件那一段没量** | `TestUI首帧预算` |
+| 错误边界 先红后绿 | ✅ | `TestUI错误边界只崩那一块`;模拟器上真拦住了插件抛的错 |
+| 焦点 先红后绿 | ❌ | TV 分支有,测试没有 |
+| 安全区 先红后绿 | ❌ | 整项没做 |
+
+## 这一轮截图逼出来的 bug(都不报错、编译全绿)
+
+| 症状 | 真因 |
+|---|---|
+| 整页只剩一个按钮,别处一片空白 | `#text` 做成了独立控件,塞不进 `TextBlock` |
+| 样式一条都没生效 | Preact 给数字样式自动补 `px`,壳按数字读读不到 |
+| 标签和值挤在一起 | `justify` 在 StackPanel 上无效(桌面);Compose 的 SpaceBetween 不撑满等于没写 |
+| 点完某个按钮整个插件再没反应 | UI 回调**一点预算都没有**,死循环占住事件循环,看门狗看不见 |
+| 安卓永远停在骨架屏 | 首帧在壳订阅之前就发成事件了 |
+| 滑着滑着内容跳回顶部 | 虚拟列表没按 `firstIndex` 垫上方空白 |
+| 开关旁边的文字被挤成一列竖字 | TV 上把 Switch 映射成了整行的 `PanelItem` |
