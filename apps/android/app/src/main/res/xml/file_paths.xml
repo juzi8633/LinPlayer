@@ -11,4 +11,6 @@
 -->
 <paths>
     <files-path name="lp-update" path="cache/update/" />
+    <!-- 插件 system.share 的图片落点(PluginSystem.imageUri)。同理只开这一个子目录。 -->
+    <cache-path name="lp-plugin-share" path="plugin-share/" />
 </paths>

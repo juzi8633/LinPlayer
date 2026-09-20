@@ -81,6 +81,11 @@ public static class PluginShell
                     "ui.prompt" => await Prompt(args),
                     "ui.select" => await Select(args),
                     "ui.notify" => await Notify(args),
+                    "system.openUrl" => Launch(Mi.Str(args, "url")),
+                    "system.openApp" => OpenApp(args),
+                    "system.clipboardRead" => await ClipboardRead(),
+                    "system.clipboardWrite" => await ClipboardWrite(args),
+                    "system.share" => await Share(args),
                     _ => throw new NotSupportedException("桌面端不支持 " + op),
                 };
                 await core.PluginShellResult(new { id, ok = true, data });
@@ -258,6 +263,85 @@ public static class PluginShell
         Log.W("插件通知", $"{Mi.Str(args, "plugin")}:{title} / {body}(降级成 Toast,丢掉 {dropped} 个动作)");
         Toast.Show(body.Length > 0 ? $"{title} — {body}" : title);
         return Task.FromResult<object?>(null);
+    }
+
+    // ---------------------------------------------------------------- system(SPEC 13)
+
+    /// <summary>
+    /// 交给系统去开。<c>file:</c> / <c>content:</c> / <c>C:\…</c> 核心层已经拦了
+    /// (core/plugin/rt/system.go 的 badAppTarget),这层不再拦第二遍,也不放宽。
+    /// </summary>
+    private static object? Launch(string target)
+    {
+        using var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target) { UseShellExecute = true });
+        return null;
+    }
+
+    /// <summary>
+    /// 调起别的 App。<c>{action,package,extras}</c> 是安卓 Intent,桌面没有对应物 ——
+    /// 只认其中的 <c>data</c>(深链);连 data 都没有就得报 unsupported,
+    /// 静默回 false 会让插件以为「用户机器上没装」,而真相是这个端根本解释不了这种目标。
+    /// </summary>
+    private static object OpenApp(JsonElement args)
+    {
+        var t = args.TryGetProperty("target", out var v) ? v : default;
+        var deep = t.ValueKind == JsonValueKind.String ? t.GetString() ?? "" : Mi.Str(t, "data");
+        if (deep.Length == 0)
+            throw new NotSupportedException("桌面端没有 Android Intent,action/package/extras 这种目标开不了;要在桌面也能用,请在 target 里给一个深链地址(data)");
+        try { Launch(deep); return true; }
+        catch (Exception e) { Log.W("插件 openApp", $"{deep} 没开起来:{e.Message}"); return false; }
+    }
+
+    /// <summary>剪贴板要在 UI 线程上拿,而 shell 请求是在 Task.Run 里回来的。</summary>
+    private static Avalonia.Input.Platform.IClipboard Clip() =>
+        Avalonia.Controls.TopLevel.GetTopLevel(Program.MainWindowRef)?.Clipboard
+        ?? throw new NotSupportedException("主窗口还没起来,这会儿拿不到剪贴板");
+
+    private static Task<object?> ClipboardRead() => OnUi<object?>(async () =>
+        await Avalonia.Input.Platform.ClipboardExtensions.TryGetTextAsync(Clip()) ?? "");
+
+    private static Task<object?> ClipboardWrite(JsonElement args) => OnUi<object?>(async () =>
+    {
+        await Clip().SetTextAsync(Mi.Str(args, "text"));
+        return null;
+    });
+
+    /// <summary>
+    /// 分享。桌面没有系统分享面板,按 SPEC 7.10 降级:文字进剪贴板,图片走另存为。
+    ///
+    /// <para>日志是必须的:插件那头收到的是「分享成功」,不记的话
+    /// 没人查得出用户为什么没在微信里看到那张图。</para>
+    /// </summary>
+    private static Task<object?> Share(JsonElement args) => OnUi<object?>(async () =>
+    {
+        var text = string.Join("\n", new[] { Mi.Str(args, "title"), Mi.Str(args, "text"), Mi.Str(args, "url") }
+            .Where(s => s.Length > 0));
+        var img = Mi.Str(args, "image");
+        Log.W("插件分享", $"桌面没有系统分享面板,降级:文字{(text.Length > 0 ? "进剪贴板" : "为空")}、图片{(img.Length > 0 ? "另存为" : "为空")}");
+        if (text.Length > 0) await Clip().SetTextAsync(text);
+        if (img.Length == 0)
+        {
+            Toast.Show(text.Length > 0 ? "已复制到剪贴板(桌面没有系统分享)" : "没有可分享的内容");
+            return null;
+        }
+        var saved = await SavePng(Convert.FromBase64String(img));
+        Toast.Show(saved ? "图片已保存" + (text.Length > 0 ? ",文字已复制到剪贴板" : "") : "没有保存图片");
+        return null;
+    });
+
+    private static async Task<bool> SavePng(byte[] png)
+    {
+        if (Avalonia.Controls.TopLevel.GetTopLevel(Program.MainWindowRef)?.StorageProvider is not { } sp) return false;
+        var f = await sp.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
+        {
+            Title = "保存分享图片",
+            SuggestedFileName = "LinPlayer-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".png",
+            FileTypeChoices = [new Avalonia.Platform.Storage.FilePickerFileType("PNG 图片") { Patterns = ["*.png"] }],
+        });
+        if (f is null) return false;
+        await using var s = await f.OpenWriteAsync();
+        await s.WriteAsync(png);
+        return true;
     }
 
     /// <summary>[去验证](D323):整页 WebView 过盾,Cookie 进该源的罐子,回来后由调用方重试。</summary>

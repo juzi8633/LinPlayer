@@ -33,6 +33,20 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
+    <!-- targetSdk 30+ 的包可见性会把 resolveActivity 过滤成 null。不声明这两条,
+         插件的 system.openUrl / system.share 在有浏览器的手机上也会被判成「这端做不到」。
+         openApp 的深链花样太多没法枚举,那条改成发一次看抛不抛(PluginSystem.openApp)。 -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="*/*" />
+        </intent>
+    </queries>
+
     <application
         android:name=".LinPlayerApp"
         android:allowBackup="false"
