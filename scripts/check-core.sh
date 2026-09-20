@@ -11,6 +11,7 @@
 #   5. 差分对账              —— Go 侧输出与黄金实现(Rust)逐字段一致
 #   6. lp check              —— 真跑一次 CLI(不是只比 schema),外加一条必须红的坏包
 #   7. SDK 注册骨架           —— .d.ts 重新生成一遍,产物必须和仓库里那份一样(D514)
+#   8. UI 运行时              —— Preact + 最小 DOM 的打包产物同样要跟上源文件(D23)
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -91,6 +92,29 @@ if command -v pnpm >/dev/null 2>&1; then
   rm -f "$GEN_TMP"
 else
   # ☠ 不许静默跳过:跳过的门禁和不存在的门禁是一回事,至少要让人看见它没跑
+  echo "  ⚠ 没有 pnpm,这一关没跑(装:npm i -g pnpm)"
+fi
+
+step "8. UI 运行时产物是否最新(D23)"
+# uiruntime.js 里有 Preact 本体,Go 侧 //go:embed 它 —— 进仓库是为了「编 Go 不需要 node」。
+# 改了 tools/uibundle/src/*.js 却忘了重打包的话,跑的还是旧渲染器,
+# 而 ui_test.go 测的也是旧的那份:两边一起过时,门禁全绿。
+if command -v pnpm >/dev/null 2>&1; then
+  if [ ! -d "$ROOT/tools/uibundle/node_modules" ]; then ( cd "$ROOT/tools/uibundle" && pnpm install --silent ); fi
+  UI_TMP="$(mktemp)"
+  if node "$ROOT/tools/uibundle/build.mjs" --out "$UI_TMP" >/dev/null; then
+    if cmp -s "$UI_TMP" "$ROOT/core/plugin/rt/uiruntime.js"; then
+      echo "  ✓ 与 tools/uibundle/src 一致"
+    else
+      echo "  ✗ uiruntime.js 落后于 tools/uibundle/src —— 跑 \`pnpm --dir tools/uibundle build\` 再提交"
+      fail=$((fail + 1))
+    fi
+  else
+    echo "  ✗ 打包器跑不起来"
+    fail=$((fail + 1))
+  fi
+  rm -f "$UI_TMP"
+else
   echo "  ⚠ 没有 pnpm,这一关没跑(装:npm i -g pnpm)"
 fi
 

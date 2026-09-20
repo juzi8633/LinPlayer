@@ -60,6 +60,9 @@ type Runtime struct {
 
 	def *goja.Object // definePlugin 交来的对象
 
+	ui     *goja.Object // uiruntime.js 的渲染器,第一次挂 surface 时才建
+	uiSink UISink
+
 	logs *ring[LogEntry]
 	reqs *ring[RequestEntry]
 	kv   *kvStore

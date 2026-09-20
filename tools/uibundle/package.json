@@ -1,0 +1,8 @@
+{
+  "name": "lp-uibundle",
+  "private": true,
+  "type": "module",
+  "description": "把 Preact + 最小 DOM + 渲染器打成 core/plugin/rt 内嵌的 uiruntime.js(D23 SPEC 7.1)。",
+  "scripts": { "build": "node build.mjs" },
+  "devDependencies": { "preact": "10.28.4" }
+}

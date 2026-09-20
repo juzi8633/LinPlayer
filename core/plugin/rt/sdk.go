@@ -198,6 +198,9 @@ func (r *Runtime) installSDK() error {
 	r.installHTML(ns("html"))
 	r.installCrypt(ns("crypt"))
 	r.installShell(sdk)
+	if err := r.installUI(sdk); err != nil {
+		return err
+	}
 	return vm.Set(SDKGlobal, sdk)
 }
 
