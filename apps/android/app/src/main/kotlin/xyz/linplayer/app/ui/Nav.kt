@@ -20,6 +20,8 @@ object Route {
     @Serializable data class Detail(val itemId: String, val type: String)     // U1.5
     @Serializable data class Search(val viewId: String? = null, val q: String? = null) // U1.7
     @Serializable data object Favorites                                       // U1.9a · Tab 2
+    /** 全局观看历史(SPEC 8.7)。本地库,跨服续播靠它 —— 和「全部收藏」是一对。 */
+    @Serializable data object History
 
     /**
      * 「按某个类型 / 标签 / 工作室 列条目」的落地页

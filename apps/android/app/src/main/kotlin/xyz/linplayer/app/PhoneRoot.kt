@@ -143,6 +143,7 @@ private fun MainShell() {
             "plugins" -> nav.navigate(Route.Plugins(parts.getOrElse(1) { "0" }.toIntOrNull() ?: 0))
             "extensions" -> nav.navigate(Route.Extensions)
             "srcfav" -> nav.navigate(Route.SourceFavorites)
+            "history" -> nav.navigate(Route.History)
             "ranking" -> nav.navigate(Route.Ranking)
             "calendar" -> nav.navigate(Route.Calendar)
             "settings" -> nav.navigate(Route.Settings)
@@ -194,6 +195,7 @@ private fun MainShell() {
                     val src by app.activeSource.collectAsStateWithLifecycle()
                     if (src != null) xyz.linplayer.app.ui.pages.SourceFavoritesPage(nav) else FavoritesPage(nav)
                 }
+                composable<Route.History> { xyz.linplayer.app.ui.pages.HistoryPage(nav) }
                 composable<Route.Facet> { FacetPage(nav, it) }
                 composable<Route.Lines> { LinesPage(nav, it) }
                 composable<Route.Browse> { BrowsePage(nav) }

@@ -112,6 +112,8 @@ fun FavoritesPage(nav: NavController) {
 
     LpScaffold("收藏", scrolled = rememberScrolled(grid), actions = {
         // 数据源的收藏单独一页(D326):它们不在 Emby 服务器上,排序档位也对不上
+        // 「观看历史」和「全部收藏」是一对(SPEC 8.7 D326)
+        xyz.linplayer.app.ui.components.LpIconButton(LpIcons.rewind, "观看历史") { nav.navigate(Route.History) }
         xyz.linplayer.app.ui.components.LpIconButton(LpIcons.plugin, "数据源收藏") { nav.navigate(Route.SourceFavorites) }
     }) { pad ->
         BlockBox(block, { reload++ }, skeleton = { GridSkel(pad) }) { items ->
@@ -379,4 +381,79 @@ internal fun facetParam(kind: String): String = when (kind) {
     "tag" -> "tags"
     "studio" -> "studio_ids"
     else -> "genres"
+}
+
+// ---------------------------------------------------------------- 全局观看历史(SPEC 8.7 D430 D431)
+
+/** ticks 是 100 纳秒单位 —— 除以 1e7 才是秒。写成 1e6 时长会大十倍且不报错。 */
+private fun clockOf(secs: Double): String {
+    val s = secs.toInt()
+    return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%d:%02d".format(s / 60, s % 60)
+}
+
+/**
+ * 全局观看历史。这份记录是**本地库**不是服务器的播放记录 —— 跨服续播就靠它,
+ * 所以「当前服务器」和「全部」是两种看法,都要有。
+ *
+ * ★ 数据源那部分走 [SourceHistoryRow]:它已经按换源链路合并过(D431),
+ *   来源被删的仍然显示但点不开(D333)—— 藏起来用户会以为记录丢了。
+ */
+@Composable
+fun HistoryPage(nav: NavController) {
+    val app = LocalApp.current
+    val scope = rememberCoroutineScope()
+    val list = rememberLazyListState()
+    var onlyCurrent by remember { mutableStateOf(true) }
+    var recs by remember { mutableStateOf<List<JsonObject>?>(null) }
+    LaunchedEffect(onlyCurrent) {
+        recs = runCatching { app.call("emby.watchHistoryList", args("current_only" to onlyCurrent)) }
+            .getOrNull().arr().mapNotNull { it.obj() }
+            // 核心层不保证顺序,排序是展示层的事
+            .sortedByDescending { it.long("last_played_at") ?: 0L }
+    }
+
+    LpScaffold("观看历史", onBack = { nav.popBackStack() }, scrolled = rememberScrolled(list)) { pad ->
+        LazyColumn(Modifier.fillMaxSize(), list, contentPadding = PaddingValues(bottom = pad.calculateBottomPadding())) {
+            item("scope") {
+                Row(Modifier.padding(horizontal = Sp.x16, vertical = Sp.x8), horizontalArrangement = Arrangement.spacedBy(Sp.x6)) {
+                    ToneChip("当前服务器", on = onlyCurrent) { onlyCurrent = true }
+                    ToneChip("全部服务器", on = !onlyCurrent) { onlyCurrent = false }
+                }
+            }
+            item("src") { SourceHistoryRow(nav) }
+            val rows = recs
+            if (rows == null) item("skel") {
+                Column(Modifier.padding(Sp.x16)) {
+                    repeat(4) { Skeleton(Modifier.fillMaxWidth().height(56.dp)); Spacer(Modifier.height(Sp.x10)) }
+                }
+            } else if (rows.isEmpty()) item("none") {
+                EmptyState("还没有观看记录", "看过的片会记在本机,换服务器或重装之后还在。", LpIcons.rewind)
+            } else {
+                item("h") { xyz.linplayer.app.ui.components.H2("服务器", Modifier.padding(Sp.x16)) }
+                items(rows.take(200), key = { it.str("record_id") ?: "" }) { rec ->
+                    val series = rec.str("series_title").orEmpty()
+                    val title = rec.str("title").orEmpty()
+                    val pos = (rec.long("last_position_ticks") ?: 0L) / 1e7
+                    val run = (rec.long("run_time_ticks") ?: 0L) / 1e7
+                    val right = if (rec.bool("played")) "已看完" else if (run > 0) "${clockOf(pos)} / ${clockOf(run)}" else clockOf(pos)
+                    val itemId = rec.str("last_emby_item_id")
+                    // scope_key 是 `server:user_id`,server 自带 https:// 甚至端口 —— 按**最后一个**冒号切
+                    val sid = (rec.str("scope_key") ?: "").substringBeforeLast(':', "")
+                    // last_played_at 是**毫秒**(core/history/store.go 的 nowMs),当秒读日期会跳到五万年后
+                    val whenMs = rec.long("last_played_at") ?: 0L
+                    val whenText = if (whenMs > 0) java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+                        .format(java.util.Date(whenMs)) else ""
+                    LpCell(if (series.isEmpty()) title else "$series · $title", sub = whenText, value = right, onClick = {
+                        if (itemId.isNullOrEmpty()) { app.toast("这条记录没有对应的条目,换服务器后要先在设置里「扫描恢复」"); return@LpCell }
+                        scope.launch {
+                            if (sid.isNotEmpty()) runCatching { app.call("account.setActiveServer", args("server_id" to sid)) }
+                                .onSuccess { app.refreshSession() }.onFailure { app.report(it); return@launch }
+                            nav.navigate(Route.Detail(itemId, if (series.isEmpty()) "Movie" else "Episode"))
+                        }
+                    })
+                    Hairline()
+                }
+            }
+        }
+    }
 }

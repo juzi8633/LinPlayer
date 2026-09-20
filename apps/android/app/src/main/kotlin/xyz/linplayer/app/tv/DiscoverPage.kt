@@ -35,6 +35,7 @@ import xyz.linplayer.app.data.Item
 import xyz.linplayer.app.data.LocalApp
 import xyz.linplayer.app.data.arr
 import xyz.linplayer.app.data.block
+import xyz.linplayer.app.data.bool
 import xyz.linplayer.app.data.dbl
 import xyz.linplayer.app.data.keepState
 import xyz.linplayer.app.data.long
@@ -53,10 +54,13 @@ import xyz.linplayer.app.tv.kit.bleed
 import xyz.linplayer.app.tv.kit.contentArea
 import xyz.linplayer.app.tv.kit.tvType
 import xyz.linplayer.app.ui.pages.args
+import xyz.linplayer.app.ui.pages.j
 import xyz.linplayer.app.ui.pages.jsonArrayOf
 import xyz.linplayer.app.ui.pages.map
 
-private data class Entry(val title: String, val sub: String, val image: String?, val rank: Int)
+private data class Entry(val title: String, val sub: String, val image: String?, val rank: Int,
+                        /** `sync.calendarLibrary` 的命中:非空 = 这部剧已在当前 Emby 库里(D366)。 */
+                        val hit: JsonObject? = null)
 
 private val Weekdays = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 
@@ -84,12 +88,18 @@ fun DiscoverPage() {
         }
     }
 
-    fun open(title: String) {
+    fun open(e: Entry) {
+        // 放送表已经对过库(D366):有命中就直奔那一条,不必再按片名搜一遍
+        e.hit?.let { h ->
+            if (h.bool("playable")) nav.push(TvRoute.Player(h.str("item_id") ?: "", e.title))
+            else nav.push(TvRoute.Detail(h.str("series_id") ?: h.str("item_id") ?: "", "Series"))
+            return
+        }
         scope.launch {
             val hit = Item.list(runCatching {
-                app.call("emby.search", args("query" to title, "types" to jsonArrayOf(listOf("Movie", "Series")), "limit" to 5))
+                app.call("emby.search", args("query" to e.title, "types" to jsonArrayOf(listOf("Movie", "Series")), "limit" to 5))
             }.getOrNull()).firstOrNull()
-            if (hit != null) openItem(nav, hit) else app.toast("「$title」不在当前服务器的媒体库里")
+            if (hit != null) openItem(nav, hit) else app.toast("「${e.title}」不在当前服务器的媒体库里")
         }
     }
 
@@ -123,7 +133,7 @@ fun DiscoverPage() {
 }
 
 @Composable
-private fun RankingPane(app: AppState, cat: Pair<String, String>?, cats: Block<List<Pair<String, String>>>, open: (String) -> Unit) {
+private fun RankingPane(app: AppState, cat: Pair<String, String>?, cats: Block<List<Pair<String, String>>>, open: (Entry) -> Unit) {
     val t = tvType
     if (cats is Block.Ok && cats.value.isEmpty()) {
         // ☠ **不存在「排行榜开关」**,别写「去设置里打开」:用户照着找只会翻个空
@@ -162,10 +172,12 @@ internal fun weekdayOf(o: JsonObject): Int? = o.long("weekday")?.toInt()?.takeIf
     }
 
 @Composable
-private fun CalendarPane(app: AppState, src: Int, day: Int, today: Int, onDay: (Int) -> Unit, open: (String) -> Unit) {
+private fun CalendarPane(app: AppState, src: Int, day: Int, today: Int, onDay: (Int) -> Unit, open: (Entry) -> Unit) {
     val t = tvType
     var all by remember(src) { mutableStateOf<Block<List<JsonObject>>>(Block.Loading) }
     var login by remember(src) { mutableStateOf<Boolean?>(null) }
+    // 索引 → 媒体库命中(D366)。放送表先画出来再去对库:对得慢不该拖住整页
+    var hits by remember(src) { mutableStateOf<Map<String, JsonObject>>(emptyMap()) }
     LaunchedEffect(src) {
         launch {
             login = runCatching { app.call(if (src == 0) "sync.bangumiAccount" else "sync.traktAccount") }.getOrNull()
@@ -173,6 +185,17 @@ private fun CalendarPane(app: AppState, src: Int, day: Int, today: Int, onDay: (
         }
         all = app.block(if (src == 0) "sync.bangumiCalendar" else "sync.traktCalendar", args("only_mine" to false))
             .map { e -> e.arr().mapNotNull { it.obj() } }
+        val rows = (all as? Block.Ok)?.value ?: return@LaunchedEffect
+        val q = rows.mapIndexed { i, o ->
+            buildMap<String, Any> {
+                put("key", i.toString()); put("title", o.str("title") ?: "")
+                o.long("tmdb_id")?.let { put("tmdb_id", it) }
+                o.long("season")?.let { put("season", it) }
+                o.long("episode")?.let { put("episode", it) }
+            }
+        }
+        hits = runCatching { app.call("sync.calendarLibrary", j("entries" to q)).obj() }.getOrNull()
+            ?.mapNotNull { (k, v) -> v.obj()?.let { k to it } }?.toMap().orEmpty()
     }
     val name = if (src == 0) "Bangumi" else "Trakt"
     Column {
@@ -188,12 +211,15 @@ private fun CalendarPane(app: AppState, src: Int, day: Int, today: Int, onDay: (
             itemModifier = { i -> Modifier.memo("cal.day.$i") }, onSelect = { onDay(it + 1) })
         Spacer(Modifier.height(TvSp.x12))
         val block = all.map { list ->
-            list.filter { weekdayOf(it) == day }.map { o ->
+            // 带着原始下标过滤:calendarLibrary 的 key 是全表的下标,按天筛完就对不上了
+            list.withIndex().filter { weekdayOf(it.value) == day }.map { (i, o) ->
                 // 取不到时刻就不写时刻,别编播出时间
                 val hhmm = o.str("broadcast_at")?.let { iso ->
                     runCatching { java.time.Instant.parse(iso).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")) }.getOrNull()
                 }
-                Entry(o.str("title") ?: "", listOfNotNull(o.str("subtitle"), hhmm).joinToString(" · "), o.str("image_url"), 0)
+                val h = hits[i.toString()]
+                val mark = h?.let { if (it.bool("playable")) "可播" else "已入库" }
+                Entry(o.str("title") ?: "", listOfNotNull(o.str("subtitle"), hhmm, mark).joinToString(" · "), o.str("image_url"), 0, h)
             }
         }
         if (block is Block.Fail && src == 1) TvText("Trakt 没有连接 · 设置 → 同步里连接之后才有放送表", t.body, TvC.fg2)
@@ -202,7 +228,7 @@ private fun CalendarPane(app: AppState, src: Int, day: Int, today: Int, onDay: (
 }
 
 @Composable
-private fun EntryGrid(block: Block<List<Entry>>, rank: Boolean, keyPrefix: String, open: (String) -> Unit) {
+private fun EntryGrid(block: Block<List<Entry>>, rank: Boolean, keyPrefix: String, open: (Entry) -> Unit) {
     val t = tvType
     when (block) {
         is Block.Loading -> Row(horizontalArrangement = Arrangement.spacedBy(15.dp)) { repeat(5) { Skel(Modifier.width(TvDim.posterW).height(TvDim.posterH)) } }
@@ -213,7 +239,7 @@ private fun EntryGrid(block: Block<List<Entry>>, rank: Boolean, keyPrefix: Strin
         ) {
             itemsIndexed(block.value, key = { i, e -> "$i.${e.title}" }) { i, e ->
                 CardPoster(cover = { TvImage(e.image) }, title = e.title, sub = e.sub, rank = if (rank) e.rank else 0,
-                    modifier = Modifier.memo("$keyPrefix.$i"), onClick = { open(e.title) })
+                    modifier = Modifier.memo("$keyPrefix.$i"), onClick = { open(e) })
             }
         }
     }

@@ -11,7 +11,7 @@
 | 1 | `core/plugin`:安装器底线、manifest 校验、来源记录、启停/待重启、连错禁用、连崩安全模式、市场订阅、下载回退 | ✅ 八项全 | `install.go:24-149` `manifest.go:142-163` `state.go:17-26` `host.go:99-207,427-461` `market.go` 全文 |
 | 2 | `core/plugin/rt`:goja + 事件循环 + 超时 Interrupt + 子运行时 + Web 全局 + fetch + storage/secrets/files/registry/html/crypt/js.bundle | ✅ 全 | `runtime.go:96-196` `jsctx.go` `globals.go`+`prelude.js` `fetch.go:254-385` `storage.go` `registry.go` `html.go` `crypt.go` |
 | 3 | `core/source`:`SplitPlugin` 按最后一个 `/` 切、数据源动词命令、统一结构、列表钩子与屏蔽链 | ✅ 全(动词命令落在 `core/datasource`) | `source/source.go:64-74` `datasource/verbs.go:43-52,181-198` |
-| 4 | 宿主 UI(两壳)13 项 | ⚠️ TV 六项已补齐(2026-09-20);**手机还缺全局观看历史** | 见下表 |
+| 4 | 宿主 UI(两壳)13 项 | ✅ 三端齐(TV 六项 + 手机观看历史,2026-09-20 补) | 见下表 |
 | 5 | `linplayer/tvbox`:type0/1、drpy、配置解码、订阅、多仓、解析链、三端嗅探、rules/ads、错误映射、Android jar、type4 | ✅ 11/11 | `plugins/tvbox/src/*.ts`;桌面 jar 按 D351 归 spike,已显式关闭 `PluginShell.cs:21-23` |
 | 6 | `lp` CLI:create/build/pack/dev/check | ✅ 5/5(另有 submit) | `core/cmd/lp/main.go:94,193,219,246,281,444` |
 | 7 | 假站 fixture 进仓库跑门禁(D321) | ✅ | `core/internal/fakevod/fakevod.go`;`check-core.sh` 第 1 关经 `datasource/tvbox_e2e_test.go` 拉起 |
@@ -28,7 +28,7 @@
 | 聚合搜索**按源分行** | ✅ | ✅ | ✅ 一源一行 + partial 流式(`tv/SearchPage.kt` `AggregateRows`) |
 | 换源三层 | ✅ | ✅ | ✅(分层渲染未逐行复核) |
 | 「允许聚合」开关 | ✅ | ✅ | ✅ 服务器面板 + 插件源菜单键(`tv/ServersPages.kt` `AggregateItem`) |
-| 全局观看历史 | ✅ | ❌ 无路由,`DataSourcePages.kt:520` 零调用 | ✅ `tv/ListPages.kt` `HistoryPageTv`,入口在收藏页 |
+| 全局观看历史 | ✅ | ✅ `ui/pages/ListPages.kt` `HistoryPage`,收藏页右上角入口 | ✅ `tv/ListPages.kt` `HistoryPageTv`,入口在收藏页 |
 | 全部收藏含数据源 | ✅ | ✅ | ✅ 并进 `source.favorites` 分组(`tv/ListPages.kt`) |
 | 插件页四标签 | ✅ | ✅ | ✅ 已安装 / 市场 / 接管位 / 仓库(`tv/SourcePagesTv.kt`) |
 | 扩展组件页 | ✅ | ✅ | ✅ `tv/SourcePagesTv.kt` `ExtensionsPageTv`,设置页入口 |
@@ -40,9 +40,14 @@
 |---|---|---|---|
 | 排行榜(含 Bangumi 榜) | ✅ | ✅ | ✅ |
 | 追剧日历页 | ✅ | ✅ | ✅ |
-| 「已入库 / 可播」(D366) | ✅ | ✅ | ❌ 不调 `sync.calendarLibrary` |
-| 开播提醒(后台通知) | ❌ | ✅ `CalendarWorker.kt` | ✅ 同左 |
+| 「已入库 / 可播」(D366) | ✅ | ✅ | ✅ `tv/DiscoverPage.kt` `CalendarPane`,命中直接进详情/起播 |
+| 开播提醒(后台通知) | ⚠️ 已接但只在程序运行时 | ✅ `CalendarWorker.kt` | ✅ 同左 |
 | **付费解锁:订单号校验** | ❌ | ❌ | ❌ |
+
+桌面开播提醒这条**是我上一版写错了**:`Views/AppJobs.cs:34` 真在调 `sync.calendarDue`,
+挂点在 `MainWindow.axaml.cs:1537` 的 `AppJobs.Start(_core)`,启动 1 分钟后一次、之后每 30 分钟。
+差的是**「应用没开时也提醒」**:桌面整个没有托盘(`grep -rn "TrayIcon" apps/windows` 无果),
+而 D502 写的就是「桌面应用退到托盘时也跑」—— 托盘本身还没建,所以这半条挂在 D502 上,不属于阶段 ①。
 
 付费这条:核心层 `core/sync/afdian.go:41` + 命令 `system.afdianVerify` 都在,**三端无人调用**,日历现在是免费的。
 `6b290d80^` 里也没有这个界面 —— 是历史欠账,不是本轮回归,但 SPEC 18.1 写了要有。
