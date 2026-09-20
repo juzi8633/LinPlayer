@@ -58,6 +58,9 @@ sealed interface TvRoute {
         val autoLine: String? = null, val autoEp: String? = null, val autoPos: Double = 0.0, val autoIndex: Int = 0,
     ) : TvRoute { override val rail = -1 }
     data object Plugins : TvRoute { override val rail = 7 }
+    data object Extensions : TvRoute { override val rail = 7 }
+    /** 全局观看历史(SPEC 8.7)。导航轨的八格是定死的(§3.1),所以它从收藏页下钻。 */
+    data object History : TvRoute { override val rail = 3 }
 }
 
 /** 轨上第 i 项对应的平级页。 */

@@ -230,7 +230,16 @@ fun ServersPage() {
                     if (open) itemsIndexed(rows, key = { _, o -> o.str("server") ?: "" }) { _, o ->
                         val id = o.str("server") ?: ""
                         val why = o["plugin"].obj().str("unavailable").orEmpty()
-                        ServerCard(o, if (o["plugin"].obj().bool("last_failed")) false else null, 0, 1, false, false, Modifier.memo("srv.$id")) {
+                        ServerCard(o, if (o["plugin"].obj().bool("last_failed")) false else null, 0, 1, false, false, Modifier.memo("srv.$id"),
+                            // 确认键直接切源(一个订阅几十个源,多一层面板等于多按几十次);
+                            // 「允许聚合」这类不常改的开关挂菜单键,和手机端长按菜单同一套内容
+                            onLongClick = {
+                                overlay.open {
+                                    TvSidePanel(o.str("name") ?: id, { overlay.close() }) {
+                                        AggregateItem(o, focused = true) { overlay.close(); reload++ }
+                                    }
+                                }
+                            }) {
                             if (why.isNotEmpty()) { app.toast(why); return@ServerCard }
                             scope.launch {
                                 runCatching { app.call("account.setActiveServer", args("server_id" to id)) }
@@ -246,7 +255,10 @@ fun ServersPage() {
 }
 
 @Composable
-private fun ServerCard(o: JsonObject, ok: Boolean?, index: Int, total: Int, reorder: Boolean, moving: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun ServerCard(
+    o: JsonObject, ok: Boolean?, index: Int, total: Int, reorder: Boolean, moving: Boolean, modifier: Modifier,
+    onLongClick: (() -> Unit)? = null, onClick: () -> Unit,
+) {
     val t = tvType
     val id = o.str("server") ?: ""
     val local = o.str("source_kind") == "local"
@@ -277,7 +289,24 @@ private fun ServerCard(o: JsonObject, ok: Boolean?, index: Int, total: Int, reor
         Modifier.size(256.dp, 150.dp).clip(TvR.lg).background(TvC.surface1).dashed(if (moving) TvC.acc else TvC.fg3)
             .then(if (moving) Modifier else Modifier.graphicsLayer { alpha = .72f }),
         content = body,
-    ) else CoverSurface(256.dp, 150.dp, modifier = modifier, onClick = onClick, content = body)
+    ) else CoverSurface(256.dp, 150.dp, modifier = modifier, onLongClick = onLongClick, onClick = onClick, content = body)
+}
+
+/**
+ * 「允许聚合」开关(D233 D235)。Emby 与数据源共用 `source.setAggregate`,
+ * 一个开关同时管聚合搜索、聚合视界、换源三处。
+ */
+@Composable
+private fun AggregateItem(o: JsonObject, focused: Boolean = false, onChanged: () -> Unit) {
+    val app = LocalApp.current
+    val scope = rememberCoroutineScope()
+    val on = o.bool("aggregate")
+    PanelItem("允许聚合", sub = "关掉后聚合搜索、聚合视界、换源都跳过它", switch = on, focused = focused, onClick = {
+        scope.launch {
+            runCatching { app.call("source.setAggregate", args("server_id" to (o.str("server") ?: ""), "allow" to !on)) }
+                .onSuccess { onChanged() }.onFailure { app.report(it) }
+        }
+    })
 }
 
 @Composable
@@ -337,6 +366,8 @@ private fun BoxScope.ServerPanel(o: JsonObject, index: Int, overlay: Overlay, on
             })
             if (!local) PanelItem("线路管理", value = "${o["lines"].arr().size.coerceAtLeast(1)} 条", chevron = true,
                 focused = o.bool("active"), onClick = { overlay.close(); nav.push(TvRoute.Lines(id, name)) })
+            // 本机文件夹不进聚合(核心层 IsFileBrowse 先一步跳过),开关画出来也是摆设
+            if (!local) AggregateItem(o) { overlay.close(); onChanged() }
             PanelGroup("编辑")
             PanelItem("修改名称", onClick = { text = name; level = "name" })
             PanelItem("修改备注", onClick = { text = o.str("remark") ?: ""; level = "remark" })

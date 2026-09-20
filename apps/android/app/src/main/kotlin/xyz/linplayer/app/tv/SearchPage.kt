@@ -61,15 +61,16 @@ import xyz.linplayer.app.ui.pages.jsonArrayOf
 import xyz.linplayer.app.ui.pages.map
 import xyz.linplayer.app.ui.theme.LpIcons
 
-/** 一条结果。`server` 非空 = 来自聚合搜索,行尾标来源服务器。 */
-private data class Hit(val item: Item, val serverId: String?, val serverName: String?)
+/** 一条结果。[serverId] 非空 = 来自聚合搜索,点开前要先切到那台服务器。 */
+private data class Hit(val item: Item, val serverId: String?)
 
 /**
  * 搜索(UI_TV.md §7.7)。**初始焦点 = 搜索框** → 进页即升起输入法;词和历史都在上半屏。
  *
  * ★ 400ms 防抖才发请求;历史只在「用户确认这个词」时记(完成键或点了结果),
  *   跟着防抖记会把「幕」「幕府」「幕府将」全记进去。
- * ★ 聚合时同一部片多台都有,**并列显示不去重**:去重就得挑代表,而「哪台版本更好」正是用户点进去要看的。
+ * ★ 聚合结果按源分行(§7.7 / D258),同一部片多台都有就**并列显示不去重**:
+ *   去重就得挑代表,而「哪台版本更好」正是用户点进去要看的。
  */
 @OptIn(FlowPreview::class)
 @Composable
@@ -87,12 +88,13 @@ fun SearchPage() {
     if (onSource) aggregate = true
     /** 聚合只在提交(遥控器确认 / 离开输入框)时发:每停一下就撒给所有来源太重。 */
     var aggQ by remember { mutableStateOf("") }
-    var srcHits by remember { mutableStateOf<List<Triple<String, String, kotlinx.serialization.json.JsonObject>>>(emptyList()) }
+    /** 聚合结果**一个来源一行**(D258 D262),谁先回来谁先出现 —— 核心层就是一行一行 partial 推的。 */
+    val aggRows = remember { androidx.compose.runtime.mutableStateListOf<kotlinx.serialization.json.JsonObject>() }
+    var aggBusy by remember { mutableStateOf(false) }
     var withEps by keepState("tv.search.eps") { false }
     var history by remember { mutableStateOf<List<String>>(emptyList()) }
     var servers by remember { mutableIntStateOf(0) }
     var result by remember { mutableStateOf<Block<List<Hit>>?>(null) }
-    var failed by remember { mutableStateOf<List<String>>(emptyList()) }
     var retry by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
@@ -100,31 +102,25 @@ fun SearchPage() {
         launch { servers = Account.list(runCatching { app.call("account.listAccounts") }.getOrNull()).count { (it.kind ?: "emby") == "emby" } }
     }
     LaunchedEffect(Unit) {
-        snapshotFlow { listOf(q.trim(), aggregate, withEps, retry, aggQ) }.distinctUntilChanged().debounce(400).collect { (typed, agg, eps, _, sub) ->
-            val text = if (agg as Boolean) sub as String else typed as String
+        snapshotFlow { listOf(q.trim(), aggregate, withEps, retry) }.distinctUntilChanged().debounce(400).collect { (typed, agg, eps, _) ->
+            if (agg as Boolean) return@collect          // 聚合走下面那条按提交触发的路
+            val text = typed as String
             if (text.isEmpty()) { result = null; return@collect }
             result = Block.Loading
-            failed = emptyList()
-            srcHits = emptyList()
-            result = if (agg) {
-                app.block("source.aggregateSearch", args("query" to text)).map { v ->
-                    val gs = v.arr().mapNotNull { it.obj() }
-                    srcHits = gs.filter { it.str("kind") == "plugin" && it.str("error") == null }.flatMap { g ->
-                        g["items"].arr().mapNotNull { it.obj() }.map { Triple(g.str("server_id") ?: "", g.str("server_name") ?: "", it) }
-                    }
-                    // 半失败(一路 429、一路回空)不能吞成「没搜到」
-                    failed = gs.filter { it.str("error") != null }.map { it.str("server_name") ?: "服务器" }
-                    // 按相关度排、同名挨着(§7.7 并列):按服务器分段排的话同一部片隔着几行,比不出哪台的版本好
-                    gs.filter { it.str("kind") != "plugin" }.flatMap { g -> Item.list(g["emby_items"]).map { Hit(it, g.str("server_id"), g.str("server_name")) } }
-                        .sortedWith(compareBy<Hit>({ !it.item.name.startsWith(text) }, { it.item.name }))
-                }
-            } else {
-                // ☠ `types` 必须是**数组**,传逗号串核心层读不到
-                val types = if (eps as Boolean) listOf("Movie", "Series", "Episode") else listOf("Movie", "Series")
-                app.block("emby.search", args("query" to text, "types" to jsonArrayOf(types), "limit" to 60))
-                    .map { v -> Item.list(v).map { Hit(it, null, null) } }
-            }
+            // ☠ `types` 必须是**数组**,传逗号串核心层读不到
+            val types = if (eps as Boolean) listOf("Movie", "Series", "Episode") else listOf("Movie", "Series")
+            result = app.block("emby.search", args("query" to text, "types" to jsonArrayOf(types), "limit" to 60))
+                .map { v -> Item.list(v).map { Hit(it, null) } }
         }
+    }
+    LaunchedEffect(aggQ, aggregate, retry) {
+        if (!aggregate || aggQ.isEmpty()) return@LaunchedEffect
+        aggRows.clear()
+        aggBusy = true
+        // partial 回调在核心层的线程上:切回自己的 scope 再动 Compose 状态
+        runCatching { app.call("source.aggregateSearch", args("query" to aggQ)) { p -> p.obj()?.let { scope.launch { aggRows.add(it) } } } }
+            .onFailure { app.report(it) }
+        aggBusy = false
     }
 
     fun remember(term: String) {
@@ -182,26 +178,78 @@ fun SearchPage() {
                         itemModifier = { Modifier.memo("search.eps") }, onSelect = { withEps = !withEps })
                 }
                 Spacer(Modifier.height(TvSp.x12))
-                if (srcHits.isNotEmpty()) {
-                    RowTitle("数据源", trailing = "${srcHits.size} 项")
-                    Spacer(Modifier.height(TvSp.x8))
-                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(TvSp.x12)) {
-                        items(srcHits, key = { "${it.first}.${it.third.str("id")}" }) { (sid, name, it) ->
-                            SourcePoster(it, "search.src.$sid.${it.str("id")}", name) { nav.push(TvRoute.SourceDetail(it.str("source") ?: sid, it.str("id") ?: "")) }
-                        }
-                    }
-                    Spacer(Modifier.height(TvSp.x12))
-                }
-                SearchResults(q.trim(), result, failed, aggregate, overlay, { open(it) }, { retry++ })
+                if (aggregate) AggregateRows(q.trim(), aggQ, aggRows, aggBusy) { h -> open(h) }
+                else SearchResults(q.trim(), result, overlay, { open(it) }, { retry++ })
             }
         }
         OverlayHost(overlay)
     }
 }
 
+/**
+ * 聚合结果:**一个来源一行**(§7.7 / D258 D262)。行内横排,行头写来源名和条数。
+ *
+ * ★ 不压平成一张总表:压平就得给「哪台的版本更好」挑一个代表,而那正是用户按进去要看的;
+ *   TV 上横排一行也正好是遥控器「上下选源、左右挑片」的走法。
+ * ★ 跨服条目**不给卡片面板**:收藏 / 标已看写的是**当前**服务器,对着别的服的条目会写错地方。
+ */
+@Composable
+private fun AggregateRows(
+    q: String, submitted: String, rows: List<kotlinx.serialization.json.JsonObject>, busy: Boolean, onOpen: (Hit) -> Unit,
+) {
+    val nav = LocalNav.current
+    val t = tvType
+    if (submitted.isEmpty()) {
+        TvText(if (q.isEmpty()) "输入片名,按确认键在所有来源里搜" else "按确认键开始搜 —— 每个来源各占一行,谁先回来谁先显示", t.body, TvC.fg3, maxLines = 2)
+        return
+    }
+    if (rows.isEmpty()) {
+        if (busy) Column(verticalArrangement = Arrangement.spacedBy(TvSp.x6)) { repeat(3) { Skel(Modifier.fillMaxWidth().height(96.dp)) } }
+        else TvText("「$submitted」没搜到东西 —— 只包括打开了「允许聚合」的来源", t.body, TvC.fg2, maxLines = 2)
+        return
+    }
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(TvSp.x12), contentPadding = PaddingValues(bottom = TvSp.x12)) {
+        items(rows, key = { it.str("server_id") ?: "" }) { g ->
+            val sid = g.str("server_id") ?: ""
+            val name = g.str("server_name") ?: sid
+            val err = g.str("error")
+            val plugin = g.str("kind") == "plugin"
+            val embyItems = if (plugin) emptyList() else Item.list(g["emby_items"])
+            val srcItems = if (plugin) g["items"].arr().mapNotNull { it.obj() } else emptyList()
+            val n = embyItems.size + srcItems.size
+            Column {
+                // 半失败(一路 429、一路回空)不能吞成「没搜到」:错了的源自己占一行说话
+                when {
+                    err != null -> TvText("$name 没搜成:$err", t.meta, TvC.fg3, maxLines = 2)
+                    n == 0 -> TvText("$name · 没有结果", t.meta, TvC.fg3)
+                    else -> {
+                        RowTitle(name, trailing = "$n 条")
+                        Spacer(Modifier.height(TvSp.x8))
+                        ProvideRowKeyline(TvSp.x12) {
+                            LazyRow(contentPadding = PaddingValues(horizontal = TvSp.x12, vertical = TvSp.x6),
+                                horizontalArrangement = Arrangement.spacedBy(TvSp.x12)) {
+                                items(embyItems, key = { "$sid.${it.id}" }) { item ->
+                                    ItemPoster(item, "search.agg.$sid.${item.id}", onMenu = {},
+                                        onOpen = { onOpen(Hit(item, sid)) })
+                                }
+                                items(srcItems, key = { "$sid.${it.str("id")}" }) { it ->
+                                    SourcePoster(it, "search.agg.$sid.${it.str("id")}") {
+                                        nav.push(TvRoute.SourceDetail(it.str("source") ?: sid, it.str("id") ?: ""))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (busy) item("busy") { TvText("还有来源在搜…", t.meta, TvC.fg3) }
+    }
+}
+
 @Composable
 private fun SearchResults(
-    q: String, result: Block<List<Hit>>?, failed: List<String>, aggregate: Boolean, overlay: Overlay,
+    q: String, result: Block<List<Hit>>?, overlay: Overlay,
     onOpen: (Hit) -> Unit, onRetry: () -> Unit,
 ) {
     val app = LocalApp.current
@@ -223,7 +271,6 @@ private fun SearchResults(
             val hits = result.value
             if (hits.isEmpty()) {
                 TvText("没有找到「$q」", t.body, TvC.fg2)
-                if (failed.isNotEmpty()) TvText("这些服务器没搜成:${failed.joinToString("、")}", t.meta, TvC.fg3, maxLines = 2)
                 return
             }
             val rest = hits.filterNot { it.item.isEpisode }
@@ -231,10 +278,9 @@ private fun SearchResults(
             TvText("结果 · ${hits.size}", t.meta, TvC.fg3)
             Spacer(Modifier.height(TvSp.x6))
             LazyColumn(verticalArrangement = Arrangement.spacedBy(TvSp.x6), contentPadding = PaddingValues(bottom = TvSp.x12)) {
-                items(rest, key = { "${it.serverId}.${it.item.id}" }) { h ->
-                    TvListRow(Modifier.memo("search.r.${h.serverId}.${h.item.id}"), onClick = { onOpen(h) },
-                        // 跨服结果不给卡片面板:收藏 / 标已看是对**当前**服务器写的,对着别的服的条目会写错地方
-                        onLongClick = if (h.serverId == null) ({ overlay.openCardMenu(app, nav, scope, h.item) }) else null) {
+                items(rest, key = { it.item.id }) { h ->
+                    TvListRow(Modifier.memo("search.r.${h.item.id}"), onClick = { onOpen(h) },
+                        onLongClick = { overlay.openCardMenu(app, nav, scope, h.item) }) {
                         Box(Modifier.size(38.dp, 57.dp).clip(TvR.sm)) { TvImage(app.imageUrl(h.item.id, "Primary", 120)) }
                         Spacer(Modifier.width(TvSp.x12))
                         Column(Modifier.weight(1f)) {
@@ -242,7 +288,6 @@ private fun SearchResults(
                             RowText(listOfNotNull(h.item.year?.toString(),
                                 if (h.item.isSeries) "剧集" else "电影").joinToString(" · "), t.meta, .7f)
                         }
-                        if (aggregate && h.serverName != null) RowText(h.serverName, t.meta, .7f)
                     }
                 }
                 if (eps.isNotEmpty()) item("eps") {
@@ -252,17 +297,13 @@ private fun SearchResults(
                         ProvideRowKeyline(TvSp.x12) {
                             LazyRow(contentPadding = PaddingValues(horizontal = TvSp.x12, vertical = TvSp.x6),
                                 horizontalArrangement = Arrangement.spacedBy(TvSp.x12)) {
-                                items(eps, key = { "${it.serverId}.${it.item.id}" }) { h ->
-                                    ItemWide(h.item, "search.e.${h.serverId}.${h.item.id}", { item ->
-                                        if (h.serverId == null) overlay.openCardMenu(app, nav, scope, item)
-                                    }, onOpen = { onOpen(h) })
+                                items(eps, key = { it.item.id }) { h ->
+                                    ItemWide(h.item, "search.e.${h.item.id}",
+                                        { item -> overlay.openCardMenu(app, nav, scope, item) }, onOpen = { onOpen(h) })
                                 }
                             }
                         }
                     }
-                }
-                if (failed.isNotEmpty()) item("failed") {
-                    TvText("这些服务器没搜成:${failed.joinToString("、")}", t.meta, TvC.fg3, maxLines = 2)
                 }
             }
         }

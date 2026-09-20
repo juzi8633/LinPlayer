@@ -38,6 +38,7 @@ import xyz.linplayer.app.data.LocalApp
 import xyz.linplayer.app.data.ToastKind
 import xyz.linplayer.app.data.arr
 import xyz.linplayer.app.data.block
+import xyz.linplayer.app.data.bool
 import xyz.linplayer.app.data.dbl
 import xyz.linplayer.app.data.keepState
 import xyz.linplayer.app.data.long
@@ -50,6 +51,7 @@ import xyz.linplayer.app.tv.kit.PageHead
 import xyz.linplayer.app.tv.kit.PanelGroup
 import xyz.linplayer.app.tv.kit.PanelItem
 import xyz.linplayer.app.tv.kit.RowTitle
+import xyz.linplayer.app.tv.kit.ScopeChips
 import xyz.linplayer.app.tv.kit.Skel
 import xyz.linplayer.app.tv.kit.TvButton
 import xyz.linplayer.app.tv.kit.TvC
@@ -85,11 +87,16 @@ fun FavoritesPage() {
     var by by keepState("tv.fav.by") { 0 }
     var asc by keepState("tv.fav.asc") { false }
     var block by keepState<Block<List<Item>>>("tv.fav.$server") { Block.Loading }
+    // 数据源收藏按来源分组(D326 D333),和 Emby 收藏同页 —— 用户记的是「我收藏过」,不是「我在哪台收藏过」
+    var srcFavs by remember { mutableStateOf<List<kotlinx.serialization.json.JsonObject>>(emptyList()) }
     var reload by remember { mutableIntStateOf(0) }
     LaunchedEffect(server, by, asc, reload) {
         val r = app.block("emby.listFavorites", args("sort_by" to FavBy[by].first,
             "sort_order" to if (asc) "asc" else "desc")).map { Item.list(it) }
         if (!(r is Block.Fail && block is Block.Ok)) block = r
+    }
+    LaunchedEffect(reload) {
+        srcFavs = runCatching { app.call("source.favorites") }.getOrNull().arr().mapNotNull { it.obj() }
     }
     val cond = FavBy[by].second + if (by == 0) " ↓" else if (asc) " ↑" else " ↓"
 
@@ -104,7 +111,7 @@ fun FavoritesPage() {
                 // 失败 FullState + 重试:旧实现失败时永远停在骨架上
                 is Block.Fail -> FullState(LpIcons.info, "没加载出来", detail = b.message, buttons = listOf("重试"), tone = TvC.bad,
                     onButton = { reload++ })
-                is Block.Ok -> if (b.value.isEmpty()) FullState(LpIcons.heart, "还没有收藏", sub = "在详情页按收藏,之后会出现在这里",
+                is Block.Ok -> if (b.value.isEmpty() && srcFavs.isEmpty()) FullState(LpIcons.heart, "还没有收藏", sub = "在详情页按收藏,之后会出现在这里",
                     buttons = listOf("去媒体库看看"), onButton = { nav.rail(TvRoute.Library()) })
                 else {
                     val eps = b.value.filter { it.isEpisode }
@@ -114,11 +121,17 @@ fun FavoritesPage() {
                             if (tag == "unfav" || tag == "blocked") block = Block.Ok(b.value.filterNot { it.id == item.id })
                         }
                     }
-                    PageHead("收藏", count = "${b.value.size} 项")
+                    val srcCount = srcFavs.sumOf { it["items"].arr().size }
+                    PageHead("收藏", count = "${b.value.size + srcCount} 项")
                     Spacer(Modifier.height(TvSp.x8))
-                    EntryChip("排序", LpIcons.sort, cond, modifier = Modifier.memo("fav.sort"), onClick = {
-                        overlay.open { FavSortPanel(by, asc, { overlay.close() }, { by = it }, { asc = it }) }
-                    })
+                    Row(horizontalArrangement = Arrangement.spacedBy(TvSp.x8)) {
+                        EntryChip("排序", LpIcons.sort, cond, modifier = Modifier.memo("fav.sort"), onClick = {
+                            overlay.open { FavSortPanel(by, asc, { overlay.close() }, { by = it }, { asc = it }) }
+                        })
+                        // 「观看历史」和「全部收藏」是一对(SPEC 8.7 D326):入口放这儿,不占导航轨的格子
+                        EntryChip("观看历史", LpIcons.rewind, modifier = Modifier.memo("fav.history"),
+                            onClick = { nav.push(TvRoute.History) })
+                    }
                     Spacer(Modifier.height(TvSp.x6))
                     // 左右 bleed 12:卡片放大后的边有地方画,内容又和页标题对齐;顶上留 6 同理
                     LazyColumn(Modifier.bleed(12.dp), contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = TvSp.x6, bottom = TvSp.x24)) {
@@ -148,7 +161,31 @@ fun FavoritesPage() {
                                 }
                             }
                         }
-                        item("end") { TvText("已经到底了 · 共 ${b.value.size} 项", t.meta, TvC.fg3, Modifier.padding(vertical = TvSp.x12)) }
+                        srcFavs.forEach { g ->
+                            val sid = g.str("server_id") ?: ""
+                            val removed = g.bool("removed")
+                            val its = g["items"].arr().mapNotNull { it.obj() }
+                            if (its.isEmpty()) return@forEach
+                            item("sh:$sid") {
+                                Box(Modifier.padding(top = TvSp.x16, bottom = TvSp.x8)) {
+                                    RowTitle((g.str("server_name") ?: sid) + if (removed) "(已移除)" else "", trailing = "${its.size} 项")
+                                }
+                            }
+                            its.chunked(6).forEachIndexed { ri, row ->
+                                item("s:$sid:$ri") {
+                                    Row(Modifier.padding(bottom = TvSp.x12), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                        row.forEach { it ->
+                                            // 来源已移除的仍然显示但点不开(D333):藏起来用户会以为收藏丢了
+                                            SourcePoster(it, "fav.s.$sid.${it.str("id")}") {
+                                                if (removed) app.toast("这个来源已经移除了")
+                                                else nav.push(TvRoute.SourceDetail(sid, it.str("id") ?: ""))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        item("end") { TvText("已经到底了 · 共 ${b.value.size + srcCount} 项", t.meta, TvC.fg3, Modifier.padding(vertical = TvSp.x12)) }
                     }
                 }
             }
@@ -371,5 +408,105 @@ private fun androidx.compose.foundation.layout.BoxScope.DownloadSettings(onClose
                     .onFailure { app.report(it) }
             }
         })
+    }
+}
+
+// ---------------------------------------------------------------- 全局观看历史(SPEC 8.7 D430 D431)
+
+/** ticks 是 100 纳秒单位 —— 除以 1e7 才是秒。写成 1e6 时长会大十倍且不报错。 */
+private fun clock(secs: Double): String {
+    val s = secs.toInt()
+    return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%d:%02d".format(s / 60, s % 60)
+}
+
+/**
+ * 全局观看历史。这份记录是**本地库**不是服务器的播放记录 —— 跨服续播就靠它,
+ * 所以「只看当前服务器」和「全部」是两种看法,都要有。
+ *
+ * ★ 数据源那部分单开一排(`source.history`):它已经按换源链路合并过,
+ *   来源被删的仍然显示但点不开(D333)—— 藏起来用户会以为记录丢了。
+ */
+@Composable
+fun HistoryPageTv() {
+    val app = LocalApp.current
+    val nav = LocalNav.current
+    val scope = rememberCoroutineScope()
+    val t = tvType
+    var onlyCurrent by keepState("tv.hist.only") { true }
+    var recs by remember { mutableStateOf<List<kotlinx.serialization.json.JsonObject>?>(null) }
+    var srcRows by remember { mutableStateOf<List<kotlinx.serialization.json.JsonObject>>(emptyList()) }
+    LaunchedEffect(onlyCurrent) {
+        recs = runCatching { app.call("emby.watchHistoryList", args("current_only" to onlyCurrent)) }
+            .getOrNull().arr().mapNotNull { it.obj() }
+            // 核心层不保证顺序,排序是展示层的事
+            .sortedByDescending { it.long("last_played_at") ?: 0L }
+    }
+    LaunchedEffect(Unit) { srcRows = runCatching { app.call("source.history") }.getOrNull().arr().mapNotNull { it.obj() } }
+
+    val list = recs
+    Column(Modifier.contentArea()) {
+        PageHead("观看历史", count = list?.let { "${it.size} 条" } ?: "")
+        Spacer(Modifier.height(TvSp.x8))
+        ScopeChips(listOf("当前服务器", "全部服务器"), if (onlyCurrent) 0 else 1,
+            itemModifier = { i -> Modifier.memo("hist.scope.$i") }, onSelect = { onlyCurrent = it == 0 })
+        Spacer(Modifier.height(TvSp.x12))
+        if (list == null) {
+            Column(verticalArrangement = Arrangement.spacedBy(TvSp.x6)) { repeat(5) { Skel(Modifier.fillMaxWidth().height(56.dp)) } }
+            return@Column
+        }
+        if (list.isEmpty() && srcRows.isEmpty()) {
+            FullState(LpIcons.rewind, "还没有观看记录", sub = "看过的片会记在本机,换服务器或重装之后还在", buttons = emptyList())
+            return@Column
+        }
+        LazyColumn(Modifier.bleed(12.dp), verticalArrangement = Arrangement.spacedBy(TvSp.x6),
+            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = TvSp.x24)) {
+            if (srcRows.isNotEmpty()) {
+                item("srch") { Box(Modifier.padding(bottom = TvSp.x8)) { RowTitle("数据源", trailing = "${srcRows.size} 项") } }
+                item("src") {
+                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(TvSp.x12),
+                        contentPadding = PaddingValues(vertical = TvSp.x6)) {
+                        items(srcRows.take(30), key = { (it.str("server_id") ?: "") + "." + (it["ref"].obj()?.get("item").obj().str("id") ?: "") }) { c ->
+                            val r = c["ref"].obj() ?: return@items
+                            val it2 = r["item"].obj() ?: return@items
+                            val removed = c.bool("removed")
+                            val sid = c.str("server_id") ?: ""
+                            val pos = c.dbl("position_secs") ?: 0.0
+                            SourcePoster(it2, "hist.s.$sid.${it2.str("id")}",
+                                badge = if (removed) "来源已移除" else r.str("episodeName")) {
+                                if (removed) app.toast("这个来源已经移除了")
+                                else nav.push(TvRoute.SourceDetail(sid, it2.str("id") ?: "", r.str("lineId"), r.str("episodeId"), pos))
+                            }
+                        }
+                    }
+                }
+                if (list.isNotEmpty()) item("embyh") { Box(Modifier.padding(top = TvSp.x12, bottom = TvSp.x8)) { RowTitle("服务器", trailing = "${list.size} 条") } }
+            }
+            items(list.take(200), key = { it.str("record_id") ?: "" }) { rec ->
+                val series = rec.str("series_title").orEmpty()
+                val title = rec.str("title").orEmpty()
+                val pos = (rec.long("last_position_ticks") ?: 0L) / 1e7
+                val run = (rec.long("run_time_ticks") ?: 0L) / 1e7
+                val right = if (rec.bool("played")) "已看完" else if (run > 0) "${clock(pos)} / ${clock(run)}" else clock(pos)
+                val itemId = rec.str("last_emby_item_id")
+                // scope_key 是 `server:user_id`,server 自带 https:// 甚至端口 —— 按**最后一个**冒号切
+                val sid = (rec.str("scope_key") ?: "").substringBeforeLast(':', "")
+                TvListRow(Modifier.memo("hist.${rec.str("record_id")}"), onClick = {
+                    if (itemId.isNullOrEmpty()) { app.toast("这条记录没有对应的条目,换服务器后要先「扫描恢复」"); return@TvListRow }
+                    scope.launch {
+                        if (sid.isNotEmpty() && !switchServerIfNeeded(app, sid)) return@launch
+                        nav.push(TvRoute.Detail(itemId, if (series.isEmpty()) "Movie" else "Episode"))
+                    }
+                }) {
+                    Column(Modifier.weight(1f)) {
+                        RowText(if (series.isEmpty()) title else "$series · $title", t.body)
+                        val whenMs = rec.long("last_played_at") ?: 0L
+                        // last_played_at 是**毫秒**(core/history/store.go 的 nowMs),当秒读日期会跳到五万年后
+                        RowText(if (whenMs > 0) java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+                            .format(java.util.Date(whenMs)) else "", t.meta, .7f)
+                    }
+                    Text(right, fontSize = t.meta, color = Color.Unspecified, fontWeight = TvW.semi)
+                }
+            }
+        }
     }
 }

@@ -175,6 +175,7 @@ private fun GeneralGroup() {
         Group("插件")
         val nav = LocalNav.current
         PanelItem("插件", sub = "启停、从市场安装;重启应用后生效", chevron = true, modifier = Modifier.memo("set.plugins"), onClick = { nav.push(TvRoute.Plugins) })
+        PanelItem("扩展组件", sub = "补帧、jar 运行时这类大件,插件用到时才下", chevron = true, modifier = Modifier.memo("set.ext"), onClick = { nav.push(TvRoute.Extensions) })
     }
 }
 

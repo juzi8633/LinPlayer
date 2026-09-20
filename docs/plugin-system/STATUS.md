@@ -11,7 +11,7 @@
 | 1 | `core/plugin`:安装器底线、manifest 校验、来源记录、启停/待重启、连错禁用、连崩安全模式、市场订阅、下载回退 | ✅ 八项全 | `install.go:24-149` `manifest.go:142-163` `state.go:17-26` `host.go:99-207,427-461` `market.go` 全文 |
 | 2 | `core/plugin/rt`:goja + 事件循环 + 超时 Interrupt + 子运行时 + Web 全局 + fetch + storage/secrets/files/registry/html/crypt/js.bundle | ✅ 全 | `runtime.go:96-196` `jsctx.go` `globals.go`+`prelude.js` `fetch.go:254-385` `storage.go` `registry.go` `html.go` `crypt.go` |
 | 3 | `core/source`:`SplitPlugin` 按最后一个 `/` 切、数据源动词命令、统一结构、列表钩子与屏蔽链 | ✅ 全(动词命令落在 `core/datasource`) | `source/source.go:64-74` `datasource/verbs.go:43-52,181-198` |
-| 4 | 宿主 UI(两壳)13 项 | ⚠️ 桌面基本齐、手机缺 1 项、**TV 缺 6 项** | 见下表 |
+| 4 | 宿主 UI(两壳)13 项 | ⚠️ TV 六项已补齐(2026-09-20);**手机还缺全局观看历史** | 见下表 |
 | 5 | `linplayer/tvbox`:type0/1、drpy、配置解码、订阅、多仓、解析链、三端嗅探、rules/ads、错误映射、Android jar、type4 | ✅ 11/11 | `plugins/tvbox/src/*.ts`;桌面 jar 按 D351 归 spike,已显式关闭 `PluginShell.cs:21-23` |
 | 6 | `lp` CLI:create/build/pack/dev/check | ✅ 5/5(另有 submit) | `core/cmd/lp/main.go:94,193,219,246,281,444` |
 | 7 | 假站 fixture 进仓库跑门禁(D321) | ✅ | `core/internal/fakevod/fakevod.go`;`check-core.sh` 第 1 关经 `datasource/tvbox_e2e_test.go` 拉起 |
@@ -25,13 +25,13 @@
 | 数据源首页 / 分类 / 筛选 | ✅ | ✅ | ✅ |
 | 源内搜索 | ✅ | ✅ | ⚠️ 有意改走搜索页(`tv/SourcePagesTv.kt:79`) |
 | 详情 / 线路 / 选集 / 播放 | ✅ | ✅ | ✅ |
-| 聚合搜索**按源分行** | ✅ | ✅ | ❌ 压平成一个列表(`tv/SearchPage.kt:112-119`) |
+| 聚合搜索**按源分行** | ✅ | ✅ | ✅ 一源一行 + partial 流式(`tv/SearchPage.kt` `AggregateRows`) |
 | 换源三层 | ✅ | ✅ | ✅(分层渲染未逐行复核) |
-| 「允许聚合」开关 | ✅ | ✅ | ❌ `tv/ServersPages.kt` 无此开关 |
-| 全局观看历史 | ✅ | ❌ 无路由,`DataSourcePages.kt:520` 零调用 | ❌ |
-| 全部收藏含数据源 | ✅ | ✅ | ❌ 只有 `emby.listFavorites` |
-| 插件页四标签 | ✅ | ✅ | ⚠️ 只有已安装 + 市场 |
-| 扩展组件页 | ✅ | ✅ | ❌ |
+| 「允许聚合」开关 | ✅ | ✅ | ✅ 服务器面板 + 插件源菜单键(`tv/ServersPages.kt` `AggregateItem`) |
+| 全局观看历史 | ✅ | ❌ 无路由,`DataSourcePages.kt:520` 零调用 | ✅ `tv/ListPages.kt` `HistoryPageTv`,入口在收藏页 |
+| 全部收藏含数据源 | ✅ | ✅ | ✅ 并进 `source.favorites` 分组(`tv/ListPages.kt`) |
+| 插件页四标签 | ✅ | ✅ | ✅ 已安装 / 市场 / 接管位 / 仓库(`tv/SourcePagesTv.kt`) |
+| 扩展组件页 | ✅ | ✅ | ✅ `tv/SourcePagesTv.kt` `ExtensionsPageTv`,设置页入口 |
 | 接管位「设了有反应」 | ⏸ | ⏸ | ⏸ 阶段 ① 只登记不渲染,但界面没说明 |
 
 ### 18.1 排行榜 / 付费追剧日历回宿主

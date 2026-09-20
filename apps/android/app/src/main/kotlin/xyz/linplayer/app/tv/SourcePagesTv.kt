@@ -49,6 +49,7 @@ import xyz.linplayer.app.tv.kit.FullState
 import xyz.linplayer.app.tv.kit.PageHead
 import xyz.linplayer.app.tv.kit.PanelItem
 import xyz.linplayer.app.tv.kit.RowTitle
+import xyz.linplayer.app.tv.kit.ScopeChips
 import xyz.linplayer.app.tv.kit.TvButton
 import xyz.linplayer.app.tv.kit.TvC
 import xyz.linplayer.app.tv.kit.TvDim
@@ -319,38 +320,175 @@ private suspend fun loadMarket(app: xyz.linplayer.app.data.AppState) =
     runCatching { app.call("plugin.market") }.getOrNull().obj()?.get("entries").arr().mapNotNull { it.obj() }
         .filter { it.str("installed").isNullOrEmpty() && !it.bool("needsUpgrade") }
 
-/** 插件页(TV,SPEC 14.7):已安装开关 + 市场一键装 + 仓库列表。复杂管理去手机或电脑上做。 */
+/** 接管位的中文名(SPEC 14.4)。和手机端 `PluginPages.kt` 的 `slotName` 同一张表。 */
+private fun slotNameTv(slot: String) = if (slot.startsWith("page:")) when (slot.removePrefix("page:")) {
+    "home" -> "首页"; "detail" -> "详情页"; "ranking" -> "排行榜页"; "calendar" -> "追剧日历"
+    else -> "页面 " + slot.removePrefix("page:")
+} else slot
+
+/**
+ * 插件页(TV,SPEC 14.7):已安装 / 市场 / 接管位 / 仓库,和手机端同四格。
+ *
+ * ★ 仓库页不给「GitHub 加速前缀」那一栏:遥控器上敲一串 URL 前缀不是能用的交互,
+ *   它在手机和电脑上设一次就同步过来了(同一份 `plugin.setGithubPrefix`)。
+ */
 @Composable
 fun PluginsPageTv() {
     val app = LocalApp.current
     val scope = rememberCoroutineScope()
+    val overlay = rememberOverlay()
+    var tab by remember { mutableIntStateOf(0) }
     var reload by remember { mutableIntStateOf(0) }
     var installed by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
     var market by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
+    var slots by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
+    var repos by remember { mutableStateOf<JsonObject?>(null) }
     LaunchedEffect(reload) { installed = loadInstalled(app) }
     LaunchedEffect(reload) { market = loadMarket(app) }
-    LazyColumn(Modifier.contentArea(), contentPadding = PaddingValues(bottom = TvSp.x20)) {
-        item { PageHead("插件", sub = "启停、安装都是重启应用后生效") }
-        item { RowTitle("已安装") }
-        if (installed.isEmpty()) item { TvText("还没有安装插件", tvType.meta, TvC.fg3) }
-        items(installed, key = { "i:" + (it.str("id") ?: "") }) { p ->
-            val id = p.str("id") ?: ""
-            PanelItem(p.str("name") ?: id, sub = listOfNotNull(p.str("version"), p.str("author"), p.str("status")?.takeIf { it != "ok" }).joinToString(" · "),
-                switch = p.bool("want"), modifier = Modifier.memo("plug.$id"), onClick = {
-                    scope.launch { runCatching { app.call("plugin.setEnabled", args("id" to id, "enabled" to !p.bool("want"))) }.onFailure { app.report(it) }; reload++ }
-                })
-        }
-        item { Spacer(Modifier.height(TvSp.x16)); RowTitle("市场") }
-        if (market.isEmpty()) item { TvText("没有可装的插件(或市场没连上)", tvType.meta, TvC.fg3) }
-        items(market, key = { "m:" + (it.str("id") ?: "") }) { e ->
-            val v = e["best"].obj().str("version") ?: ""
-            PanelItem(e.str("name") ?: "", sub = listOfNotNull(v, e.str("author"), if (e.bool("officialMark")) "官方" else "非官方来源").joinToString(" · "),
-                chevron = true, onClick = {
-                    scope.launch {
-                        runCatching { app.call("plugin.installFromRepo", args("repo" to (e.str("repo") ?: ""), "id" to (e.str("id") ?: ""), "version" to v)) }
-                            .onSuccess { app.toast("装好了,重启应用后生效", ToastKind.Ok); reload++ }.onFailure { app.report(it) }
+    LaunchedEffect(reload) { slots = runCatching { app.call("plugin.takeovers") }.getOrNull().arr().mapNotNull { it.obj() } }
+    LaunchedEffect(reload) { repos = runCatching { app.call("plugin.repos") }.getOrNull().obj() }
+
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.contentArea()) {
+            PageHead("插件", sub = "启停、安装、接管都是重启应用后生效")
+            Spacer(Modifier.height(TvSp.x12))
+            ScopeChips(listOf("已安装", "市场", "接管位", "仓库"), tab,
+                itemModifier = { i -> Modifier.memo("plug.tab.$i", initial = i == 0) }, onSelect = { tab = it })
+            Spacer(Modifier.height(TvSp.x12))
+            LazyColumn(contentPadding = PaddingValues(bottom = TvSp.x20)) {
+                when (tab) {
+                    0 -> {
+                        if (installed.isEmpty()) item { TvText("还没有安装插件", tvType.meta, TvC.fg3) }
+                        items(installed, key = { "i:" + (it.str("id") ?: "") }) { p ->
+                            val id = p.str("id") ?: ""
+                            PanelItem(p.str("name") ?: id, sub = listOfNotNull(p.str("version"), p.str("author"), p.str("status")?.takeIf { it != "ok" }).joinToString(" · "),
+                                switch = p.bool("want"), modifier = Modifier.memo("plug.$id"), onClick = {
+                                    scope.launch { runCatching { app.call("plugin.setEnabled", args("id" to id, "enabled" to !p.bool("want"))) }.onFailure { app.report(it) }; reload++ }
+                                })
+                        }
                     }
-                })
+                    1 -> {
+                        if (market.isEmpty()) item { TvText("没有可装的插件(或市场没连上)", tvType.meta, TvC.fg3) }
+                        items(market, key = { "m:" + (it.str("id") ?: "") }) { e ->
+                            val v = e["best"].obj().str("version") ?: ""
+                            PanelItem(e.str("name") ?: "", sub = listOfNotNull(v, e.str("author"), if (e.bool("officialMark")) "官方" else "非官方来源").joinToString(" · "),
+                                chevron = true, modifier = Modifier.memo("plug.m.${e.str("id")}"), onClick = {
+                                    scope.launch {
+                                        runCatching { app.call("plugin.installFromRepo", args("repo" to (e.str("repo") ?: ""), "id" to (e.str("id") ?: ""), "version" to v)) }
+                                            .onSuccess { app.toast("装好了,重启应用后生效", ToastKind.Ok); reload++ }.onFailure { app.report(it) }
+                                    }
+                                })
+                        }
+                    }
+                    2 -> {
+                        if (slots.isEmpty()) item { TvText("没有插件声明接管位 —— 这几页现在全是官方的", tvType.meta, TvC.fg3) }
+                        items(slots, key = { "s:" + (it.str("slot") ?: "") }) { s ->
+                            val slot = s.str("slot") ?: ""
+                            val cur = s.str("current") ?: ""
+                            fun pick(pid: String) = scope.launch {
+                                runCatching { app.call("plugin.setTakeover", args("slot" to slot, "plugin_id" to pid)) }
+                                    .onSuccess { app.toast("重启应用后生效", ToastKind.Ok); reload++ }.onFailure { app.report(it) }
+                            }
+                            Column {
+                                RowTitle(slotNameTv(slot))
+                                PanelItem("官方", selected = cur.isEmpty(), modifier = Modifier.memo("plug.t.$slot.official"), onClick = { pick("") })
+                                s["candidates"].arr().mapNotNull { it.obj() }.forEach { c ->
+                                    val pid = c.str("plugin_id") ?: ""
+                                    PanelItem(c.str("name") ?: pid, selected = cur == pid,
+                                        modifier = Modifier.memo("plug.t.$slot.$pid"), onClick = { pick(pid) })
+                                }
+                                Spacer(Modifier.height(TvSp.x12))
+                            }
+                        }
+                    }
+                    else -> {
+                        val r = repos
+                        items(r?.get("repos").arr().mapNotNull { it.obj() }, key = { "r:" + (it.str("url") ?: "") }) { repo ->
+                            val u = repo.str("url") ?: ""
+                            val official = repo.bool("official")
+                            PanelItem(repo.str("name")?.takeIf { it.isNotEmpty() } ?: u, sub = u,
+                                value = if (official) "官方" else null,
+                                modifier = Modifier.memo("plug.r.$u"), onClick = {
+                                    // 官方市场不能删,点它只说一声;第三方走确认框(删了要重新输一遍长地址)
+                                    if (official) { app.toast("官方市场不能删除"); return@PanelItem }
+                                    overlay.open {
+                                        TvConfirm("删除这个仓库?", u, "删除", onCancel = { overlay.close() }, onConfirm = {
+                                            scope.launch {
+                                                runCatching { app.call("plugin.removeRepo", args("url" to u)) }
+                                                    .onSuccess { overlay.close(); reload++ }.onFailure { app.report(it) }
+                                            }
+                                        })
+                                    }
+                                })
+                        }
+                        item {
+                            PanelItem("添加第三方仓库", sub = "里面的插件由第三方开发,官方不对其内容负责",
+                                chevron = true, modifier = Modifier.memo("plug.r.add"), onClick = {
+                                    overlay.open { AddRepoPanel(overlay) { reload++ } }
+                                })
+                        }
+                        item {
+                            PanelItem("自动更新插件", switch = r.bool("auto_update"), modifier = Modifier.memo("plug.r.auto"), onClick = {
+                                scope.launch {
+                                    runCatching { app.call("plugin.setAutoUpdate", args("on" to !r.bool("auto_update"))) }
+                                        .onSuccess { reload++ }.onFailure { app.report(it) }
+                                }
+                            })
+                        }
+                    }
+                }
+            }
+        }
+        OverlayHost(overlay)
+    }
+}
+
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.AddRepoPanel(overlay: Overlay, onAdded: () -> Unit) {
+    val app = LocalApp.current
+    val scope = rememberCoroutineScope()
+    var url by remember { mutableStateOf("") }
+    TvSidePanel("添加第三方仓库", { overlay.close() }) {
+        Box(Modifier.padding(horizontal = TvSp.x6)) {
+            TvTextField(url, { url = it }, "index.json 所在目录或文件", 218.dp, Modifier.memo("plug.r.url", initial = true))
+        }
+        PanelItem("添加", onClick = {
+            if (url.isBlank()) return@PanelItem
+            scope.launch {
+                runCatching { app.call("plugin.addRepo", args("url" to url.trim())) }
+                    .onSuccess { overlay.close(); app.toast("已添加", ToastKind.Ok); onAdded() }.onFailure { app.report(it) }
+            }
+        })
+    }
+}
+
+/**
+ * 扩展组件页(SPEC 18.5 D380)。安卓上 jar 走系统 DexClassLoader、不用下组件;
+ * Python / GeckoView / Whisper 还没有发行包 —— 如实列出「谁需要」,不摆点不动的下载键。
+ */
+@Composable
+fun ExtensionsPageTv() {
+    val app = LocalApp.current
+    var users by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
+    LaunchedEffect(Unit) {
+        users = runCatching { app.call("plugin.list") }.getOrNull().obj()?.get("plugins").arr().mapNotNull { it.obj() }
+            .flatMap { p -> p.strList("components").map { it to (p.str("name") ?: "") } }
+            .groupBy({ it.first }, { it.second })
+    }
+    val rows = listOf(
+        Triple("jar-runtime", "TVBox jar 运行时", "安卓用系统自带的类加载器,不需要下载"),
+        Triple("python", "Python 运行时", "还没有发行包"),
+        Triple("geckoview", "GeckoView 内核", "系统 WebView 缺失或过旧时用;还没有发行包"),
+        Triple("whisper", "Whisper 转写", "还没有发行包"),
+    )
+    LazyColumn(Modifier.contentArea(), contentPadding = PaddingValues(bottom = TvSp.x20)) {
+        item { PageHead("扩展组件", sub = "插件用到时才会提示下载,安装插件时不强制下") }
+        items(rows, key = { it.first }) { (id, name, state) ->
+            // 四行都还没有可下的包,但行必须可聚焦 —— TV 上不可聚焦的列表滚不动,
+            // 整页没有落点等于遥控器在这一页失灵。按下去如实说一句为什么下不了。
+            PanelItem(name, sub = state + (users[id]?.let { " · 需要它的插件:" + it.joinToString("、") } ?: ""),
+                modifier = Modifier.memo("ext.$id", initial = id == rows.first().first),
+                onClick = { app.toast(state) })
         }
     }
 }

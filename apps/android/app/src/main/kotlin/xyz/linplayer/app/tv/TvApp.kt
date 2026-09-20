@@ -189,6 +189,8 @@ private fun TvPage(r: TvRoute) {
         is TvRoute.SourceCategory -> SourceCategoryTv(r)
         is TvRoute.SourceDetail -> SourceDetailTv(r)
         TvRoute.Plugins -> PluginsPageTv()
+        TvRoute.Extensions -> ExtensionsPageTv()
+        TvRoute.History -> HistoryPageTv()
     }
 }
 
