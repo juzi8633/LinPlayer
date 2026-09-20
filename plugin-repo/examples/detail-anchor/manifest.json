@@ -1,0 +1,13 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "id": "alice/detail-badge",
+  "name": "详情页角标",
+  "version": "0.1.0",
+  "description": "最小注入位示例:在详情页评分那一行后面加一块自己的内容。",
+  "minAppVersion": "2.0.0",
+  "activation": { "load": "lazy", "lifetime": "idle" },
+  "contributes": {
+    "anchors": [ { "anchor": "detail.ratings", "mode": "after", "block": "mine" } ]
+  },
+  "main": "dist/main.js"
+}

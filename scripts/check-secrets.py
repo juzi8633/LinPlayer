@@ -18,6 +18,9 @@ import re
 import sys
 
 sys.stdout.reconfigure(encoding="utf-8")
+# ☠ stdin 也要:Windows 上默认按控制台编码(GBK)读,中文文件名进来就是乱码,
+#   于是那些文件「读不到」—— 而上一版是**静默跳过**的,门禁照样报绿。
+sys.stdin.reconfigure(encoding="utf-8", errors="surrogateescape")
 
 # ☠ 不许把 `ts` 放进来:本意是 MPEG-TS 切片,而它同时是**所有插件源码**的后缀。
 # 放进来之后 plugins/ 下一整棵 TypeScript 全部不扫 —— 自测时往 .ts 里塞一条
@@ -63,7 +66,29 @@ IP_ALLOW = {
     "1.2.3.4", "8.8.8.8", "1.1.1.1",  # 文档与测试里的公知示例
 }
 
-URL_HOST = re.compile(r"https?://([a-zA-Z0-9.\-]+)")
+# ☠ 不能只认 http/https:线路/中转地址常常是 rtmp / rtsp / ws / ftp,
+# 而那几种恰恰最可能是自建的。2026-09-21 实测:第一版 9 个样本只命中 2 个。
+URL_HOST = re.compile(
+    r"(?:https?|rtmp[se]?|rtsp|wss?|ftp|mms)://(?:[^\s/@\"']*@)?([a-zA-Z0-9.\-]+)",
+    re.I,
+)
+
+# 地址里带账号密码(形如 `协议://用户:口令@主机`)。
+# 这条单列是因为**域名和密码会一起隐身** —— 上面那条把 `user:pass@` 跳过去了。
+URL_CRED = re.compile(r"(?:https?|rtmp[se]?|rtsp|wss?|ftp)://[^\s/\"']*:[^\s/@\"']+@", re.I)
+
+# IPv6 字面量(`[::1]` 这种回环除外)。
+# ☠ 要求至少一段像真的 IPv6 分组(≥3 位十六进制或含 a-f),否则 Go 的切片
+#   `x[:0:0]` 会被当成地址 —— 而那种误报会让人把整条规则关掉。
+IPV6 = re.compile(r"\[([0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,7})\]", re.I)
+IPV6_REAL = re.compile(r"(?:[0-9a-f]{3,}|[a-f])", re.I)
+IPV6_ALLOW = {"::1", "::", "::ffff:127.0.0.1"}
+
+# 占位值:写着就是给人看的,不是真凭据。
+PLACEHOLDER_VAL = re.compile(
+    r"placeholder|example|sample|your[_-]?|xxx+|changeme|todo|dummy|fake|redacted|<[^>]+>",
+    re.I,
+)
 
 # 不带协议头的主机只查**廉价个人域名后缀**:真实基础设施地址基本都带协议头
 # (URL_HOST 管)或者是 IP(IPV4 管),而这些后缀是个人自建站的主力。
@@ -82,8 +107,13 @@ IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 # `password = pass.Text`(取控件内容)是代码不是凭据 —— 算进来的话每个登录页都红。
 CRED = re.compile(
     r"(?:root@[a-z0-9.\-]{3,}"
-    r"|\b(?:password|passwd|api[_-]?key|secret|access[_-]?token|bearer)\s*[=:]\s*"
-    r"[\"']([A-Za-z0-9_\-/+]{12,})[\"'])",
+    # 带引号的值
+    r"|\b(?:password|passwd|api[_-]?key|secret|access[_-]?token|auth[_-]?token|bearer|token)"
+    r"\s*[=:]\s*[\"']([A-Za-z0-9_\-/+]{12,})[\"']"
+    # 不带引号的值(shell 的 `TOKEN=abc…`、.env 文件)。门槛抬到 16 位,
+    # 免得把 `token = someVariable` 这种赋值算进来。
+    r"|\b(?:password|passwd|api[_-]?key|secret|access[_-]?token|auth[_-]?token|token)"
+    r"\s*=\s*([A-Za-z0-9_\-/+]{16,})\b)",
     re.I,
 )
 
@@ -159,21 +189,42 @@ def load_baseline(path):
 
 
 def scan(files, allow):
-    hits = []
+    """回 (命中, 读不到的文件)。
+
+    ☠ 读不到的文件要**报出来**,不能悄悄跳过:路径给错时全都读不到,
+      而门禁会一本正经地说「没有新增的真实地址」—— 那是最坏的一种绿。
+    """
+    hits, unreadable = [], []
     for f in files:
-        if SKIP_EXT.search(f) or not os.path.exists(f):
+        if SKIP_EXT.search(f):
+            continue
+        if not os.path.exists(f):
+            unreadable.append(f)
             continue
         if f.replace("\\", "/").endswith("scripts/secrets-baseline.txt"):
             continue  # 清单本身不扫(它只存哈希,但扫它没有意义)
         try:
             text = io.open(f, encoding="utf-8", errors="ignore").read()
-        except OSError:
+        except OSError as e:
+            unreadable.append(f + "(" + str(e) + ")")
             continue
         for i, line in enumerate(text.splitlines(), 1):
             for m in URL_HOST.finditer(line):
                 h = m.group(1)
                 if not host_ok(h) and h.lower() not in allow:
                     hits.append((f, i, h))
+            for m in URL_CRED.finditer(line):
+                v = m.group(0)
+                # `http://u:p@` 这种一两个字母的是测试夹具,不是真凭据
+                userpass = v.split("//", 1)[-1].rstrip("@")
+                if v.lower() in allow or PLACEHOLDER_VAL.search(v) or len(userpass) < 8:
+                    continue
+                hits.append((f, i, "地址里带账号密码:" + v[:40]))
+            for m in IPV6.finditer(line):
+                v = m.group(1).lower()
+                if v in IPV6_ALLOW or v in allow or not IPV6_REAL.search(v):
+                    continue
+                hits.append((f, i, "[" + v + "]"))
             for m in BARE_HOST.finditer(line):
                 h = m.group(1)
                 if not host_ok(h) and h.lower() not in allow:
@@ -185,9 +236,10 @@ def scan(files, allow):
                 hits.append((f, i, ip))
             for m in CRED.finditer(line):
                 val = m.group(0)[:40]
-                if val.lower() not in allow:
-                    hits.append((f, i, val))
-    return hits
+                if val.lower() in allow or PLACEHOLDER_VAL.search(val):
+                    continue
+                hits.append((f, i, val))
+    return hits, unreadable
 
 
 def main():
@@ -197,7 +249,12 @@ def main():
 
     allow = load_allow(allow_path)
     files = [f.strip() for f in sys.stdin.read().splitlines() if f.strip()]
-    hits = scan(files, allow)
+    hits, unreadable = scan(files, allow)
+    if unreadable:
+        print("红线门禁:有 " + str(len(unreadable)) + " 个文件读不到 —— 先把路径弄对再看结果:")
+        for f in unreadable[:10]:
+            print("  " + f)
+        return 1
 
     if write_base:
         rows = sorted({(f, digest(v)) for f, _, v in hits})

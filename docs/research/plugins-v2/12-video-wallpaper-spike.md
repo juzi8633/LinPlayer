@@ -66,8 +66,8 @@
 
 | 时机 | 怎么知道 |
 |---|---|
-| 进播放页 | 插件系统已经有 `player.start` / `player.end` 事件(SPEC 9.1);壁纸层订阅它,start 暂停、end 恢复 |
-| 应用到后台 | `Lifecycle.Event.ON_STOP` / `ON_START`(壳里已经有 `app.foreground` / `app.background` 两个事件在发) |
+| 进播放页 | **取「播放页在不在」**,不要订 `player.start` / `player.end` —— 那两条只在核心层的进程内事件总线上发给**插件运行时**,过不了 FFI,壳根本收不到(2026-09-21 实测:`grep -rn "player.start" apps/android/` 零命中)。页面在不在是同一件事的直接来源,而且 mpv 与 ExoPlayer 两个内核都覆盖 |
+| 应用到后台 | `Lifecycle.Event.ON_STOP` / `ON_START` |
 | 系统省电 | `PowerManager.isPowerSaveMode` + 监听 `ACTION_POWER_SAVE_MODE_CHANGED`;省电时**不恢复** |
 
 ☠ 三个条件是**与**的关系:任何一条要求暂停就暂停,三条都允许才放。
@@ -78,5 +78,8 @@
 
 - **没有真机实测**:这份 spike 是读代码 + 读仓库里已有的实测记录得出的,没有起一个双 GL 通道的进程去撞一次。
   「连开两条会卡死」引的是 `UI_PC.md:360` 记的那次实测,不是这一轮重新量的。
+- ⚠ 这份文档第一版写着「壳里已经有 `app.foreground` / `app.background` 两个事件在发」——
+  **不成立**,安卓壳没有这两个事件的发送点(实施时才发现)。上面那张表已按实际改过。
+  教训:spike 里写「已经有 X」之前要 grep 一次,**读 SPEC 读出来的「应该有」不算**。
 - ExoPlayer 做壁纸层的**功耗**没量。低分辨率是按 D443 的要求写进结论的,不是量出来的阈值。
 - Linux 上 `SurfaceView` 那套不适用(那是安卓的),而 Linux 桌面和 Windows 桌面走同一条结论(不做)。

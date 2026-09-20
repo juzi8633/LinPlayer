@@ -7,7 +7,7 @@
  *   · 收藏与自定义频道号;
  *   · 节目单缓存(D108:缓存 3 天,每 6 小时刷新,只在打开过直播时拉)。
  */
-import { storage, registry } from '@linplayer/plugin-sdk'
+import { storage, registry, settings } from '@linplayer/plugin-sdk'
 
 import { parsePlaylist, type Channel, type Playlist } from './m3u'
 import { mergeChannels, groupOf } from './merge'
@@ -30,9 +30,14 @@ const K_NUMBERS = 'numbers'
 const K_HIDDEN = 'hiddenGroups'
 const K_EPG = 'epgCache'
 
-/** 节目单缓存 3 天、每 6 小时刷新(D108)。 */
+/** 节目单缓存 3 天;刷新间隔默认 6 小时,用户可在设置里改(D108)。 */
 const EPG_TTL_MS = 3 * 24 * 3600 * 1000
-const EPG_REFRESH_MS = 6 * 3600 * 1000
+
+function epgRefreshMs(): number {
+  // 摆着不生效的设置项比没有更糟:manifest 里声明了 epgRefreshHours 就得真读它
+  const h = Number(settings.get('epgRefreshHours'))
+  return (h > 0 ? h : 6) * 3600 * 1000
+}
 
 export function sources(): Source[] {
   return storage.get<Source[]>(K_SOURCES) || []
@@ -124,13 +129,34 @@ export async function loadAll(merge: boolean): Promise<LoadResult> {
   return { groups: groupOf(applyOrder(channels)), epgUrls, errors }
 }
 
-/** 收藏置顶(D109):收藏的频道单独成一组排在最前。 */
+/*
+收藏置顶(D109):收藏的频道**复制**一份排在最前的「收藏」组里。
+
+☠ 复制不是移动:用户在原来的分组里还要找得到它。
+  但复制之后同一个台在**摊平的频道表**里会出现两次 —— 换台时会「换了个寂寞」
+  (下一个还是它自己)。所以 `flatChannels()` 摊平时要按名字去重,
+  而不是在这里少复制一份。
+*/
 function applyOrder(list: Channel[]): Channel[] {
   const fav = favorites()
   if (fav.length === 0) return list
   const isFav = (c: Channel) => fav.indexOf(c.name) >= 0
   const top = list.filter(isFav).map((c) => ({ ...c, group: '收藏' }))
   return top.concat(list)
+}
+
+/** 摊平成一条频道链(换台用)。**按名字去重** —— 收藏组里那一份是同一个台。 */
+export function flatChannels(groups: { name: string; channels: Channel[] }[]): Channel[] {
+  const seen = new Set<string>()
+  const out: Channel[] = []
+  for (const g of groups) {
+    for (const c of g.channels) {
+      if (seen.has(c.name)) continue
+      seen.add(c.name)
+      out.push(c)
+    }
+  }
+  return out
 }
 
 export function favorites(): string[] {
@@ -227,7 +253,7 @@ interface EpgCache {
 export async function loadEpg(urls: string[], force: boolean): Promise<{ programs: Program[]; icons: Record<string, string>; error?: string }> {
   const cached = storage.get<EpgCache>(K_EPG)
   const age = cached ? Date.now() - cached.at : Infinity
-  if (cached && !force && age < EPG_REFRESH_MS) {
+  if (cached && !force && age < epgRefreshMs()) {
     return { programs: cached.programs, icons: cached.icons }
   }
   const programs: Program[] = []

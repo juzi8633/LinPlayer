@@ -26,9 +26,21 @@ try {
   finish('index.json 不是合法 JSON:' + e.message)
 }
 
-const byId = (list) => new Map((list.plugins || []).map((p) => [p.id, p]))
-const b = byId(base)
-const h = byId(head)
+/* ☠ 同一个 id 放两条时,`new Map` 是**后来者覆盖**,而宿主装包那一侧
+     (`core/plugin/market.go`)是**先到先得** —— 校验看的是后一条、
+     用户装的是前一条,脏条目放前面就能绕过全部判据。所以重复 id 直接拒。 */
+function byId(list, hardOnDup) {
+  const m = new Map()
+  for (const p of list.plugins || []) {
+    if (m.has(p.id) && hardOnDup) {
+      finish('index.json 里 ' + p.id + ' 出现了不止一条 —— 校验看后一条、宿主装前一条,脏条目放前面就能绕过全部判据')
+    }
+    m.set(p.id, p)
+  }
+  return m
+}
+const b = byId(base, false)
+const h = byId(head, true)
 
 // 1. 只许动一条,而且是自己的
 const changed = []
@@ -75,6 +87,28 @@ try {
 
 // 5. repository 要公开可访问
 if (!entry.repository) note('缺 repository —— 进官方索引必须是公开仓库(D408 D483)')
+
+/* 6. 已经上过架的那几版**一个字都不许改**。
+   ☠ 只验最新版的话,作者可以把历史版本的 url 换成任意地址 ——
+     而按版本取包的用户(minAppVersion 挡住新版时,D450)拿到的就是那一个。 */
+const prev = b.get(id)
+if (prev) {
+  const wasVers = new Map((prev.versions || []).map((v) => [v.version, JSON.stringify(v)]))
+  for (const v of entry.versions || []) {
+    const before = wasVers.get(v.version)
+    if (before && before !== JSON.stringify(v)) {
+      note('改了已经上架的版本 ' + v.version + ' —— 历史版本不许动')
+    }
+  }
+}
+
+/* 7. 只有维护者能给的字段:自己填 official / 刷下载量都不算数。 */
+if (entry.official && !(prev && prev.official)) note('`official` 只能由维护者给')
+for (const k of ['downloads', 'stars']) {
+  const nowV = entry[k]
+  const wasV = prev ? prev[k] : undefined
+  if (nowV !== undefined && nowV !== wasV) note('`' + k + '` 由定时任务写,PR 里不许改(D240)')
+}
 
 finish(null)
 

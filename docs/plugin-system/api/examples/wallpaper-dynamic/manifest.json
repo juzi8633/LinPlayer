@@ -1,0 +1,13 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "id": "alice/time-wallpaper",
+  "name": "按时间换的壁纸",
+  "version": "0.1.0",
+  "description": "最小壁纸示例:给一张初始壁纸,并按时间段换(D441 D442)。",
+  "minAppVersion": "2.0.0",
+  "activation": { "load": "startup", "lifetime": "resident" },
+  "contributes": {
+    "wallpaper": { "id": "bytime", "title": "按时间换" }
+  },
+  "main": "dist/main.js"
+}

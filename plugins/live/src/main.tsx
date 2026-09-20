@@ -20,7 +20,7 @@ import { catchupUrl, catchupWindowSec } from './catchup'
 import { nowNext, type Program } from './epg'
 import {
   loadAll, loadEpg, programsOf, urlChain, rememberGoodUrl, rememberChannel,
-  lastChannel, favorites, toggleFavorite, numbersOf, sources, addSource, removeSource,
+  lastChannel, favorites, toggleFavorite, numbersOf, sources, addSource, removeSource, flatChannels,
 } from './store'
 
 /** 卡顿多久算「这条不行」(D61 的 8 秒)。 */
@@ -31,6 +31,7 @@ interface Loaded {
   programs: Program[]
   icons: Record<string, string>
   errors: string[]
+  epgError?: string
 }
 
 /** 拉数据:频道表 + 节目单。两者分开等 —— 节目单慢不该把频道表一起卡住。 */
@@ -49,7 +50,9 @@ function useLive(): { data: Loaded | null; err: string; reload: () => void } {
         setData({ groups: r.groups, programs: [], icons: {}, errors: r.errors })
         const e = await loadEpg(r.epgUrls, false)
         if (!alive) return
-        setData((d) => (d ? { ...d, programs: e.programs, icons: e.icons } : d))
+        // 节目单拉不到要留痕:静默的话用户只看到「一个节目都没有」,而作者查不出是哪一步
+        if (e.error) console.warn('节目单没拉到:' + e.error)
+        setData((d) => (d ? { ...d, programs: e.programs, icons: e.icons, epgError: e.error } : d))
       } catch (e: any) {
         if (alive) setErr((e && e.message) || String(e))
       }
@@ -66,13 +69,23 @@ function useLive(): { data: Loaded | null; err: string; reload: () => void } {
  * ☠ 「能播」的判据是**真的开始出画**,不是 playUrl 没抛错:
  *   坏地址常常连得上、也回 200,卡在那里不动。所以起播后盯一段时间的时间戳。
  */
+/* tuneSeq 换台的代次。
+   ☠ 没有它的话:用户连按两下换台,**上一轮的 tune 还在等出画**,
+     等满 8 秒之后它会把自己那条(坏的)地址写成「这个台上次能用的」,
+     还顺手把 lastChannel 拽回上一个台。之后每次进这个台都先卡 8 秒,
+     不报错、不留日志。D61 那条测试回避了「中途按键」这个场景,所以一直没发现。 */
+let tuneSeq = 0
+
 async function tune(c: Channel, onNote: (s: string) => void): Promise<boolean> {
+  const mine = ++tuneSeq
+  const alive = () => mine === tuneSeq
   const chain = urlChain(c)
   if (chain.length === 0) {
     onNote('这个频道没有可用地址')
     return false
   }
   for (let i = 0; i < chain.length; i++) {
+    if (!alive()) return false // 用户已经换到别的台了,这一轮的结果一概不作数
     const u = chain[i]
     onNote(chain.length > 1 ? '源 ' + (i + 1) + '/' + chain.length + '…' : '连接中…')
     try {
@@ -81,7 +94,9 @@ async function tune(c: Channel, onNote: (s: string) => void): Promise<boolean> {
       onNote('源 ' + (i + 1) + ' 打不开:' + ((e && e.message) || e))
       continue
     }
-    if (await waitPlaying()) {
+    const ok = await waitPlaying(alive)
+    if (!alive()) return false
+    if (ok) {
       rememberGoodUrl(c.name, u.url)
       rememberChannel(c.name)
       onNote('')
@@ -89,15 +104,17 @@ async function tune(c: Channel, onNote: (s: string) => void): Promise<boolean> {
     }
     onNote('源 ' + (i + 1) + ' 卡住了,换下一条')
   }
+  if (!alive()) return false
   onNote('这个频道的地址都打不开')
   return false
 }
 
-/** 等到时间戳真的在走。超过 STALL_MS 还没动就算这条不行。 */
-async function waitPlaying(): Promise<boolean> {
+/** 等到时间戳真的在走。超过 STALL_MS 还没动、或者这一轮已经作废,就算这条不行。 */
+async function waitPlaying(alive: () => boolean): Promise<boolean> {
   const t0 = Date.now()
   let seen = -1
   while (Date.now() - t0 < STALL_MS) {
+    if (!alive()) return false
     const st: any = player.state()
     const pos = (st && st.position) || 0
     if (seen >= 0 && pos > seen) return true
@@ -122,15 +139,26 @@ function Logo(p: { c: Channel; icons: Record<string, string> }) {
   )
 }
 
-/** 一行频道:台标 + 号 + 名 + 当前节目。 */
-function ChannelRow(p: { c: Channel; no: number; now?: Program; icons: Record<string, string>; onPress: () => void; selected?: boolean }) {
+/** 一行频道:台标 + 号 + 名 + 当前节目。长按收藏(D109)。 */
+function ChannelRow(p: {
+  c: Channel; no: number; now?: Program; icons: Record<string, string>
+  onPress: () => void; onLongPress?: () => void; selected?: boolean; fav?: boolean
+}) {
   return (
-    <Pressable onPress={p.onPress} focusable style={{ padding: 6, radius: 10, background: p.selected ? 'token:color.surface2' : undefined }}>
+    <Pressable
+      onPress={p.onPress}
+      onLongPress={p.onLongPress}
+      focusable
+      style={{ padding: 6, radius: 10, background: p.selected ? 'token:color.surface2' : undefined }}
+    >
       <Row style={{ gap: 10, align: 'center' }}>
         <Text style={{ color: 'token:color.ink3', width: 34 }}>{String(p.no)}</Text>
         <Logo c={p.c} icons={p.icons} />
         <Column style={{ gap: 2 }}>
-          <Text>{p.c.name}</Text>
+          <Row style={{ gap: 6, align: 'center' }}>
+            <Text>{p.c.name}</Text>
+            {p.fav ? <Text style={{ color: 'token:color.accent' }}>★</Text> : null}
+          </Row>
           <Text style={{ color: 'token:color.ink3', fontSize: 'token:font.size.small' }}>
             {p.now ? p.now.title : '　'}
           </Text>
@@ -161,6 +189,11 @@ function LivePage() {
   const group = data.groups[Math.min(gi, data.groups.length - 1)]
   const numbers = numbersOf(data.groups)
   const nowSec = Math.floor(Date.now() / 1000)
+  /* ☠ 节目单按频道**先分好组**再渲染。原来每一行都 `programsOf(全量, c)` 扫一遍 ——
+     epg.ts 那边省下的几十万条在这儿又乘回来了,一千个台的源上每帧都是几亿次比较。 */
+  const byChannel = new Map<string, Program[]>()
+  for (const c of group.channels) byChannel.set(c.name, programsOf(data.programs, c))
+  const favSet = favorites()
 
   return (
     <Column style={{ gap: 10, padding: 14 }}>
@@ -175,12 +208,18 @@ function LivePage() {
         itemHeight={58}
         renderItem={(i) => {
           const c = group.channels[i]
-          const { now } = nowNext(programsOf(data.programs, c), nowSec)
+          const { now } = nowNext(byChannel.get(c.name) || [], nowSec)
           return (
             <ChannelRow
               c={c} no={numbers.get(c.name) || i + 1} now={now} icons={data.icons}
               selected={c.name === picked}
+              fav={favSet.indexOf(c.name) >= 0}
               onPress={() => { setPicked(c.name); void tune(c, setNote) }}
+              onLongPress={() => {
+                toggleFavorite(c.name)
+                // 收藏会改「收藏」那一组的内容,要重新算一遍分组
+                reload()
+              }}
             />
           )
         }}
@@ -190,6 +229,11 @@ function LivePage() {
           c={group.channels.find((x) => x.name === picked) || group.channels[0]}
           programs={data.programs} nowSec={nowSec} onNote={setNote}
         />
+      ) : null}
+      {data.epgError ? (
+        <Text style={{ color: 'token:color.warn', fontSize: 'token:font.size.small' }}>
+          节目单没拉到:{data.epgError}
+        </Text>
       ) : null}
       {data.errors.length > 0 ? (
         <Text style={{ color: 'token:color.warn', fontSize: 'token:font.size.small' }}>
@@ -312,6 +356,8 @@ function LiveOsd() {
   const listRef = useRef(false)
   const exitRef = useRef(false)
   const digitsRef = useRef('')
+  // 这一刻指着哪个台(见 step 上面的说明)
+  const curRef = useRef('')
 
   useEffect(() => {
     let alive = true
@@ -327,10 +373,15 @@ function LiveOsd() {
     return () => { alive = false }
   }, [])
 
-  const flat = (): Channel[] => st.current.groups.reduce<Channel[]>((a, g) => a.concat(g.channels), [])
+  // 去重摊平:收藏组里那一份是同一个台,不去重的话换台会「换了个寂寞」
+  const flat = (): Channel[] => flatChannels(st.current.groups)
 
   const showBar = (c: Channel) => setBar({ c, until: Date.now() + 3000 })
 
+  /* ☠ 换台的基准是**这一刻指着哪个台**,不是「上次成功播起来的那个」。
+     `lastChannel()` 要等 tune 真的出画才写盘(8 秒起),而用户连按上/下时
+     第二下会从上一个成功的台再算一次 —— 表现是「按了两下只走了一格」
+     或者干脆跳回去。TVBox 上连按是一格一格走的,这里照它。 */
   const step = (delta: number) => {
     const all = flat()
     if (all.length === 0) {
@@ -338,10 +389,11 @@ function LiveOsd() {
       ui.toast('频道表还在拉,稍等一下')
       return
     }
-    const cur = lastChannel()
+    const cur = curRef.current || lastChannel()
     let i = all.findIndex((c) => c.name === cur)
     if (i < 0) i = 0
     const next = all[(i + delta + all.length) % all.length]
+    curRef.current = next.name
     showBar(next)
     void tune(next, () => {})
   }
@@ -359,6 +411,7 @@ function LiveOsd() {
       ui.toast('没有 ' + no + ' 号频道')
       return
     }
+    curRef.current = hit.name
     showBar(hit)
     void tune(hit, () => {})
   }
@@ -434,7 +487,7 @@ function LiveOsd() {
                 <ChannelRow
                   c={c} no={numbersOf(st.current.groups).get(c.name) || i + 1} now={now}
                   icons={st.current.icons}
-                  onPress={() => { setListOpen(false); showBar(c); void tune(c, () => {}) }}
+                  onPress={() => { setListOpen(false); curRef.current = c.name; showBar(c); void tune(c, () => {}) }}
                 />
               )
             }}
@@ -477,6 +530,10 @@ export async function playCatchup(c: Channel, p: Program, onNote: (s: string) =>
     return
   }
   const base = urlChain(c)[0]
+  if (!base) {
+    onNote('这个频道没有可用地址')
+    return
+  }
   const u = catchupUrl(base.url, c.catchup, p.start, p.end, nowSec)
   if (!u) {
     onNote('这个频道的回看模板认不出来')

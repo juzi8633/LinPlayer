@@ -1,0 +1,18 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "id": "alice/my-settings",
+  "name": "设置分节示例",
+  "version": "0.1.0",
+  "description": "最小设置分节示例:在官方设置页里加一节,值存插件自己的设置区。",
+  "minAppVersion": "2.0.0",
+  "activation": { "load": "lazy", "lifetime": "idle" },
+  "contributes": {
+    "settingsSections": [
+      { "anchor": "settings.playback.general", "title": "我的一节", "settings": [
+        { "key": "greeting", "type": "text", "title": "打招呼", "default": "你好" },
+        { "key": "loud", "type": "toggle", "title": "大声点", "default": false }
+      ] }
+    ]
+  },
+  "main": "dist/main.js"
+}

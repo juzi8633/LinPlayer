@@ -36,12 +36,16 @@ jobs:
           REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
 
+      # ☠ 这一步**必须自己非零退出**。第一版写的是 `echo automerge=no >> $GITHUB_ENV`,
+      #   而 job 的出口取的是下一步的 `steps.judge.outputs.automerge` —— 写进 GITHUB_ENV
+      #   的那个值没有任何人读。于是「同时改 index.json 和 .github/workflows/*」的 PR
+      #   照样自动合并,而下一次 pull_request_target 跑的就是刚合进去的那份工作流。
       - name: 只许改 index.json
         run: |
           if grep -vqx 'registry/index.json' /tmp/changed.txt; then
-            echo "这个 PR 还改了别的文件,留给维护者:"
+            echo "::error::这个 PR 改了 registry/index.json 以外的文件,不自动合并:"
             cat /tmp/changed.txt
-            echo "automerge=no" >> "$GITHUB_ENV"
+            exit 1
           fi
 
       - uses: actions/setup-node@v4
@@ -83,7 +87,9 @@ jobs:
 
   hold:
     needs: validate
-    if: needs.validate.outputs.automerge != 'yes'
+    # ☠ 要 always():校验 job 非零退出时,依赖它的 job 默认是**跳过**的 ——
+    #   跳过就没人留言,作者只看到一个红叉,分不清是「规则没过」还是「CI 自己挂了」。
+    if: always() && needs.validate.outputs.automerge != 'yes'
     runs-on: ubuntu-latest
     steps:
       - name: 说明为什么留给维护者

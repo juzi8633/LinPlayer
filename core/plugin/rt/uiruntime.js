@@ -221,8 +221,12 @@ function makeDom(router) {
      ☠ 只报一次 —— 一个写错的属性在长列表里每行都会触发一次,
        刷屏之后真正有用的那条会被冲掉。 */
   const warned = new Set()
+  /* 渲染器自己塞给原生的那几个:它们不是插件写的属性,不能拿定义源去量。
+     ☠ 不排掉的话开发者模式下每个虚拟列表都会骂两句,而骂的是**渲染器自己**——
+       插件作者按着这条 warn 去改自己的代码,怎么改都不对。 */
+  const INTERNAL = ['firstIndex', 'onRange', 'cmds']
   function warnUnknownProp(type, name) {
-    if (!globalThis.__lpDevMode) return
+    if (!globalThis.__lpDevMode || INTERNAL.indexOf(name) >= 0) return
     const known = COMPONENT_PROPS[type]
     if (!known || known.indexOf(name) >= 0) return
     const key = type + '.' + name

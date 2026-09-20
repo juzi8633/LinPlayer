@@ -1,0 +1,14 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "id": "alice/now-playing",
+  "name": "播放器侧栏示例",
+  "version": "0.1.0",
+  "description": "最小播放器扩展示例:侧栏一页 + 画面上一层覆盖层 + 接遥控器按键。",
+  "minAppVersion": "2.0.0",
+  "activation": { "load": "lazy", "lifetime": "idle" },
+  "contributes": {
+    "playerPanels": [ { "id": "info", "title": "这是什么", "icon": "info" } ],
+    "playerOverlays": [ { "id": "hint" } ]
+  },
+  "main": "dist/main.js"
+}

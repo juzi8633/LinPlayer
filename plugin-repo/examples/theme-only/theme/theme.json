@@ -1,0 +1,11 @@
+{
+  "$schema": "../../../theme-json.schema.json",
+  "schema": 1,
+  "modes": ["dark"],
+  "tokens": {
+    "dark": { "color.accent": "#FF8A5BFF", "radius.card": 10 }
+  },
+  "components": {
+    "PosterCard": { "focused": { "scale": 1.06, "borderColor": "token:color.accent" } }
+  }
+}

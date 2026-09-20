@@ -23,15 +23,19 @@ cd "$ROOT"
 ALLOW="$ROOT/scripts/secrets-allow.txt"
 MODE="${1:-}"
 
+# ☠ 要 `-c core.quotePath=false`:默认输出会把非 ASCII 文件名转义成
+#   `"core/.../emby.counts.01-å¿....json"`,扫描器按字面路径找不到它们 ——
+#   于是 18 个中文名文件**从来没被扫过**,而门禁一直报绿。
+#   这是「读不到的文件要报出来」那条加上之后当场现形的。
 if [ "$MODE" = "--staged" ]; then
-  FILES=$(git diff --cached --name-only --diff-filter=ACM)
+  FILES=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACM)
 else
-  FILES=$(git ls-files)
+  FILES=$(git -c core.quotePath=false ls-files)
 fi
 
-# 二进制与产物不扫:它们里的「匹配」全是巧合,而且输出没法看
-SKIP_EXT='\.(png|jpg|jpeg|gif|webp|ico|svg|ttf|otf|woff2?|zip|gz|xz|apk|aab|dll|so|dylib|exe|bin|jar|lock|sum|pdf|mp4|mkv|ts)$'
-
+# 跳过哪些后缀由 check-secrets.py 说了算 —— 这里原来还有一份,而且**含 `ts`**,
+# 和 .py 里「不许把 ts 放进来」的注释正相反。两份规则迟早对不上,而且这一份
+# 从来没被用过(死变量),留着只会让下一个人以为改它有用。
 BASE="$ROOT/scripts/secrets-baseline.txt"
 if [ "$MODE" = "--write-baseline" ]; then
   python "$ROOT/scripts/check-secrets.py" "$ALLOW" "$BASE" --write-baseline <<< "$FILES"

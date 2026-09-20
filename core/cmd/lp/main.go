@@ -336,10 +336,10 @@ func check(dir string) error {
 				ok("activate 不报错")
 			}
 		}
-		for _, miss := range missingImpl(m, r) {
+		for _, miss := range plugin.MissingImpl(m, r) {
 			fail("manifest 声明了 %s,但 definePlugin 里没有实现", miss)
 		}
-		if len(missingImpl(m, r)) == 0 {
+		if len(plugin.MissingImpl(m, r)) == 0 {
 			ok("声明的贡献点都有实现")
 		}
 	}
@@ -354,80 +354,6 @@ func check(dir string) error {
 }
 
 // missingImpl manifest 声明的贡献点在代码里有没有同名实现(D206 D483)。
-func missingImpl(m *plugin.Manifest, r *rt.Runtime) []string {
-	var raw struct {
-		Contributes struct {
-			DataSource   *json.RawMessage `json:"dataSource"`
-			Commands     []struct{ ID string } `json:"commands"`
-			M3u8Filters  []struct{ ID string } `json:"m3u8Filters"`
-			Menus        []struct{ Command string } `json:"menus"`
-			HomeSections []struct {
-				ID   string
-				Kind string
-			} `json:"homeSections"`
-			Pages    []struct{ ID string } `json:"pages"`
-			Settings []struct {
-				Type   string
-				Action string
-			} `json:"settings"`
-			Hooks *struct {
-				Navigate      bool             `json:"navigate"`
-				ListTransform *json.RawMessage `json:"listTransform"`
-				CardBadge     bool             `json:"cardBadge"`
-			} `json:"hooks"`
-			NextUp bool `json:"nextUp"`
-		} `json:"contributes"`
-	}
-	_ = json.Unmarshal(m.Raw, &raw)
-	var out []string
-	need := func(path string) {
-		if !r.Has(path) {
-			out = append(out, path)
-		}
-	}
-	c := raw.Contributes
-	if c.DataSource != nil {
-		need("dataSource.detail")
-		need("dataSource.play")
-	}
-	for _, x := range c.Commands {
-		need("commands." + x.ID)
-	}
-	for _, x := range c.Menus {
-		need("commands." + x.Command)
-	}
-	for _, x := range c.M3u8Filters {
-		need("m3u8Filters." + x.ID)
-	}
-	for _, x := range c.HomeSections {
-		if x.Kind == "items" {
-			need("homeSections." + x.ID)
-		}
-	}
-	for _, x := range c.Pages {
-		need("pages." + x.ID)
-	}
-	for _, x := range c.Settings {
-		if x.Type == "button" && x.Action != "" {
-			need("settingActions." + x.Action)
-		}
-	}
-	if c.Hooks != nil {
-		if c.Hooks.Navigate {
-			need("hooks.navigate")
-		}
-		if c.Hooks.ListTransform != nil {
-			need("hooks.listTransform")
-		}
-		if c.Hooks.CardBadge {
-			need("hooks.cardBadge")
-		}
-	}
-	if c.NextUp {
-		need("nextUp")
-	}
-	return out
-}
 
 func platform() string {
 	switch runtime.GOOS {

@@ -1,0 +1,14 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "id": "alice/my-theme",
+  "name": "我的主题(手机)",
+  "version": "0.1.0",
+  "description": "最小主题示例:一包一端,只改 token 与一个组件的状态样式。",
+  "minAppVersion": "2.0.0",
+  "platforms": ["android"],
+  "activation": { "load": "lazy", "lifetime": "idle" },
+  "contributes": {
+    "theme": { "platform": "android", "json": "theme/theme.json", "modes": ["dark"] }
+  },
+  "main": "main.js"
+}
