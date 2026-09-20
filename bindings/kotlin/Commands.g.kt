@@ -306,6 +306,7 @@ object LinPlayerCommandNames {
         "plugin.ui.mount",
         "plugin.ui.unmount",
         "plugin.ui.event",
+        "plugin.ui.viewport",
     )
 }
 
@@ -811,7 +812,7 @@ suspend fun LinPlayerCommands.syncCalendarLibrary(args: Map<String, Any?>? = nul
 suspend fun LinPlayerCommands.syncCalendarDue(args: Map<String, Any?>? = null): JsonElement =
     call("sync.calendarDue", args)
 
-// ---- 插件 · plugin.* (36 条) ----
+// ---- 插件 · plugin.* (37 条) ----
 suspend fun LinPlayerCommands.pluginList(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.list", args)
 suspend fun LinPlayerCommands.pluginPendingRestart(args: Map<String, Any?>? = null): JsonElement =
@@ -884,3 +885,5 @@ suspend fun LinPlayerCommands.pluginUiUnmount(args: Map<String, Any?>? = null): 
     call("plugin.ui.unmount", args)
 suspend fun LinPlayerCommands.pluginUiEvent(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.ui.event", args)
+suspend fun LinPlayerCommands.pluginUiViewport(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.ui.viewport", args)

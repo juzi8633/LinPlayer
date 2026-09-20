@@ -351,14 +351,77 @@ function makeRenderer(makeScope, host) {
     host.nextFrame(() => flush(s))
   }
 
+  /* 视口与安全区(SPEC 7.7,D217 D425 D426)。
+     ★ 一个 surface 一份:同一个插件的页和侧栏区块视口本来就不一样。
+     ☠ 默认值不能是 0:插件在收到第一条 viewport 之前就要渲染一次,
+       宽度读成 0 的话按断点分支的布局会全走 compact,而那一帧是用户真看得见的。 */
+  const viewports = new Map()
+  const vpListeners = new Map()
+
+  function viewportOf(id) {
+    let v = viewports.get(id)
+    if (!v) {
+      v = { width: 1280, height: 720, breakpoint: 'expanded', formFactor: 'desktop', insets: { top: 0, right: 0, bottom: 0, left: 0 } }
+      viewports.set(id, v)
+    }
+    return v
+  }
+
+  /**
+   * useViewport():订阅当前 surface 的视口,变了就重渲染。
+   *
+   * ☠ 订阅**在渲染期就挂上**,不放进 useEffect:没有 requestAnimationFrame 时
+   * Preact 的 effect 要等 100ms 才跑,而壳常常在挂载后立刻报一次尺寸 ——
+   * 那一条正好落在这个窗口里,没人接。表现是「安全区永远是 0」,不报错。
+   */
+  function useViewport() {
+    const id = hooks.useContext(SurfaceCtx)
+    const [, bump] = hooks.useState(0)
+    const ref = hooks.useRef(null)
+    if (!ref.current) {
+      ref.current = () => bump((n) => n + 1)
+      let set = vpListeners.get(id)
+      if (!set) {
+        set = new Set()
+        vpListeners.set(id, set)
+      }
+      set.add(ref.current)
+    }
+    hooks.useEffect(() => () => {
+      const set = vpListeners.get(id)
+      if (set) set.delete(ref.current)
+    }, [id])
+    return viewportOf(id)
+  }
+
+  const SurfaceCtx = preact.createContext('')
+
   return {
+    useViewport,
+    /** 壳报来的视口变化。节流由壳那边做(每帧最多一条)。 */
+    viewport(surfaceId, v) {
+      const cur = viewportOf(surfaceId)
+      if (
+        cur.width === v.width && cur.height === v.height &&
+        cur.breakpoint === v.breakpoint && cur.formFactor === v.formFactor &&
+        JSON.stringify(cur.insets) === JSON.stringify(v.insets)
+      ) return
+      viewports.set(surfaceId, v)
+      const set = vpListeners.get(surfaceId)
+      if (set) for (const fn of set) fn()
+    },
     mount(surfaceId, render) {
       const s = { id: surfaceId, ops: [], scheduled: false, frame: 0 }
       s.root = document.createRoot(surfaceId)
       surfaces.set(surfaceId, s)
       // 根要先告诉壳:后面所有 parent 为 0 的 insert 指的就是它
       s.ops.push({ op: 'root', id: 0 })
-      preact.render(preact.h(Boundary, { __surface: surfaceId, __render: render }), s.root)
+      // 用 Context 把 surface id 传下去:useViewport 要知道自己属于哪一块
+      preact.render(
+        preact.h(SurfaceCtx.Provider, { value: surfaceId },
+          preact.h(Boundary, { __surface: surfaceId, __render: render })),
+        s.root,
+      )
       flush(s)
       host.surfaceState(surfaceId, 'ready')
       return surfaceId
@@ -366,6 +429,8 @@ function makeRenderer(makeScope, host) {
     unmount(surfaceId) {
       const s = surfaces.get(surfaceId)
       if (!s) return
+      viewports.delete(surfaceId)
+      vpListeners.delete(surfaceId)
       preact.render(null, s.root)
       router.dropSubtree(surfaceId, s.root)
       surfaces.delete(surfaceId)

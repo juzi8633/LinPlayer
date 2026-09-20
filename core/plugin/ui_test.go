@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +14,7 @@ import (
 
 	"linplayer/core/bus"
 	"linplayer/core/paths"
+	"linplayer/core/plugin/rt"
 )
 
 /*
@@ -482,4 +484,68 @@ func TestUI首帧跟着mount的返回值(t *testing.T) {
 	if !has(types, "Column") || !has(types, "Button") {
 		t.Fatalf("mount 回的 ops 不是首帧,建出来的是 %v", types)
 	}
+}
+
+/*
+视口 / 断点 / 安全区(SPEC 7.7,D217 D425 D426)。
+
+☠ 这条挡的是「插件按安全区让开了,但那个值永远是 0」——
+界面在有刘海、有手势条、有电视过扫描边的设备上被切掉一圈,
+而开发机上一切正常,编译也绿。
+
+判据有三条,少一条这件事就是半残:
+  · 壳报来的视口能到插件手里(useViewport 拿得到)
+  · 变了要**重渲染**,不是只改一个读不到的值
+  · 没变**不许**重渲染(尺寸变化一秒几十条,每条都重画等于自己做 DDoS)
+*/
+func TestUI视口与安全区送得到插件手里(t *testing.T) {
+	h := installAndRestart(t, `definePlugin({ pages: { p: () => {
+		const { h, useViewport } = `+`__linplayer_sdk;
+		const v = useViewport();
+		globalThis.__renders = (globalThis.__renders || 0) + 1;
+		return h('Text', null, v.breakpoint + ' ' + v.width + 'x' + v.height + ' 底' + v.insets.bottom);
+	} } })`)
+	registerUI()
+	c := captureUI(t)
+	sid := mountUI(t, c, map[string]any{"plugin": "alice/demo", "target": "p", "kind": "page"})
+	c.wait(t, "首帧", func() bool { return len(c.ops()) > 0 })
+
+	call(t, "plugin.ui.viewport", map[string]any{
+		"surface": sid, "width": 480, "height": 900,
+		"breakpoint": "compact", "formFactor": "phone",
+		"insets": map[string]any{"top": 44, "right": 0, "bottom": 34, "left": 0},
+	})
+	c.wait(t, "视口变化后的重渲染", func() bool {
+		for _, o := range c.ops() {
+			if o["op"] == "text" && strings.Contains(o["value"].(string), "compact 480x900 底34") {
+				return true
+			}
+		}
+		return false
+	})
+
+	// 再报一条**一模一样**的:不许再重渲染
+	l, _ := h.get("alice/demo", "test")
+	before := renderCount(t, l.rt)
+	call(t, "plugin.ui.viewport", map[string]any{
+		"surface": sid, "width": 480, "height": 900,
+		"breakpoint": "compact", "formFactor": "phone",
+		"insets": map[string]any{"top": 44, "right": 0, "bottom": 34, "left": 0},
+	})
+	time.Sleep(80 * time.Millisecond)
+	if after := renderCount(t, l.rt); after != before {
+		t.Errorf("视口没变却重渲染了(%d → %d)—— 尺寸变化一秒几十条,这样会把自己拖垮", before, after)
+	}
+}
+
+func renderCount(t *testing.T, r *rt.Runtime) int {
+	t.Helper()
+	v, err := r.Eval(context.Background(), 2*time.Second, "x.js", `String(globalThis.__renders || 0)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s string
+	_ = json.Unmarshal(v, &s)
+	n, _ := strconv.Atoi(s)
+	return n
 }

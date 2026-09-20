@@ -103,6 +103,25 @@ func registerUICommands() {
 		return nil, nil
 	})
 
+	/* 视口 / 断点 / 安全区(SPEC 7.7 D217 D425 D426)。
+	   ★ 断点由**壳**算:它和官方页用同一套阈值,核心层这边再算一遍迟早分叉。 */
+	bus.Register("plugin.ui.viewport", func(ctx context.Context, _ int64, a map[string]any) (any, error) {
+		s := ui.get(a)
+		if s == nil {
+			return nil, nil // surface 已经没了:壳上迟到的一次尺寸变化,丢掉就是
+		}
+		l, err := Default().get(s.plugin, "ui")
+		if err != nil {
+			return nil, err
+		}
+		v := map[string]any{
+			"width": num(a, "width"), "height": num(a, "height"),
+			"breakpoint": str(a, "breakpoint"), "formFactor": str(a, "formFactor"),
+			"insets": a["insets"],
+		}
+		return nil, l.rt.UIViewport(s.id, v)
+	})
+
 	bus.Register("plugin.ui.event", func(ctx context.Context, _ int64, a map[string]any) (any, error) {
 		s := ui.get(a)
 		if s == nil {
@@ -125,6 +144,9 @@ func registerUICommands() {
 		return nil, nil
 	})
 }
+
+func num(a map[string]any, k string) float64 { v, _ := a[k].(float64); return v }
+func str(a map[string]any, k string) string   { v, _ := a[k].(string); return v }
 
 func (u *uiState) add(plugin, kind, target string) *surface {
 	u.mu.Lock()

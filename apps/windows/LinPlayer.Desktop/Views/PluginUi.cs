@@ -49,6 +49,8 @@ public sealed class PluginSurface : UserControl
         Content = _host;
         AttachedToVisualTree += (_, _) => _ = Mount();
         DetachedFromVisualTree += (_, _) => Unmount();
+        // 尺寸变了报一次视口(SPEC 7.7)。桌面没有刘海,insets 恒为 0
+        SizeChanged += (_, e) => ReportViewport(e.NewSize);
     }
 
     /// <summary>AppJobs 把 plugin.ui / plugin.ui.surface 两个事件转进来。</summary>
@@ -69,12 +71,33 @@ public sealed class PluginSurface : UserControl
             _surface = Mi.Str(r, "surface");
             if (_surface.Length > 0) Live[_surface] = this;
             // 首帧跟着 mount 的返回值来:等事件的话会漏掉它(见 core/plugin/ui.go 那条)
-            Dispatcher.UIThread.Post(() => ApplyFrame(r));
+            Dispatcher.UIThread.Post(() => { ApplyFrame(r); ReportViewport(Bounds.Size); });
         }
         catch (Exception e)
         {
             Dispatcher.UIThread.Post(() => ShowError(LibraryPage.Advice(e)));
         }
+    }
+
+    private string _lastViewport = "";
+
+    /// <summary>断点阈值与官方页同一套(D217):算两遍迟早分叉。</summary>
+    private static string BreakpointOf(double w) => w < 600 ? "compact" : w < 1000 ? "medium" : "expanded";
+
+    private void ReportViewport(Size size)
+    {
+        if (_surface.Length == 0 || size.Width <= 0) return;
+        var bp = BreakpointOf(size.Width);
+        var key = $"{(int)size.Width}x{(int)size.Height}:{bp}";
+        // 没变就不发:窗口拖动时 SizeChanged 一秒几十条
+        if (key == _lastViewport) return;
+        _lastViewport = key;
+        _ = _core.PluginUiViewport(new
+        {
+            surface = _surface, width = size.Width, height = size.Height,
+            breakpoint = bp, formFactor = "desktop",
+            insets = new { top = 0, right = 0, bottom = 0, left = 0 },
+        });
     }
 
     private void Unmount()

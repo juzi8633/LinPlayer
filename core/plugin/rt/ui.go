@@ -106,6 +106,8 @@ func (r *Runtime) installUI(sdk *goja.Object) error {
 	_ = sdk.Set("h", pre.Get("h"))
 	_ = sdk.Set("Fragment", pre.Get("Fragment"))
 	_ = sdk.Set("createContext", pre.Get("createContext"))
+	// useViewport 由渲染器提供(它按 surface 分帐),不是 Preact 自带的钩子
+	_ = sdk.Set("useViewport", r.ui.Get("useViewport"))
 	for _, n := range []string{"useState", "useEffect", "useMemo", "useCallback", "useRef", "useContext", "useReducer", "useErrorBoundary"} {
 		_ = sdk.Set(n, hk.Get(n))
 	}
@@ -208,4 +210,9 @@ const BudgetEvent = time.Second
 // UIEvent 壳回传的一次交互。
 func (r *Runtime) UIEvent(surfaceID string, fn int, args []any) error {
 	return r.uiCall(BudgetEvent, "event", surfaceID, fn, args)
+}
+
+// UIViewport 壳报来的视口 / 断点 / 安全区(SPEC 7.7)。节流由壳那边做,每帧最多一条。
+func (r *Runtime) UIViewport(surfaceID string, v map[string]any) error {
+	return r.uiCall(BudgetEvent, "viewport", surfaceID, v)
 }

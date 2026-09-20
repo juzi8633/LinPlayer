@@ -6,7 +6,7 @@
  *   这比再写一套「渲染器自测页」有用,因为自测页只会用到写它时想得起来的那些路径。
  */
 import {
-  definePlugin, h, Fragment, useState, useEffect, app, ui,
+  definePlugin, h, Fragment, useState, useEffect, useViewport, app, ui,
   View, Column, Text, Button, TextInput, Switch, Divider, Chip, ChipGroup, VirtualList,
 } from '@linplayer/plugin-sdk'
 
@@ -53,6 +53,8 @@ function Panel() {
       ) : (
         <Gallery />
       )}
+
+      <Viewport />
 
       <Button title="弹一条 toast" onPress={() => ui.toast('调试面板:渲染器与事件通道都是通的')} />
     </Column>
@@ -107,6 +109,20 @@ function Gallery() {
 
       <Divider />
       <Button title="触发一次错误(看错误边界)" onPress={() => setBoom(true)} />
+    </Column>
+  )
+}
+
+/** 视口与安全区(SPEC 7.7):这一行在有刘海 / 手势条 / 电视过扫描边的设备上数字不一样。 */
+function Viewport() {
+  const v = useViewport()
+  return (
+    <Column>
+      <KV label="视口" value={`${Math.round(v.width)}×${Math.round(v.height)} · ${v.breakpoint} · ${v.formFactor}`} />
+      <KV
+        label="安全区"
+        value={`上${Math.round(v.insets.top)} 下${Math.round(v.insets.bottom)} 左${Math.round(v.insets.left)} 右${Math.round(v.insets.right)}`}
+      />
     </Column>
   )
 }

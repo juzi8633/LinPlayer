@@ -385,4 +385,5 @@
 | [x] | `plugin.ui.mount` | **新增** | `plugin, target, kind, props?` | `{surface,frame,ops}` | ✅ |
 | [x] | `plugin.ui.unmount` | **新增** | `surface` | `—` | ✅ |
 | [x] | `plugin.ui.event` | **新增** | `surface, fn, args?` | `—` | ✅ |
+| [x] | `plugin.ui.viewport` | **新增** | `surface, width, height, breakpoint, formFactor, insets` | `—` | ✅ |
 <!-- END GENERATED -->

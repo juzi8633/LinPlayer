@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -171,6 +173,37 @@ fun PluginSurface(
             }
         }
     }
+
+    /* 视口 / 断点 / 安全区(SPEC 7.7 D217 D425 D426)。
+       ★ 断点阈值与官方页同一套:算两遍迟早分叉。
+       ☠ insets 要真取系统的:写死 0 的表现是界面在有刘海、有手势条的机器上
+       被切掉一圈,而开发机上一切正常,不报错。 */
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val cfg = androidx.compose.ui.platform.LocalConfiguration.current
+    val bars = androidx.compose.foundation.layout.WindowInsets.systemBars.asPaddingValues()
+    val tv = LocalPluginTv.current
+    val ld = androidx.compose.ui.unit.LayoutDirection.Ltr
+    LaunchedEffect(surfaceId, cfg.screenWidthDp, cfg.screenHeightDp, bars) {
+        val sid = surfaceId ?: return@LaunchedEffect
+        val w = cfg.screenWidthDp
+        runCatching {
+            app.call("plugin.ui.viewport", JsonObject(mapOf(
+                "surface" to JsonPrimitive(sid),
+                "width" to JsonPrimitive(w),
+                "height" to JsonPrimitive(cfg.screenHeightDp),
+                "breakpoint" to JsonPrimitive(if (w < 600) "compact" else if (w < 1000) "medium" else "expanded"),
+                "formFactor" to JsonPrimitive(if (tv) "tv" else "phone"),
+                "insets" to JsonObject(mapOf(
+                    "top" to JsonPrimitive(bars.calculateTopPadding().value),
+                    "right" to JsonPrimitive(bars.calculateRightPadding(ld).value),
+                    "bottom" to JsonPrimitive(bars.calculateBottomPadding().value),
+                    "left" to JsonPrimitive(bars.calculateLeftPadding(ld).value),
+                )),
+            )))
+        }
+    }
+    // density 只是让上面那段在缩放变化时也重算一次
+    @Suppress("UNUSED_EXPRESSION") density
 
     Box(modifier) {
         when {
