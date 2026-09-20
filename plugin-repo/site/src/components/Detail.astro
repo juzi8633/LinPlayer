@@ -16,6 +16,8 @@ const pageUrl = new URL(href(lang, path), Astro.site).href;
 // 深链要的是包的绝对地址(D154)。SITE_URL 由 CI 注入,仓库里不写域名。
 const pkgUrl = new URL(v.url, Astro.site).href;
 const deepLink = `linplayer://plugin/install?url=${encodeURIComponent(pkgUrl)}`;
+// 和卡面同一个算法,列表跳详情颜色不跳
+const hue = 168 + ([...e.id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % 5) * 21;
 const qr = await QRCode.toString(pageUrl, { type: 'svg', margin: 0, errorCorrectionLevel: 'M' });
 
 // getEntry 找不到会往构建日志里刷警告,而「没有 README」是常态 —— 改成自己查集合
@@ -33,7 +35,7 @@ const siblings = plugins.filter((p) => p.author && p.author === e.author && p.id
   <div class="detail">
     <div>
       <div class="head">
-        <span class="glyph" style={`view-transition-name:p-${slug}`}>{name.slice(0, 1)}</span>
+        <span class="glyph" style={`view-transition-name:p-${slug};--h:${hue};color:hsl(${hue} 55% 58%)`}>{name.slice(0, 1)}</span>
         <div>
           <h1>{name}</h1>
           <p class="sub">{e.author ?? '—'} · <code>{e.id}</code></p>

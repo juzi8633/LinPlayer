@@ -187,18 +187,31 @@ button, input, select { font: inherit; color: inherit; }
 .shot img.on { opacity: 1; }
 
 /* 没截图:同一个字放大当底、模糊,前面压一块清晰图标 —— 不去凑一张假截图 */
-.shot.mono { display: grid; place-items: center; }
-.shot.mono .blur {
-  position: absolute; inset: -20%; display: grid; place-items: center;
-  font-size: 18rem; font-weight: 800; color: var(--accent);
-  filter: blur(42px); opacity: .5; line-height: 1;
+/* 没截图的卡面压扁:一整块 16:9 的空底会把信息挤走,而它一个字节的信息都没有。
+   色相按 id 散开(--h),九张卡不再是九个一样的蓝方块 —— 但只在强调色附近摆动,不是彩虹。 */
+.shot.mono {
+  aspect-ratio: 5 / 2; display: grid; place-items: center;
+  background: color-mix(in srgb, hsl(var(--h) 46% 50%) 10%, var(--panel-alt));
 }
-:root[data-theme='light'] .shot.mono .blur { opacity: .32; }
+.shot.mono .blur {
+  position: absolute; inset: -30%; display: grid; place-items: center;
+  font-size: 12rem; font-weight: 800; color: hsl(var(--h) 62% 62%);
+  filter: blur(34px); opacity: .45; line-height: 1;
+}
+:root[data-theme='light'] .shot.mono .blur { color: hsl(var(--h) 52% 46%); opacity: .3; }
 .shot.mono .glyph {
-  position: relative; width: 72px; height: 72px; display: grid; place-items: center;
+  position: relative; width: 64px; height: 64px; display: grid; place-items: center;
   border-radius: var(--r-m); border: 1px solid var(--line-strong);
   background: var(--glass); backdrop-filter: var(--glass-blur);
-  font-size: 30px; font-weight: 700; letter-spacing: -.02em;
+  font-size: 28px; font-weight: 700; letter-spacing: -.02em;
+  color: hsl(var(--h) 55% 58%);
+}
+:root[data-theme='light'] .shot.mono .glyph { color: hsl(var(--h) 48% 40%); }
+
+/* 跟随系统的浅色也要这一套 —— 深色是默认值,不能用 :not([data-theme=dark]) 裸着写 */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) .shot.mono .blur { color: hsl(var(--h) 52% 46%); opacity: .3; }
+  :root:not([data-theme='dark']) .shot.mono .glyph { color: hsl(var(--h) 48% 40%); }
 }
 .shot .flags { position: absolute; left: var(--s10); top: var(--s10); display: flex; gap: var(--s6); }
 .shot .dots { position: absolute; right: var(--s10); bottom: var(--s10); display: flex; gap: var(--s6); }
@@ -229,8 +242,9 @@ button, input, select { font: inherit; color: inherit; }
 .empty { padding: var(--s42) 0; color: var(--ink3); }
 
 /* 滚动进入:错落淡入。用 IntersectionObserver 加 .in,不做视差 */
-.rise { opacity: 0; transform: translateY(10px); }
-.rise.in { opacity: 1; transform: none; transition: opacity .5s ease, transform .5s cubic-bezier(.2,.7,.3,1); }
+/* 只有 JS 起来了才先藏起来 —— 否则脚本挂掉 = 整页空白,比没有动效糟得多 */
+:root.js .rise { opacity: 0; transform: translateY(10px); }
+:root.js .rise.in { opacity: 1; transform: none; transition: opacity .5s ease, transform .5s cubic-bezier(.2,.7,.3,1); }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -238,7 +252,7 @@ button, input, select { font: inherit; color: inherit; }
     animation-duration: .001ms !important; animation-iteration-count: 1 !important;
     transition-duration: .001ms !important;
   }
-  .rise { opacity: 1; transform: none; }
+  :root.js .rise { opacity: 1; transform: none; }
   .card:hover { transform: none; }
 }
 

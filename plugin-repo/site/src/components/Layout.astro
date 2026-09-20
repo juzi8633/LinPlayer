@@ -31,6 +31,7 @@ const og = ogImage ? new URL(ogImage, Astro.site).href : undefined;
 <link rel="alternate" hreflang={o} href={href(o, altPath)} />
 <!-- 主题在首帧之前定,否则深色用户会先闪一下浅色 -->
 <script is:inline>
+  document.documentElement.classList.add('js');
   try {
     const v = localStorage.getItem('lp-theme');
     if (v === 'dark' || v === 'light') document.documentElement.dataset.theme = v;

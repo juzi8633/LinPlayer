@@ -4,8 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
-    "preview": "astro preview"
+    "build": "astro build && node scripts/check-build.mjs",
+    "preview": "astro preview",
+    "check": "node scripts/check-build.mjs"
   },
   "dependencies": {
     "@astrojs/rss": "^4.0.12",
