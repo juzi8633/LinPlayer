@@ -313,6 +313,9 @@ public static class LinPlayerCommandNames
         "plugin.setCapabilities",
         "plugin.shellResult",
         "plugin.setCookies",
+        "plugin.ui.mount",
+        "plugin.ui.unmount",
+        "plugin.ui.event",
     ];
 }
 
@@ -820,7 +823,7 @@ public static class LinPlayerCommandsExtensions
     public static Task<JsonElement> SyncCalendarDue(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("sync.calendarDue", args, ct);
 
-    // ---- 插件 · plugin.* (33 条) ----
+    // ---- 插件 · plugin.* (36 条) ----
     public static Task<JsonElement> PluginList(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("plugin.list", args, ct);
     public static Task<JsonElement> PluginPendingRestart(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -887,4 +890,10 @@ public static class LinPlayerCommandsExtensions
         => c.CallAsync("plugin.shellResult", args, ct);
     public static Task<JsonElement> PluginSetCookies(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("plugin.setCookies", args, ct);
+    public static Task<JsonElement> PluginUiMount(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.ui.mount", args, ct);
+    public static Task<JsonElement> PluginUiUnmount(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.ui.unmount", args, ct);
+    public static Task<JsonElement> PluginUiEvent(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.ui.event", args, ct);
 }

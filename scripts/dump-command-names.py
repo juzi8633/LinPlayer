@@ -57,7 +57,10 @@ def main():
     for key, rel in [("cs", "bindings/csharp/Commands.g.cs"),
                      ("kt", "bindings/kotlin/Commands.g.kt")]:
         src = (root / rel).read_text(encoding="utf-8")
-        got = sorted(set(re.findall(r'"([a-z][a-zA-Z0-9]*\.[a-zA-Z0-9]+)"', src)))
+        # ☠ 这条原来写死了「**一个**点」,于是 plugin.ui.mount 这类三段命令
+        #   在产物里明明有,却一条都抽不出来 —— 门禁报「C# 与 COMMANDS.md 对不上」,
+        #   而真实情况是门禁自己没看见。2026-09-20 加 plugin.ui.* 时撞上。
+        got = sorted(set(re.findall(r'"([a-z][a-zA-Z0-9]*(?:\.[a-zA-Z0-9]+)+)"', src)))
         dump(f"{key}.txt", got)
 
     print(f"COMMANDS.md {len(want)} 条已导出。")

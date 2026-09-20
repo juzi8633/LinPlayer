@@ -197,6 +197,7 @@ func RegisterCommands() {
 		rt.ShellResult(int64(id), b(a, "ok"), data, e)
 		return nil, nil
 	})
+	registerUI()
 }
 
 // Slot 一个接管位与候选(D15)。

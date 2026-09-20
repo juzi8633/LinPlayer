@@ -1,0 +1,315 @@
+package plugin
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"linplayer/core/bus"
+)
+
+/*
+这一层测的是**壳看得见的那条线**:发 plugin.ui.mount → 收到 plugin.ui 事件 →
+把 {$fn} 号发回 plugin.ui.event → 插件的闭包被调到。
+渲染器内部怎么 diff 是 rt 那边的事,这里只认命令与事件。
+*/
+
+type evCapture struct {
+	mu     sync.Mutex
+	frames []map[string]any
+	states []map[string]any
+	stop   func()
+}
+
+// captureUI 起一个事件消费者。事件走的是真队列(bus.NextEvent),
+// 所以这里测到的就是壳那边收到的东西 —— 不是另外搭一条旁路。
+func captureUI(t *testing.T) *evCapture {
+	t.Helper()
+	bus.Init()
+	c := &evCapture{}
+	done := make(chan struct{})
+	c.stop = func() { close(done) }
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			raw := bus.NextEvent(20)
+			if raw == nil {
+				continue
+			}
+			var e struct {
+				Name string          `json:"name"`
+				Data json.RawMessage `json:"data"`
+			}
+			if json.Unmarshal(raw, &e) != nil {
+				continue
+			}
+			var m map[string]any
+			if json.Unmarshal(e.Data, &m) != nil {
+				continue
+			}
+			c.mu.Lock()
+			switch e.Name {
+			case "plugin.ui":
+				c.frames = append(c.frames, m)
+			case "plugin.ui.surface":
+				c.states = append(c.states, m)
+			}
+			c.mu.Unlock()
+		}
+	}()
+	t.Cleanup(c.stop)
+	return c
+}
+
+func (c *evCapture) ops() []map[string]any {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var out []map[string]any
+	for _, f := range c.frames {
+		for _, o := range f["ops"].([]any) {
+			if m, ok := o.(map[string]any); ok {
+				out = append(out, m)
+			}
+		}
+	}
+	return out
+}
+
+func (c *evCapture) wait(t *testing.T, what string, ok func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if ok() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t.Fatalf("等不到 %s;收到 %d 帧、%d 条状态", what, len(c.frames), len(c.states))
+}
+
+func call(t *testing.T, name string, args map[string]any) map[string]any {
+	t.Helper()
+	// 参数过一遍 JSON:真实调用来自壳的 JSON,数字都是 float64
+	raw, _ := json.Marshal(args)
+	var viaJSON map[string]any
+	_ = json.Unmarshal(raw, &viaJSON)
+	out, err := bus.Invoke(context.Background(), name, viaJSON)
+	if err != nil {
+		t.Fatalf("%s: %v", name, err)
+	}
+	b, _ := json.Marshal(out)
+	var m map[string]any
+	_ = json.Unmarshal(b, &m)
+	return m
+}
+
+const uiPlugin = `definePlugin({ pages: { hello: (p) => {
+	const { h } = ` + `__linplayer_sdk;
+	globalThis.__clicks = 0;
+	return h('Column', null,
+		h('Text', null, '你好 ' + (p.who || '')),
+		h('Button', {title: '点我', onPress: () => { globalThis.__clicks++; }}));
+} } })`
+
+func TestUI挂载走命令总线(t *testing.T) {
+	h := installAndRestart(t, uiPlugin)
+	registerUI()
+	c := captureUI(t)
+
+	r := call(t, "plugin.ui.mount", map[string]any{
+		"plugin": "alice/demo", "target": "hello", "kind": "page",
+		"props": map[string]any{"who": "世界"},
+	})
+	sid, _ := r["surface"].(string)
+	if sid == "" {
+		t.Fatal("mount 没回 surface id")
+	}
+	c.wait(t, "首帧", func() bool { return len(c.ops()) > 0 })
+
+	// 骨架屏 → 就绪(D271):两条状态都要有,顺序也不能反
+	c.wait(t, "ready 状态", func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		var seenLoading bool
+		for _, s := range c.states {
+			if s["surface"] != sid {
+				continue
+			}
+			if s["state"] == "loading" {
+				seenLoading = true
+			}
+			if s["state"] == "ready" {
+				return seenLoading
+			}
+		}
+		return false
+	})
+
+	ops := c.ops()
+	var types []string
+	for _, o := range ops {
+		if o["op"] == "create" {
+			types = append(types, o["type"].(string))
+		}
+	}
+	if !has(types, "Column") || !has(types, "Button") {
+		t.Fatalf("首帧没建出组件,建出来的是 %v", types)
+	}
+	// props 里的 who 要真传进去
+	var texts []string
+	for _, o := range ops {
+		if o["op"] == "text" {
+			texts = append(texts, o["value"].(string))
+		}
+	}
+	if !strings.Contains(strings.Join(texts, "|"), "世界") {
+		t.Errorf("mount 的 props 没传进组件,文本是 %v", texts)
+	}
+
+	// 回传一次点击
+	fn := findFn(t, ops, "onPress")
+	call(t, "plugin.ui.event", map[string]any{"surface": sid, "fn": fn, "args": []any{}})
+
+	l, err := h.get("alice/demo", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		v, err := l.rt.Eval(context.Background(), time.Second, "x.js", `String(globalThis.__clicks)`)
+		if err == nil && strings.Contains(string(v), "1") {
+			goto clicked
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("点击没到插件")
+clicked:
+
+	// 卸载之后账本要清干净,否则每开一次插件页就漏一个 surface
+	call(t, "plugin.ui.unmount", map[string]any{"surface": sid})
+	if n := UISurfaceCount(); n != 0 {
+		t.Errorf("卸载后还挂着 %d 个 surface", n)
+	}
+	// 重复卸载是常态(壳的销毁路径可能走两次),不许报错
+	call(t, "plugin.ui.unmount", map[string]any{"surface": sid})
+}
+
+/*
+一帧一条(D318)有**两层**合批,要分开测,不然容易误以为测到了:
+
+  · JS 那层:一次交互里的多次 setState 并成一次提交 —— 下面这条。
+  · Go 这层:16ms 内的多次提交并成一条事件 —— 再下面那条。
+
+☠ 只测第一层的话,把 Go 这层的定时器换成「来一次发一次」照样全绿
+  (2026-09-20 实测:注入「不合批」,这条测试一声不吭)。
+*/
+func TestUI一次交互里的多次setState合成一次提交(t *testing.T) {
+	h := installAndRestart(t, `definePlugin({ pages: { p: () => {
+		const { h, useState } = `+`__linplayer_sdk;
+		const [n, setN] = useState(0);
+		globalThis.__burst = () => { for (let i = 0; i < 20; i++) setN(v => v + 1); };
+		return h('Text', null, '计数 ' + n);
+	} } })`)
+	registerUI()
+	c := captureUI(t)
+
+	sid := call(t, "plugin.ui.mount", map[string]any{"plugin": "alice/demo", "target": "p", "kind": "page"})["surface"].(string)
+	c.wait(t, "首帧", func() bool { return len(c.ops()) > 0 })
+	c.mu.Lock()
+	before := len(c.frames)
+	c.mu.Unlock()
+
+	l, _ := h.get("alice/demo", "test")
+	if _, err := l.rt.Eval(context.Background(), 2*time.Second, "x.js", `globalThis.__burst()`); err != nil {
+		t.Fatal(err)
+	}
+	c.wait(t, "更新帧", func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return len(c.frames) > before
+	})
+	time.Sleep(80 * time.Millisecond) // 让晚到的帧都落进来
+
+	c.mu.Lock()
+	added := len(c.frames) - before
+	c.mu.Unlock()
+	if added != 1 {
+		t.Errorf("一次交互里改了 20 次状态,发了 %d 帧 —— 应该合成 1 帧", added)
+	}
+	_ = sid
+}
+
+// Go 这层的 16ms 窗口:**两次独立提交**落在同一个窗口里,也只能出一条事件。
+func TestUI十六毫秒窗口内的多次提交合成一条(t *testing.T) {
+	h := installAndRestart(t, `definePlugin({ pages: { p: () => {
+		const { h, useState } = `+`__linplayer_sdk;
+		const [n, setN] = useState(0);
+		globalThis.__inc = () => setN(v => v + 1);
+		return h('Text', null, '计数 ' + n);
+	} } })`)
+	registerUI()
+	c := captureUI(t)
+
+	call(t, "plugin.ui.mount", map[string]any{"plugin": "alice/demo", "target": "p", "kind": "page"})
+	c.wait(t, "首帧", func() bool { return len(c.ops()) > 0 })
+	time.Sleep(40 * time.Millisecond) // 等首帧那个窗口关掉
+	c.mu.Lock()
+	before := len(c.frames)
+	c.mu.Unlock()
+
+	// 两次**独立**的交互,间隔远小于 16ms:JS 那层会各提交一次,Go 这层必须并成一条
+	l, _ := h.get("alice/demo", "test")
+	for i := 0; i < 2; i++ {
+		if _, err := l.rt.Eval(context.Background(), 2*time.Second, "x.js", `globalThis.__inc()`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c.wait(t, "更新帧", func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return len(c.frames) > before
+	})
+	time.Sleep(80 * time.Millisecond)
+
+	c.mu.Lock()
+	added := len(c.frames) - before
+	c.mu.Unlock()
+	if added != 1 {
+		t.Errorf("16ms 内两次提交发了 %d 条事件 —— 合批没生效,壳会一帧重排两次", added)
+	}
+}
+
+func has(xs []string, s string) bool {
+	for _, x := range xs {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+func findFn(t *testing.T, ops []map[string]any, name string) int {
+	t.Helper()
+	for _, o := range ops {
+		set, ok := o["set"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if v, ok := set[name].(map[string]any); ok {
+			if n, ok := v["$fn"].(float64); ok {
+				return int(n)
+			}
+		}
+	}
+	t.Fatalf("没找到 %s 的回调号", name)
+	return 0
+}

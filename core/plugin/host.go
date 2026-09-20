@@ -77,6 +77,7 @@ func ResetForTest() *Host {
 	if def != nil {
 		def.Shutdown()
 	}
+	uiReset()
 	def = newHost()
 	return def
 }
