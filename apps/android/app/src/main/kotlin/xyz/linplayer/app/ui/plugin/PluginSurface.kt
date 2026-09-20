@@ -183,7 +183,11 @@ fun PluginSurface(
                     )
                 }
             }
-                .onFailure { state = "error"; error = it.message ?: "挂不上" }
+                .onFailure {
+                    state = "error"; error = it.message ?: "挂不上"
+                    if (kind == "overlay") xyz.linplayer.app.core.Logs.w(
+                        "插件UI", "$plugin/$target 覆盖层挂不上,这一层跳过:$error")
+                }
         }
         onDispose {
             job.cancel()
@@ -256,6 +260,9 @@ fun PluginSurface(
             LocalPluginKeyNs provides (focusNs ?: ""),
         ) {
         when {
+            /* 覆盖层既不画骨架屏也不画错误卡:那是一块灰方块 / 一个红框糊在正放着的画面上。
+               出了事记日志,画面不动 —— 用户没请这一层,不该替它背一个视觉故障。 */
+            kind == "overlay" -> if (state != "error") RenderNode(tree.root, surfaceId ?: "", app)
             state == "error" -> PluginError(error)
             state == "loading" && tree.root.children.isEmpty() -> PluginSkeleton()
             else -> RenderNode(tree.root, surfaceId ?: "", app)

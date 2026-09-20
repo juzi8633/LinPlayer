@@ -169,6 +169,7 @@ private fun BoxScope.TitleBlock(ui: PlayerUi) {
 @Composable
 internal fun BoxScope.Osd(
     ui: PlayerUi, target: TvRoute.Player, engine: String,
+    pluginPanels: List<xyz.linplayer.app.ui.plugin.PlayerSurfaceInfo>,
     onSeek: (Double) -> Unit, onPause: () -> Unit, onPrev: () -> Unit, onNext: () -> Unit,
     onPanel: (String) -> Unit, onSkip: () -> Unit,
 ) {
@@ -209,6 +210,15 @@ internal fun BoxScope.Osd(
                     TvButton("弹幕", LpIcons.danmaku, modifier = Modifier.memo("osd.dm"), onClick = { onPanel("danmaku") })
                 if (ui.hasEpisodes) TvButton("选集", LpIcons.list, modifier = Modifier.memo("osd.eps"), onClick = { onPanel("episodes") })
                 TvButton("更多", LpIcons.more, modifier = Modifier.memo("osd.more"), onClick = { onPanel("more") })
+                // 插件标签排在官方那几个后面:这一栏的先后顺序是官方优先,插件是增量
+                pluginPanels.forEach { p ->
+                    TvButton(
+                        p.title.ifBlank { p.target },
+                        xyz.linplayer.app.ui.plugin.iconByName(p.icon) ?: LpIcons.more,
+                        modifier = Modifier.memo("osd.plugin.${p.pluginId}/${p.target}"),
+                        onClick = { onPanel(xyz.linplayer.app.ui.plugin.pluginPanelKind(p)) },
+                    )
+                }
             }
         }
     }
@@ -359,8 +369,20 @@ internal fun BoxScope.Moments(ui: PlayerUi) {
 internal fun openPanel(
     which: String, app: AppState, nav: TvNav, scope: CoroutineScope, overlay: Overlay, ui: PlayerUi,
     target: TvRoute.Player, engine: String, exo: ExoPlayer?, ctl: PlayerCtl,
+    /** 这一格是插件标签时的那一行(SPEC 9.5 的 panel),官方面板是 null。 */
+    plugin: xyz.linplayer.app.ui.plugin.PlayerSurfaceInfo? = null,
 ) {
     overlay.open {
+        if (plugin != null) {
+            TvSidePanel(plugin.title.ifBlank { plugin.target }, { overlay.close() }) {
+                xyz.linplayer.app.ui.plugin.PluginSurface(
+                    plugin.pluginId, plugin.target, "panel",
+                    modifier = Modifier.fillMaxWidth(),
+                    focusNs = "${plugin.pluginId}/${plugin.target}.",
+                )
+            }
+            return@open
+        }
         when (which) {
             "sub" -> TrackPanel("sub", app, scope, overlay, ui, exo)
             "audio" -> TrackPanel("audio", app, scope, overlay, ui, exo)

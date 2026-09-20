@@ -580,6 +580,10 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
     var netSpeed by remember { mutableStateOf("") }
     LaunchedEffect(Unit) { sampleNetSpeed { netSpeed = it } }
 
+    // 插件的两个挂载点(SPEC 9.5)。拉不到是空表,播放页照放
+    val pluginOverlays = xyz.linplayer.app.ui.plugin.rememberPlayerSurfaces("overlay")
+    val pluginPanels = xyz.linplayer.app.ui.plugin.rememberPlayerSurfaces("panel")
+
     val c = Lp.colors
     /* ☠☠ **这一层不许有不透明底色。**
        `SurfaceView`(非 ZOrderOnTop)的画面是从**窗口下面**透上来的,靠它自己在
@@ -601,6 +605,11 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
            而 mpv 的 osd-overlay 在 Exo 那条路上根本不存在(见 DanmakuLayer 顶上那段)。 */
         if (DanmakuStyle.enabled.value) DanmakuLayer(
             DanmakuStyle.layout.value, position, paused, speed, Modifier.fillMaxSize())
+
+        /* 插件覆盖层 · 不拦交互的那批。**摆在手势层底下就是穿透**:
+           Compose 的命中测试到不了被上层全屏手势盖住的节点,插件里有没有
+           `clickable` 都一样 —— 单击呼 OSD、双击暂停、拖进度条照常。 */
+        xyz.linplayer.app.ui.plugin.PlayerOverlays(pluginOverlays, interactive = false)
 
 
         /* 未出画时的黑幕。**判据是「时间真的往前走了」**。
@@ -701,6 +710,13 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
             }
         )
 
+        /* 锁屏时上面那层手势没了,拿一层空的命中区顶上 ——
+           否则「不拦交互」的插件覆盖层会变成锁屏状态下唯一点得动的东西。 */
+        if (locked) Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { } })
+
+        // 声明了 interactive 的才挂在手势层之上;仍在 OSD 之下,盖不住暂停和进度条
+        xyz.linplayer.app.ui.plugin.PlayerOverlays(pluginOverlays, interactive = true)
+
         /* 出画之后的缓冲提示。黑幕撤了但流还没跟上时,得有个东西说明在等 ——
            没有它的话画面卡住和播放器死了长得一模一样。 */
         if (everMoved && buffering) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -736,6 +752,7 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
                 portrait = portrait, netSpeed = netSpeed,
                 title = route.title, position = seekPreview ?: position, duration = duration,
                 paused = paused, speed = speed, hasEpisodes = hasEpisodes, heat = heat,
+                pluginPanels = pluginPanels,
                 onBack = leave,
                 onToggle = { doPause(!paused) },
                 onSeek = { t -> doSeek(t) },
@@ -763,6 +780,9 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
             PlayerPanel(
                 it, route.itemId, exo,
                 fit = videoFit,
+                pluginPanel = pluginPanels.firstOrNull { p ->
+                    xyz.linplayer.app.ui.plugin.pluginPanelKind(p) == it
+                },
                 onOpen = { k -> panel = k },
                 onSearch = { dmSearch = true },
                 /* mpv 那条路的比例在核心层改(keepaspect / video-aspect-override / panscan);
@@ -809,6 +829,7 @@ private fun Osd(
     portrait: Boolean, netSpeed: String,
     title: String, position: Double, duration: Double, paused: Boolean, speed: Double,
     hasEpisodes: Boolean, heat: List<Float>,
+    pluginPanels: List<xyz.linplayer.app.ui.plugin.PlayerSurfaceInfo>,
     onBack: () -> Unit, onToggle: () -> Unit, onSeek: (Double) -> Unit,
     onSpeed: (Double) -> Unit, onLock: () -> Unit, onShot: () -> Unit,
     onPanel: (String) -> Unit,
@@ -868,6 +889,12 @@ private fun Osd(
                 /* ☠ **电影不画「选集」**【用户定 2026-09-07】。它点开必然是一张空表 ——
                    而一个「点开永远是空的」按钮比没有它更让人怀疑是不是坏了。 */
                 if (hasEpisodes) Chip("选集") { onPanel("episodes") }
+                // 插件标签排在官方那几个后面:这一栏的先后顺序是官方优先,插件是增量
+                pluginPanels.forEach { p ->
+                    Chip(p.title.ifBlank { p.target }, xyz.linplayer.app.ui.plugin.iconByName(p.icon)) {
+                        onPanel(xyz.linplayer.app.ui.plugin.pluginPanelKind(p))
+                    }
+                }
             }
         }
     }
@@ -948,12 +975,20 @@ private fun SpeedGroup(speed: Double, onSpeed: (Double) -> Unit) {
  *   外面,撑大的是间隙不是命中区。上一版就是这么写的,实测可点高度只有 28dp。
  */
 @Composable
-private fun Chip(label: String, onClick: () -> Unit) {
-    Box(
+private fun Chip(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    onClick: () -> Unit,
+) {
+    Row(
         Modifier.heightIn(min = Dim.tap).clip(RoundedCornerShape(R.pill))
             .pressable(onClick).padding(horizontal = Sp.x10),
-        contentAlignment = Alignment.Center,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (icon != null) {
+            androidx.compose.material3.Icon(icon, null, Modifier.size(16.dp), tint = Color.White)
+            Spacer(Modifier.width(Sp.x6))
+        }
         Text(label, color = Color.White, fontSize = 13.sp, maxLines = 1)
     }
 }

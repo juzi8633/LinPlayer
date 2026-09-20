@@ -2,11 +2,15 @@ package xyz.linplayer.app
 
 import androidx.compose.ui.input.key.Key
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import xyz.linplayer.app.plugin.PluginPlayer
+import xyz.linplayer.app.ui.plugin.PlayerSurfaceInfo
 import xyz.linplayer.app.ui.plugin.PluginKeys
+import xyz.linplayer.app.ui.plugin.pluginPanelKind
 
 /**
  * 按键名与面板名都是**公开契约**(plugin-sdk.d.ts 的 `PlayerKey` / `PlayerPanel`):
@@ -51,5 +55,26 @@ class PluginPlayerKeysTest {
         assertEquals("sub", PluginPlayer.tvKind("subtitles"))
         listOf("audio", "danmaku", "episodes", "more")
             .forEach { assertEquals(it, PluginPlayer.tvKind(it)) }
+    }
+
+    /**
+     * 挂载用的 kind 和闸门认的那张表必须对上 —— 对不上的表现正是这次要修的那条:
+     * 插件声明了 `playerOverlays`,而 `player.onKey` 一次都不回调,两边都不报错。
+     */
+    @Test fun 覆盖层进按键闸门侧栏页不进() {
+        assertTrue("overlay" in PluginKeys.playerKinds)
+        // 侧栏页进了这张表,它开着时方向键会被闸门抢走,插件自己的面板反而按不动
+        assertFalse("panel" in PluginKeys.playerKinds)
+    }
+
+    @Test fun 插件侧栏标签的面板名能查回那一行() {
+        val rows = listOf(
+            PlayerSurfaceInfo("linplayer/live", "guide", "节目单", "list", false),
+            PlayerSurfaceInfo("linplayer/live", "notes", "剧情说明", "", true),
+        )
+        rows.forEach { s ->
+            assertEquals(s, rows.firstOrNull { pluginPanelKind(it) == pluginPanelKind(s) })
+        }
+        assertEquals(2, rows.map { pluginPanelKind(it) }.toSet().size)
     }
 }

@@ -31,8 +31,13 @@ object PluginKeys {
      */
     val playerOverlays = mutableStateListOf<String>()
 
-    /** 会盖在播放画面上的 surface kind(manifest 的 playerOverlays / osd / playerPanels)。 */
-    val playerKinds = setOf("overlay", "osd", "playerPanel")
+    /**
+     * 会盖在播放画面上的 surface kind。
+     *
+     * 侧栏页(`panel`)**故意不在表里**:它开着的时候方向键归 Compose 焦点,
+     * 进了这张表就会被这里先抢走,插件自己的面板反而按不动。
+     */
+    val playerKinds = setOf("overlay", "osd")
 
     /** Compose 键 → SDK 的 `PlayerKey`。表里没有的键不问插件,按默认处理。 */
     fun nameOf(k: Key): String? = when (k) {

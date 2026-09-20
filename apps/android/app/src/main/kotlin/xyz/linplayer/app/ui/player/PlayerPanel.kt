@@ -64,6 +64,8 @@ fun PlayerPanel(
     itemId: String,
     exo: androidx.media3.exoplayer.ExoPlayer? = null,
     fit: VideoFit = VideoFit.Source,
+    /** 这一格是插件标签时的那一行(`plugin.playerSurfaces` 的 panel),官方面板是 null。 */
+    pluginPanel: xyz.linplayer.app.ui.plugin.PlayerSurfaceInfo? = null,
     onOpen: (String) -> Unit = {},
     onFit: (VideoFit) -> Unit = {},
     // 搜索弹幕是**居中大弹窗**,不塞进这个 236dp 的小面板里 ——
@@ -210,10 +212,13 @@ fun PlayerPanel(
     LaunchedEffect(kind) { if (kind == "substyle" && !SubStyle.loaded.value) SubStyle.load(app) }
     LaunchedEffect(kind) { if (kind == "danmaku") DanmakuStyle.load(app) }
 
-    val title = when (kind) {
-        "source" -> "版本与线路"; "audio" -> "音轨"; "subtitle" -> "字幕"
-        "episodes" -> "选集"; "quality" -> "画面增强"; "danmaku" -> "弹幕"
-        "ratio" -> "画面比例"; "substyle" -> "字幕样式"; else -> "更多"
+    val title = when {
+        pluginPanel != null -> pluginPanel.title.ifBlank { pluginPanel.target }
+        else -> when (kind) {
+            "source" -> "版本与线路"; "audio" -> "音轨"; "subtitle" -> "字幕"
+            "episodes" -> "选集"; "quality" -> "画面增强"; "danmaku" -> "弹幕"
+            "ratio" -> "画面比例"; "substyle" -> "字幕样式"; else -> "更多"
+        }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -240,6 +245,12 @@ fun PlayerPanel(
             Dim3(title)
             Spacer(Modifier.height(Sp.x6))
             when {
+                pluginPanel != null -> xyz.linplayer.app.ui.plugin.PluginSurface(
+                    pluginPanel.pluginId, pluginPanel.target, "panel",
+                    modifier = Modifier.fillMaxWidth(),
+                    claimInitialFocus = false,
+                    focusNs = "${pluginPanel.pluginId}/${pluginPanel.target}.",
+                )
                 kind == "substyle" -> SubStylePanel(app, scope)
                 kind == "danmaku" -> DanmakuPanel(app, scope, itemId, onSearch = {
                     onClose(); onSearch()

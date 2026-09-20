@@ -500,10 +500,19 @@ fun TvPlayerPage(r: TvRoute.Player) {
     val taken = rememberPluginKeyTaken()
     fun onKey(e: KeyEvent): Boolean = PluginKeys.gate(app, scope, taken, e, ::defaultKey)
 
+    // 插件的两个挂载点(SPEC 9.5)。拉不到是空表,播放页照放
+    val pluginOverlays = xyz.linplayer.app.ui.plugin.rememberPlayerSurfaces("overlay")
+    val pluginPanels = xyz.linplayer.app.ui.plugin.rememberPlayerSurfaces("panel")
+
     Box(Modifier.fillMaxSize().onPreviewKeyEvent(::onKey).testTag("player.root").focusRequester(root).focusable()) {
         if (exo != null) ExoSurface(exo, subOff = subOffPref, fit = ui.fit, m = Modifier.fillMaxSize())
         else VideoSurface(app.core, Modifier.fillMaxSize())
         if (DanmakuStyle.enabled.value) DanmakuLayer(DanmakuStyle.layout.value, ui.position, ui.paused, ui.speed, Modifier.fillMaxSize())
+
+        /* 插件覆盖层。摆在 OSD **之前**:盖住控制条等于把暂停和进度条一起弄没,
+           接管控制条是 `osd[]` 贡献点的事。不声明 interactive 的那批连焦点都进不去。 */
+        xyz.linplayer.app.ui.plugin.PlayerOverlays(pluginOverlays, interactive = false)
+        xyz.linplayer.app.ui.plugin.PlayerOverlays(pluginOverlays, interactive = true)
         val failed = ui.failed
         if (failed != null) PlayerFailure(failed, retried = autoRetried, onRetry = { attempt++ },
             onSwitchEngine = if (target.localEntry || target.download) null else ({
@@ -518,11 +527,14 @@ fun TvPlayerPage(r: TvRoute.Player) {
             }))
         else if (!ui.everMoved) Curtain(ui)
         if (failed == null) {
-            if (ui.osd && !overlay.isOpen && !ui.nextCard) Osd(ui, target, engine,
+            if (ui.osd && !overlay.isOpen && !ui.nextCard) Osd(ui, target, engine, pluginPanels,
                 onSeek = ::doSeek, onPause = { doPause(!ui.paused) },
                 onPrev = { ui.prev(target.itemId)?.let { n -> scope.launch { switchTo(TvRoute.Player(n.id, cardTitleOf(n))) } } },
                 onNext = { ui.next(target.itemId)?.let { n -> scope.launch { switchTo(TvRoute.Player(n.id, cardTitleOf(n))) } } },
-                onPanel = { which -> openPanel(which, app, nav, scope, overlay, ui, target, engine, exo, ctl) },
+                onPanel = { which ->
+                    openPanel(which, app, nav, scope, overlay, ui, target, engine, exo, ctl,
+                        pluginPanels.firstOrNull { xyz.linplayer.app.ui.plugin.pluginPanelKind(it) == which })
+                },
                 onSkip = { skipNow(ui, target, ::doSeek) },
             )
             if (ui.skipWhat != null && !ui.osd && !overlay.isOpen) SkipButton(ui) { skipNow(ui, target, ::doSeek) }
