@@ -77,7 +77,8 @@ internal fun SourcePoster(item: JsonObject, key: String, badge: String? = null, 
     )
 }
 
-/** 数据源首页(TV):继续观看 → 分类入口 → 推荐。源内搜索走搜索页(TV 上敲字慢,不在这里再放一个框)。 */
+/** 数据源首页(TV):继续观看 → 分类入口 → 推荐。**没有源内搜索框**(D554):
+ *  遥控器敲字慢,这件事交给搜索页 —— 聚合搜索按源分行,行头就写着来源名。 */
 @Composable
 fun SourceHomeTv(serverId: String, name: String) {
     val app = LocalApp.current

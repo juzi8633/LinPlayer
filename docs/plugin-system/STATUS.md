@@ -2,7 +2,7 @@
 
 > 对照 [`spec/19-plan.md`](spec/19-plan.md) 19.2 交付物、D322 四项验收、19.4 spike、19.5 门禁,逐条核对 `0520c36b..1696a090` 六个提交的实际代码。
 > 标记:✅ 做完并有证据 · ⚠️ 部分 · ❌ 没做 · ⏸ 按计划不到期。
-> 下一轮先清本文的 ❌/⚠️,再进阶段 ②。
+> 2026-09-20 第二轮:❌/⚠️ 已清空(六个提交 `6686ee8f..`),可进阶段 ②。
 
 ## 交付物
 
@@ -23,7 +23,7 @@
 | 服务器列表分组与角标 | ✅ | ✅ | ✅ |
 | 添加服务器页插件类型表单 | ✅ | ✅ | ✅ |
 | 数据源首页 / 分类 / 筛选 | ✅ | ✅ | ✅ |
-| 源内搜索 | ✅ | ✅ | ⚠️ 有意改走搜索页(`tv/SourcePagesTv.kt:79`) |
+| 源内搜索 | ✅ | ✅ | ✅ 按 **D554** 不做框,由搜索页的按源分行聚合搜索承担(`tv/SourcePagesTv.kt:80`) |
 | 详情 / 线路 / 选集 / 播放 | ✅ | ✅ | ✅ |
 | 聚合搜索**按源分行** | ✅ | ✅ | ✅ 一源一行 + partial 流式(`tv/SearchPage.kt` `AggregateRows`) |
 | 换源三层 | ✅ | ✅ | ✅(分层渲染未逐行复核) |
@@ -41,7 +41,7 @@
 | 排行榜(含 Bangumi 榜) | ✅ | ✅ | ✅ |
 | 追剧日历页 | ✅ | ✅ | ✅ |
 | 「已入库 / 可播」(D366) | ✅ | ✅ | ✅ `tv/DiscoverPage.kt` `CalendarPane`,命中直接进详情/起播 |
-| 开播提醒(后台通知) | ⚠️ 已接但只在程序运行时 | ✅ `CalendarWorker.kt` | ✅ 同左 |
+| 开播提醒(后台通知) | ✅ 程序运行时已接(`AppJobs.cs:34`);⏸「应用没开时」挂 **D502 托盘**,不属阶段 ① | ✅ `CalendarWorker.kt` | ✅ 同左 |
 | **付费解锁:订单号校验** | ✅ `CalendarPage.cs` `Start/ShowGate` | ✅ `DiscoverPages.kt` `CalendarGate` | ✅ `tv/DiscoverPage.kt` `CalendarGateTv`(带赞助二维码) |
 
 桌面开播提醒这条**是我上一版写错了**:`Views/AppJobs.cs:34` 真在调 `sync.calendarDue`,

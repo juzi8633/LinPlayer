@@ -21,7 +21,7 @@
 1. `core/plugin`:包解析与安装器底线(D421)、manifest 校验(对 `api/manifest.schema.json`)、安装来源记录、启停与「待重启」状态、连错自动禁用、连崩安全模式、市场订阅与 index.json、下载与回退。
 2. `core/plugin/rt`:goja 运行时 + 事件循环 + 超时计时与 `Interrupt` + 子运行时 + Web 全局 + `fetch`(含局域网拦截、默认超时、manual 重定向、Cookie 罐)+ `storage`/`secrets`/`files`/`registry`/`html`/`crypt`/`js.bundle`。
 3. `core/source`:`SplitPlugin` 改按最后一个 `/` 切;数据源动词的核心层命令;统一结构;列表钩子与屏蔽的调用链。
-4. 宿主 UI(两壳):服务器列表分组与卡片角标、添加服务器页的插件服务器类型表单、数据源首页/分类/筛选/搜索/详情/线路/选集/播放、聚合搜索按源分行、换源三层、「允许聚合」开关、全局观看历史与全部收藏、插件页(已安装/市场/接管位/仓库)、扩展组件页。**阶段 ① 不做 UI 渲染器**:需要插件自绘 UI 的地方(如解析管理页)先用 manifest 设置项或推迟到 ②。
+4. 宿主 UI(两壳):服务器列表分组与卡片角标、添加服务器页的插件服务器类型表单、数据源首页/分类/筛选/搜索(**TV 除外,见 D554**)/详情/线路/选集/播放、聚合搜索按源分行、换源三层、「允许聚合」开关、全局观看历史与全部收藏、插件页(已安装/市场/接管位/仓库)、扩展组件页。**阶段 ① 不做 UI 渲染器**:需要插件自绘 UI 的地方(如解析管理页)先用 manifest 设置项或推迟到 ②。
 5. `linplayer/tvbox` 插件:type 0/1、drpy、配置解码、订阅、多仓、解析链、嗅探(WebView 三端)、rules/ads、错误映射。jar/py/type 4 在 ① 内做 Android 与 type 4;桌面 jar 等 spike。
 6. `lp` CLI:create/build/pack/dev(桌面本地目录)/check。
 7. 假站 fixture:苹果CMS 接口 + drpy 规则 + 加密配置样本,进仓库跑门禁(D321)。
