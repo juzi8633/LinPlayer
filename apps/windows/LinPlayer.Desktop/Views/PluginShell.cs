@@ -4,7 +4,9 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia.Input;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using LinPlayer.Core;
 using LinPlayer.Desktop.Core;
 
@@ -81,6 +83,8 @@ public static class PluginShell
                     "ui.prompt" => await Prompt(args),
                     "ui.select" => await Select(args),
                     "ui.notify" => await Notify(args),
+                    "player.openPanel" => await OpenPanel(args),
+                    "player.setOsdVisible" => await SetOsd(args),
                     "system.openUrl" => Launch(Mi.Str(args, "url")),
                     "system.openApp" => OpenApp(args),
                     "system.clipboardRead" => await ClipboardRead(),
@@ -265,6 +269,26 @@ public static class PluginShell
         return Task.FromResult<object?>(null);
     }
 
+    // ---------------------------------------------------------------- player(D67 D162)
+
+    /// <summary>
+    /// 打开官方子面板。不在播放页、或者这一端没有那块面板都要报回去 ——
+    /// <c>openPanel</c> 在 SDK 那头是 void,这条错误是插件唯一能拿到的线索。
+    /// </summary>
+    private static Task<object?> OpenPanel(JsonElement args) => OnUi<object?>(() =>
+    {
+        if (Nav.Current is not PlayerPage p) throw new NotSupportedException("现在不在播放页,没有可打开的子面板");
+        p.OpenPanel(Mi.Str(args, "panel"));
+        return Task.FromResult<object?>(null);
+    });
+
+    private static Task<object?> SetOsd(JsonElement args) => OnUi<object?>(() =>
+    {
+        if (Nav.Current is not PlayerPage p) throw new NotSupportedException("现在不在播放页,OSD 无处可显隐");
+        p.SetOsdVisible(Bool(args, "visible"));
+        return Task.FromResult<object?>(null);
+    });
+
     // ---------------------------------------------------------------- system(SPEC 13)
 
     /// <summary>
@@ -342,6 +366,66 @@ public static class PluginShell
         await using var s = await f.OpenWriteAsync();
         await s.WriteAsync(png);
         return true;
+    }
+
+    // ---------------------------------------------------------------- 壳问核心层:按键与返回(D85 D563)
+
+    /// <summary>
+    /// 桌面按键 → SDK 的 <c>PlayerKey</c>。翻不出来的键不问插件:遥控器上没有的键,
+    /// 插件那套 TV 操作本来就用不上,问一次只是白等一趟。
+    /// </summary>
+    private static string? PlayerKeyName(Key key) => key switch
+    {
+        Key.Up => "up", Key.Down => "down", Key.Left => "left", Key.Right => "right",
+        Key.Enter => "ok", Key.Escape => "back", Key.Apps => "menu",
+        Key.PageUp => "channelUp", Key.PageDown => "channelDown",
+        Key.Space or Key.MediaPlayPause => "playPause", Key.MediaStop => "stop",
+        >= Key.D0 and <= Key.D9 => ((char)('0' + key - Key.D0)).ToString(),
+        >= Key.NumPad0 and <= Key.NumPad9 => ((char)('0' + key - Key.NumPad0)).ToString(),
+        _ => null,
+    };
+
+    /// <summary>
+    /// 播放页按下一个键(D563)。回 true = 这一下的派发归我了,调用方吃掉它;
+    /// 插件说没接走时由 <see cref="PlayerPage.KeyFallback"/> 把默认处理原样补上。
+    ///
+    /// <para>只在这个插件<b>真有一块可见的面儿挂在播放页上</b>时才问 ——
+    /// 不判这一条的话,后台插件能把用户的每一下按键都截走。</para>
+    /// </summary>
+    internal static bool PlayerKeyPressed(PlayerPage page, Key key, KeyModifiers mods)
+    {
+        // 组合键不是遥控器上的键:Ctrl+S 之类一律不问
+        if (mods != KeyModifiers.None) return false;
+        if (Program.Core is not { } core || PlayerKeyName(key) is not { } name) return false;
+        if (page.GetVisualDescendants().OfType<PluginSurface>().FirstOrDefault(s => s.IsEffectivelyVisible) is not { } top)
+            return false;
+        _ = Ask(core.PluginPlayerKey(new { key = name, plugin = top.Plugin }), "consumed",
+            () => page.KeyFallback(key, mods));
+        return true;
+    }
+
+    /// <summary>
+    /// 用户按了返回 / Esc(D85)。栈顶是插件页时先问它一句,回 handled 就不退了。
+    /// 不是插件页就当场退 —— 绕一趟核心层等于给每一次返回加一次往返延迟。
+    /// </summary>
+    internal static void BackPressed()
+    {
+        if (Nav.Current is not PluginPageHost host || Program.Core is not { } core) { Nav.Back(); return; }
+        _ = Ask(core.PluginBackRequest(new { plugin = host.Plugin }), "handled", Nav.Back);
+    }
+
+    /// <summary>
+    /// 问一句,没人接走就把默认处理补上。
+    ///
+    /// <para>400ms 的上限比核心层那 200ms 松一档:核心层答不上来(卡住、没起来)时
+    /// 返回键仍然要管用 —— 按不动比按错难受得多,那时用户只能强杀应用。</para>
+    /// </summary>
+    private static async Task Ask(Task<JsonElement> call, string field, Action fallback)
+    {
+        var took = false;
+        try { took = Bool(await call.WaitAsync(TimeSpan.FromMilliseconds(400)), field); }
+        catch (Exception e) { Log.W("插件按键", $"没问到({field}),按默认处理:{e.Message}"); }
+        if (!took) await Dispatcher.UIThread.InvokeAsync(fallback);
     }
 
     /// <summary>[去验证](D323):整页 WebView 过盾,Cookie 进该源的罐子,回来后由调用方重试。</summary>

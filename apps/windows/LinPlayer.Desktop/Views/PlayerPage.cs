@@ -157,7 +157,7 @@ public sealed class PlayerPage : UserControl
     /// <summary>音轨 / 字幕 / 画面增强那一盘。 平铺在控制条上的话底下一整行都是下拉框,
     /// 那是设置面板不是 OSD;而且它们**看片时基本不动**,不该长期占着画面。</summary>
     /// <summary>增强弹层的锚点。快捷键 U 也走它 —— 键和按钮同一条路。</summary>
-    private Button _qualityBtn = null!, _aspectBtn = null!, _audioBtn = null!;
+    private Button _qualityBtn = null!, _aspectBtn = null!, _audioBtn = null!, _subsBtn = null!, _lineBtn = null!;
     /// <summary>正开着的那个弹层。自检要能把它关掉,别的地方不该碰。</summary>
     private Flyout? _openFlyout;
     /// <summary>正开着的弹层里那几行。自检要点其中一行 —— 弹层住在另一棵可视树里,
@@ -542,7 +542,7 @@ public sealed class PlayerPage : UserControl
         var nextBtn = Glyph(Ico.Next, "下一集(N)");
         nextBtn.Click += (_, _) => GoNext();
         // 数据源:播放页内切线路(保持集数与进度,D54 D464)与换源(D232)
-        var lineBtn = Osd("线路", "换线路(保持集数和进度)");
+        var lineBtn = _lineBtn = Osd("线路", "换线路(保持集数和进度)");
         lineBtn.IsVisible = _src is not null;
         lineBtn.Click += (_, _) => ShowSourceLines(lineBtn);
         // Emby 的片也能换到数据源看(D525)
@@ -598,7 +598,7 @@ public sealed class PlayerPage : UserControl
            它本来就是「这条轨对不上」的补救动作,和选轨是同一件事的两步。 */
         _audioBtn = Osd("音轨", "音轨 / 音频延迟");
         _audioBtn.Click += (_, _) => Pick(_audioBtn, _audio, "音轨", audDelayBlock(), false);
-        var subsBtn = Osd("字幕", "字幕 / 字幕延迟 / 字幕样式");
+        var subsBtn = _subsBtn = Osd("字幕", "字幕 / 字幕延迟 / 字幕样式");
         subsBtn.Click += (_, _) => Pick(subsBtn, _subs, "字幕",
             new StackPanel
             {
@@ -1875,17 +1875,79 @@ public sealed class PlayerPage : UserControl
            空格会暂停。隧道阶段页面比输入框先拿到这一下,所以必须在最前面放行。
            看 Source 不看焦点:弹层是另一个顶层窗口,这一页的 FocusManager 看不见它里面的焦点。 */
         if (e.Source is TextBox) return;
+        /* 插件的播放器层在最上面时这一下先归它(D563)。问核心层是异步的,所以先吃掉:
+           不吃的话插件回「我接走了」的那一刻,我们已经把这一下按默认处理完了。
+           它说没接走,PluginShell 会原样把下面两步补上。 */
+        if (PluginShell.PlayerKeyPressed(this, e.Key, e.KeyModifiers)) { e.Handled = true; return; }
+        if (KeyDefault(e.Key, e.KeyModifiers)) { e.Handled = true; return; }
+        ForwardToMpv(e);
+    }
+
+    /// <summary>
+    /// 默认按键处理。<b>只收键值不收事件</b> —— 问完插件回来时事件早走完了,
+    /// 那会儿再去改它的 <c>Handled</c> 一点用都没有。
+    /// </summary>
+    private bool KeyDefault(Key key, KeyModifiers mods)
+    {
         /* 数字键跳到百分之几。 事实标准(0=开头,5=一半)。
            **不进键位表**:十个键一个语义,拆成十条动作只会把设置页撑满,
            而它们又不该分开改。 */
-        if (e.Key is >= Key.D0 and <= Key.D9 && _duration > 0)
+        if (key is >= Key.D0 and <= Key.D9 && _duration > 0)
         {
-            _ = SeekTo(_duration * (e.Key - Key.D0) / 10.0);
-            e.Handled = true;
-            return;
+            _ = SeekTo(_duration * (key - Key.D0) / 10.0);
+            return true;
         }
-        if (Fire(Actions.Hit(Actions.Player, Actions.Spec(e)))) { e.Handled = true; return; }
-        ForwardToMpv(e);
+        return Fire(Actions.Hit(Actions.Player, Actions.Spec(Ev(key, mods))));
+    }
+
+    /// <summary>插件没接走:把默认处理补上,包括转发给 mpv 那一步。</summary>
+    internal void KeyFallback(Key key, KeyModifiers mods)
+    {
+        if (!KeyDefault(key, mods)) ForwardToMpv(Ev(key, mods));
+    }
+
+    private static KeyEventArgs Ev(Key key, KeyModifiers mods) =>
+        new() { Key = key, KeyModifiers = mods, RoutedEvent = KeyDownEvent };
+
+    /// <summary>
+    /// 插件要打开的官方子面板(<c>player.openPanel</c>,D67)。
+    /// 这一端没有的那几档要<b>抛出去</b> —— 静默不动的话插件作者只看得到「点了没反应」,
+    /// 而他在自己那边查不到任何线索。
+    /// </summary>
+    internal void OpenPanel(string panel)
+    {
+        // 弹层挂在 OSD 上那几颗按钮上:条收着的时候先叫出来,否则弹层飘在一片透明上
+        _lastMove = DateTime.UtcNow;
+        ShowOsd(true);
+        switch (panel)
+        {
+            case "subtitles": _subsBtn.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); break;
+            case "audio": _audioBtn.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); break;
+            case "enhance": ShowEnhance(); break;
+            case "danmaku": ShowDanmakuMenu(_dmBtn); break;
+            // ShowEpisodes 是开关:已经开着的时候再调一次会把它收起来,那不是「打开」
+            case "episodes" when _drawer is not null: break;
+            case "episodes":
+                if (!_pickEp.IsVisible) throw new NotSupportedException("这一部没有分集表(电影,或者分集还没拉到),选集面板打不开");
+                ShowEpisodes();
+                break;
+            case "lines":
+                if (_src is null) throw new NotSupportedException("这一集不是数据源来的,没有线路可换");
+                ShowSourceLines(_lineBtn);
+                break;
+            case "speed": throw new NotSupportedException("桌面的倍速是一颗按钮(点一下换一档、右键回 1×),没有可打开的倍速面板");
+            default: throw new NotSupportedException($"桌面播放页没有「{panel}」这块面板");
+        }
+    }
+
+    /// <summary>
+    /// 插件自管 OSD 显隐(<c>player.setOsdVisible</c>,D162)。
+    /// <c>_lastMove</c> 要一起改:只改显隐的话轮询那一句过 3 秒又把它收回去了。
+    /// </summary>
+    internal void SetOsdVisible(bool visible)
+    {
+        _lastMove = visible ? DateTime.UtcNow : DateTime.UtcNow.AddYears(-1);
+        ShowOsd(visible);
     }
 
     /// <summary>

@@ -28,6 +28,9 @@ public sealed class PluginSurface : UserControl
 
     private readonly CoreClient _core;
     private readonly string _plugin, _target, _kind;
+
+    /// <summary>这块面儿是谁的。按键要问的是「最上面那一层的主人」(D563)。</summary>
+    internal string Plugin => _plugin;
     private readonly object? _props;
     /* ☠ 值是 object 不是 Control:文本节点必须是 Run。
         第一版把 #text 也做成 TextBlock,于是 <Text>你好</Text> 里那个文本节点
@@ -954,8 +957,12 @@ public sealed class PluginPageHost : PageBase
     private bool _immersive;
     private bool _awake;
 
+    /// <summary>这一页是谁的。返回键要问的就是它(D85)。</summary>
+    internal string Plugin { get; }
+
     public PluginPageHost(CoreClient core, string plugin, string pageId, string title)
     {
+        Plugin = plugin;
         // 首帧的表从这里起:本构造函数跑在 nav.push 的同一次调用里(SPEC 7.12 的口径)
         PluginSurface.PendingNavClock = System.Diagnostics.Stopwatch.StartNew();
         _title = H1(title);

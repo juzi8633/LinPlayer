@@ -43,7 +43,8 @@ internal static class Shortcuts
            是一颗死键,而用户会以为整套快捷键都失灵了。 */
         ["nav.refresh"] = _ => { if (!Nav.CanReload) return false; Nav.Reload(); return true; },
 
-        ["win.back"] = _ => { if (!Nav.CanBack) return false; Nav.Back(); return true; },
+        // 退栈前要先问栈顶的插件页一句(D85),两个入口都走 BackPressed
+        ["win.back"] = _ => { if (!Nav.CanBack) return false; PluginShell.BackPressed(); return true; },
         ["win.sidebar"] = w => { w.ShortcutToggleSidebar(); return true; },
         ["win.maximize"] = w => { w.ShortcutToggleMaximize(); return true; },
         ["win.help"] = w => { ToggleHelp(w); return true; },
@@ -100,7 +101,7 @@ internal static class Shortcuts
     {
         if (_help is not null) { ToggleHelp(w); return true; }
         if (!Nav.CanBack) return false;
-        Nav.Back();
+        PluginShell.BackPressed();
         return true;
     }
 
