@@ -8,12 +8,13 @@
  */
 import {
   definePlugin, h, Fragment, useState, useEffect,
-  player, settings, storage, ui, crypt,
-  View, Column, Row, Text, Button, Chip, ChipGroup, Divider, EmptyState, Spinner,
+  player, settings, storage, ui, crypt, ext,
+  View, Column, Row, Text, Button, Chip, ChipGroup, Divider, EmptyState, Spinner, Switch,
 } from '@linplayer/plugin-sdk'
 
 import { parseSrt, toSrt, translateDocument, looksLikeSubtitle, type Cue, type Layout } from './pipeline'
 import { engineOf } from './engines'
+import { LiveOverlay } from './live'
 
 const LAYOUTS: { id: Layout; label: string }[] = [
   { id: 'bilingual', label: '双语' },
@@ -39,6 +40,10 @@ function Panel() {
     setPct(0)
     try {
       const to = String(settings.get('target') || 'zh-Hans')
+      if (useWhisper) {
+        // 缺组件时这一步会弹下载确认;用户拒绝抛 unsupported,下面的 catch 原样显示
+        await ext.ensure('whisper')
+      }
       const src = useWhisper
         ? await player.transcribe({ lang: String(settings.get('source') || ''), onProgress: (p) => setPct(Math.round(p * 100)) })
         : await player.getSubtitleText()
@@ -87,6 +92,10 @@ function Panel() {
         <Button title="翻当前字幕" disabled={busy} onPress={() => void run(false)} />
         <Button title="没字幕?先转写" variant="ghost" disabled={busy} onPress={() => void run(true)} />
       </Row>
+      <Row style={{ align: 'center', gap: 10 }}>
+        <Switch value={!!settings.get('live')} onChange={(v) => settings.set('live', v)} a11yLabel="实时翻译" />
+        <Text>实时翻译(边播边翻一句一句显示)</Text>
+      </Row>
       {busy ? <Row style={{ gap: 10, align: 'center' }}><Spinner /><Text>{msg} {pct}%</Text></Row>
         : msg ? <Text style={{ color: 'token:color.ink2' }}>{msg}</Text> : null}
       <Divider />
@@ -98,7 +107,7 @@ function Panel() {
 }
 
 export default definePlugin({
-  blocks: { panel: Panel },
+  blocks: { panel: Panel, live: LiveOverlay },
   commands: {
     /** 命令面板 / 快捷键触发:直接翻当前字幕,不用先打开侧栏。 */
     async translateNow() {

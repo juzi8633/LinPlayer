@@ -135,15 +135,18 @@ func Logf(level, format string, a ...any) {
 
 // Emit 推一条主动事件(seq 恒为 0)。mergeKey 非空时走「原地替换」那一档(SPEC §5.11)。
 func Emit(name string, data any, mergeKey string) {
-	if q == nil {
-		return
-	}
 	d, err := json.Marshal(data)
 	if err != nil {
 		Logf("error", "事件 %s 序列化失败: %v", name, err)
 		return
 	}
+	// ☠ 进程内旁路在队列**之前**通知:`q == nil`(壳还没连上 / 单测)时
+	//   旁路仍然要收到。上一版把 nil 判在最前面,于是核心层自己订的那几件事
+	//   (插件的 player 事件、壳请求)在没有壳的时候整条链是死的,而且不报错。
 	notifyTaps(name, d)
+	if q == nil {
+		return
+	}
 	q.push(&Event{T: "event", Name: name, Data: d, mergeKey: mergeKey})
 }
 

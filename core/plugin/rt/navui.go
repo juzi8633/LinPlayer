@@ -44,12 +44,24 @@ func (r *Runtime) installNavUI(sdk *goja.Object) {
 			return json.RawMessage(out), nil
 		})
 	}
-	// 只发不等的那几个:导航与显隐是命令,不是问句
+	/*
+		只发不等的那几个:导航与显隐是命令,不是问句。
+
+		☠ 失败要**落进插件自己的日志**。这几个 op 在定义源里的返回值是 `void`,
+		  没有 Promise 可拒 —— 上一版直接 `_, _ =` 丢掉错误,于是
+		  「路由名写错了」「这一端没有这个页面」「壳没接角标」三种情况
+		  插件那头都表现为「调了没反应」,而错误只到得了壳的 logcat。
+		  现在它进 console 日志,调试面板的「日志」块里看得到。
+	*/
 	tell := func(op string, args any) {
 		if !Caps().Shell {
 			r.throw(KindUnsupported, "这一版壳还没接 "+op+"(导航要壳实现)")
 		}
-		go func() { _, _ = ShellRequest(context.Background(), id, op, args, actionTimeout) }()
+		go func() {
+			if _, err := ShellRequest(context.Background(), id, op, args, actionTimeout); err != nil {
+				r.logs.add(LogEntry{TS: nowMS(), Level: "error", Msg: op + " 没做成:" + err.Error()})
+			}
+		}()
 	}
 
 	nav := vm.NewObject()

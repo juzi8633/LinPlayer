@@ -7,9 +7,13 @@
   "minAppVersion": "1.1.0",
   "license": "AGPL-3.0",
   "activation": { "load": "lazy", "lifetime": "idle" },
+  "requires": { "components": ["whisper", "ffmpeg"] },
   "contributes": {
     "playerPanels": [
       { "id": "panel", "title": "字幕翻译" }
+    ],
+    "playerOverlays": [
+      { "id": "live" }
     ],
     "commands": [
       { "id": "translateNow", "title": "翻译当前字幕" }
@@ -29,6 +33,7 @@
           { "value": "ja", "label": "日本語" }
         ] },
       { "key": "source", "type": "text", "title": "原文语言", "description": "留空 = 自动判断。", "default": "" },
+      { "key": "live", "type": "toggle", "title": "实时翻译", "description": "边播边翻一句一句显示在画面上。很费 API 额度,按需开。", "default": false },
       { "key": "layout", "type": "select", "title": "排版", "default": "bilingual",
         "options": [
           { "value": "bilingual", "label": "双语(译文在上)" },

@@ -306,6 +306,8 @@ func (h *Host) load(id, ver, dir string, m *Manifest, dev bool, reason string) (
 	host.App = rt.AppInfo{Version: h.version, Platform: h.platform, FormFactor: formFactor(h.platform), Locale: "zh-CN", DevMode: DevModeOn()}
 	host.Debug = h.debugHooks()
 	host.Player = playerHooks()
+	host.Servers = serversHooks()
+	host.Ext = extHooks()
 	host.SyncRequest = func(service, method, path string, body any) (any, error) {
 		return bus.Invoke(context.Background(), "sync."+service+"Request",
 			map[string]any{"method": method, "path": path, "body": body})

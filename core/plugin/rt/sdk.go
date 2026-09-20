@@ -232,6 +232,8 @@ func (r *Runtime) installSDK() error {
 	r.installPlayer(sdk)
 	r.installSync(sdk)
 	r.installEvents(sdk)
+	r.installServers(sdk)
+	r.installExt(sdk)
 	if err := r.installUI(sdk); err != nil {
 		return err
 	}
@@ -445,4 +447,35 @@ func (r *Runtime) installSync(sdk *goja.Object) {
 			})
 		})
 	}
+}
+
+// ServersHooks `servers` 命名空间(D92):只给 id 与名称,不给地址与凭据。
+type ServersHooks struct {
+	List    func() any
+	Current func() any
+}
+
+/* 无条件挂上,宿主没给钩子时回空表。
+   「一台服务器都没有」是一个**合法答案**(还没登录就是这样),
+   而整个命名空间不在的话插件拿到的是 undefined —— 报错报在插件那边。 */
+func (r *Runtime) installServers(sdk *goja.Object) {
+	h := r.opt.Host.Servers
+	if h == nil {
+		h = &ServersHooks{}
+	}
+	o := r.vm.NewObject()
+	_ = sdk.Set("servers", o)
+	// 同步返回:它读的是宿主内存里的账号表,没有 IO
+	_ = o.Set("list", func() goja.Value {
+		if h.List == nil {
+			return r.jsValue([]any{})
+		}
+		return r.jsValue(h.List())
+	})
+	_ = o.Set("current", func() goja.Value {
+		if h.Current == nil {
+			return goja.Null()
+		}
+		return r.jsValue(h.Current())
+	})
 }

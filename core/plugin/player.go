@@ -66,6 +66,7 @@ func playerHooks() *rt.PlayerHooks {
 			return err
 		},
 		AddSubtitle: addSubtitle,
+		Transcribe:  transcribeCurrent,
 		GetSubtitleText: func(trackID int) (any, error) {
 			return bus.Invoke(context.Background(), "player.getSubtitleText",
 				map[string]any{"track_id": float64(trackID)})

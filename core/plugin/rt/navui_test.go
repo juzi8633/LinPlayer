@@ -2,8 +2,13 @@ package rt
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"linplayer/core/bus"
 )
 
 /*
@@ -71,5 +76,61 @@ func TestUI通知配额超了要折叠不是报错(t *testing.T) {
 	}
 	if notifyAllowed(id) {
 		t.Fatalf("发了 %d 条之后还放行 —— 配额没生效", notifyPerHour)
+	}
+}
+
+/*
+壳把 nav 这类命令办砸了,插件那头要看得见。
+
+☠ 这几个 op 在定义源里返回 `void`,没有 Promise 可拒。上一版把错误
+  `_, _ =` 丢了,于是「路由名写错」「这一端没这个页面」「壳没接角标」
+  三种都表现为「调了没反应」—— 两端的壳各自独立报了这同一件事。
+  判据不是「有没有打日志」这种形式,是**错误文本真的出现在插件自己的日志里**。
+*/
+func TestNav壳办砸了要进插件日志(t *testing.T) {
+	SetShellCaps(ShellCaps{Shell: true})
+	t.Cleanup(func() { SetShellCaps(ShellCaps{}) })
+
+	// 装一个「什么都办不成」的壳:收到请求立刻回失败。
+	// bus.Tap 没有退订,所以用一个开关在用例结束时把它关掉 —— 不关的话
+	// 同一个包里后面的用例都会被这个假壳回失败。
+	var live atomic.Bool
+	live.Store(true)
+	t.Cleanup(func() { live.Store(false) })
+	bus.Tap(func(name string, data json.RawMessage) {
+		if name != "plugin.shellRequest" || !live.Load() {
+			return
+		}
+		var m struct {
+			ID int64 `json:"id"`
+		}
+		if json.Unmarshal(data, &m) != nil {
+			return
+		}
+		ShellResult(m.ID, false, nil, &Error{Kind: KindInvalid, Message: "不认识的路由「没有这一页」"})
+	})
+
+	r := newRT(t, ``)
+	if _, err := r.Eval(context.Background(), BudgetData, "x.js",
+		`__linplayer_sdk.nav.push('没有这一页')`); err != nil {
+		t.Fatalf("nav.push 本身不该抛:%v", err)
+	}
+
+	var got string
+	for i := 0; i < 200 && got == ""; i++ { // tell 是异步的,等日志落下来
+		for _, e := range r.Logs() {
+			if strings.Contains(e.Msg, "没有这一页") {
+				got = e.Level
+			}
+		}
+		if got == "" {
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	if got == "" {
+		t.Fatalf("壳报了错,插件日志里一条都没有 —— 插件作者只会看到「调了没反应」:%v", r.Logs())
+	}
+	if got != "error" {
+		t.Errorf("这条日志的级别是 %q,应当是 error", got)
 	}
 }

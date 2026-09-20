@@ -231,3 +231,68 @@
 - `core/plugin/ui.go:120` 的安全区:注入写死 0 → 那条测试当场红,是真判据。
 - rt 那几条渲染器用例(合批、回调号回收、错误边界)反向注入都红,判据为真。
 - 41 个组件在两端都有**真分支**,不是落进 `Unknown()` 兜底。
+
+---
+
+# 阶段 ③ 验收对账(2026-09-21,进行中)
+
+> 对照 [`spec/19-plan.md`](spec/19-plan.md) 19.3 的 ③ 行(D545:**老功能对等** + 实际登录跑通 scrobble)。
+> 老功能的基准是删除前那一版:`git show 6b290d80^:core/sync/…` 与 `core/translate/…`。
+
+## 一、地基(插件能用上这些,三个插件才写得出来)
+
+| 件 | 状态 | 证据 |
+|---|---|---|
+| `player` 命名空间(SPEC 9) | ✅ | `core/plugin/rt/player.go`;脱敏清单、改动记账与还原、observe 限频三件都在 rt 这一层 —— 它们是**对插件**的约束,放宿主那边会被别的入口绕过去 |
+| mpv 脱敏门禁(19.5 列的那条) | ✅ | `rt/player_test.go` 四条。反向注入:从表里删一条 + 去掉脱敏分支 → 当场红在「把真值交出去了」 |
+| `player.getSubtitleText`(D487) | ✅ | `core/player/subtext.go`;取回来是空的**报错**,不当成「这一轨没字幕」—— 翻译插件收到空文本会安静地产出一份空字幕 |
+| `player.addSubtitle` 收文本(D164 D188) | ✅ | `core/player/transport.go`;落进宿主字幕缓存再 `sub-add`,不走 data: URL(长参数在某些 mpv 版本上被静默截断) |
+| `trakt.request` / `bangumi.request`(D365) | ✅ | `core/sync/proxyreq.go`;没连账号抛 auth(不是回空),path 只收相对路径。两条各有测试,反向注入放行绝对地址 → 当场红 |
+| `events` 命名空间(D94) | ✅ | `core/plugin/rt/events.go` + `core/plugin/events.go`;播放类由核心层自己的 `player.status` 推导,**按状态变化发**不是按 status 到达发 |
+| 注入位(锚点 / 设置分节) | ✅ | `core/plugin/anchors.go` + 两端渲染;详情页 9~10 个锚点,四种 mode |
+| `nav` / `ui` 对话框 | ⚠️ 核心层挂齐,**壳侧在做** | `core/plugin/rt/navui.go`;壳没报 `shell` 能力时**当场**抛 unsupported,不排一条注定超时的请求 |
+| Whisper 转写(`player.transcribe`) | ✅ | `core/transcribe/`(6 个文件)+ `core/plugin/ext.go:110 transcribeCurrent`。**地址取自 mpv 的 `path`,不是让插件传** —— 带 token 的取流地址只有宿主拿得到(D11) |
+| `ext` 命名空间(D380~D382) | ✅ | `core/plugin/rt/ext.go` + `core/plugin/ext.go`;六个组件三种命运(核心层自己下 / 壳那边装 / D560 已否掉)。四条测试,两处反向注入验过 |
+
+## 二、D545 的「老功能对等」逐项勾
+
+基准:删除前那一版的命令表。左边是老命令,右边是现在这件事由谁做。
+
+| 老命令(`6b290d80^`) | 现在谁做 | 状态 |
+|---|---|---|
+| `sync.traktScrobble` | `linplayer/sync` 的 `scrobbleStart/Pause/Stop`(`src/sync.ts`),经 `trakt.request` | ✅ |
+| `sync.bangumiSetCollection` | 同上 `markWatched` / `markBangumiEpisode` | ✅ |
+| `sync.bangumiUpdateEpisode` | 同上;**subject 那一位仍是字面量 `-`**(旧实现那个「点格子恒 false」活了几个月的根因,注释原样留着) | ✅ |
+| `sync.traktCalendar` / `bangumiCalendar` / `calendarLibrary` / `calendarDue` | **留在宿主**(18.1:日历要弹弹签名与 TMDB key,做成插件要走 CF 中转) | ✅ 已在阶段 ① |
+| `sync.traktAccount/DeviceCode/Poll/Logout`、`bangumiAccount/AuthorizeUrl/Exchange/LoginToken/Logout` | **留在宿主**(18.2:用户只登一次) | ✅ 已在阶段 ① |
+| `translate.subtitle` | `linplayer/subtitle-translate` 的面板与 `translateNow` 命令 | ✅ |
+| `translate.liveStart` / `liveStop` | 同插件的实时模式(`src/live.tsx`,订阅 `sub-text`) | ✅ |
+| `translate.translationEngineStatus` | 同插件设置分节里的「已连接 / 未连接」 | ✅ |
+| `translate.whisperModels/Download/Delete/Deps/DownloadFfmpeg` | `core/transcribe/` + `ext` 命名空间 | ✅ 档位表、依赖定位、ffmpeg 下载全在;插件调 `ext.ensure('whisper')` 触发 |
+| `prefs.getTranslationSettings` / `setTranslationSettings` | 插件自己的 manifest 设置项(key 进密钥区) | ✅ |
+| 翻译管线:分块 / 并发 / 二分重试 / 回退原文 / 全失败报错 | `plugins/subtitle-translate/src/pipeline.ts`,**照搬**旧实现 | ✅ 四条测试,三条反向注入验过 |
+| 各引擎的批量上限(大模型 ≤40 条 ≤4000 字 并发 3;百度 ≤50 条 ≤2000 字) | `src/engines.ts` 原样照搬 —— 这几个数是踩出来的 | ✅ |
+
+## 三、首发官方插件(SPEC 17 的表)
+
+| 插件 | 状态 |
+|---|---|
+| `linplayer/tvbox` | ✅ 阶段 ① |
+| `linplayer/devtools` | ✅ 阶段 ② |
+| `linplayer/sync` | ✅ |
+| `linplayer/subtitle-translate` | ✅ |
+| `linplayer/rule-editor` | ✅ |
+| `linplayer/live` | ⏸ 阶段 ④ |
+
+判据:`core/plugin/official_plugins_test.go` 逐个**真加载**一遍 ——
+「目录在」不算数,贡献点声明了没实现 / 入口报错 / 依赖的命名空间没挂,
+这三种都只在加载那一刻现形,而表现都是「装了没反应」。
+
+## 四、还没做的
+
+| 项 | 为什么 |
+|---|---|
+| **实际登录一次跑通 scrobble**(D545 明写的那一条) | 要真的 Trakt / Bangumi 账号。我手上没有,也不该去拿 —— 这一条只能由你本机登一次跑 |
+| `media` / `system` / `oauth` / `emby` / `download` 命名空间 | 都记在 `rt/sdk_contract_test.go` 的 `notYetImplemented` 账上,每条带「什么时候做」。账是判据的一部分:不记在账上的缺口会让那条判据当场红 |
+| `<Player>` 两端仍是「不可用」占位 | D561 的结论要给 GL 初始化/销毁加引用计数 + 前台仲裁,跟着这一批一起做 |
+| 审计剩下的 7 条欠账 | 见上一节 |
