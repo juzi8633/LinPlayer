@@ -47,6 +47,16 @@ const STYLE_KEYS = [
   'transition', 'animation',
 ]
 
+/* ☠ Preact 写 style 时会给**数字**自动补 px(它以为自己在跟 CSS 打交道),
+   于是插件写的 `fontSize: 22` 到壳那边变成字符串 "22px" ——
+   壳按数字读,读不到,表现是「样式全都没生效」而不报错。
+   这里还原成数字:我们的协议里长度就是数字(设备无关像素,SPEC 7.5),不是 CSS。 */
+function unpx(v) {
+  if (typeof v !== 'string') return v
+  const m = /^(-?\d+(?:\.\d+)?)px$/.exec(v)
+  return m ? Number(m[1]) : v
+}
+
 function makeDom(router) {
   let nextId = 1
 
@@ -149,7 +159,7 @@ function makeDom(router) {
         get: () => store[k],
         set: (v) => {
           if (v === undefined || v === null || v === '') delete store[k]
-          else store[k] = v
+          else store[k] = unpx(v)
           flush()
         },
       })

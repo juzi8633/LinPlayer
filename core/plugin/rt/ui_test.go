@@ -370,3 +370,45 @@ func TestUI回调死循环会被预算打断(t *testing.T) {
 		t.Fatal("回调被打断了,但事件循环还被占着")
 	}
 }
+
+// 数字样式必须**以数字到达壳**(SPEC 7.5:长度是设备无关像素,不是 CSS)。
+//
+// ☠ Preact 写 style 时会给数字自动补 px(它以为自己在跟 CSS 打交道),
+// 于是 `fontSize: 22` 变成字符串 "22px",壳按数字读读不到 ——
+// 表现是「样式一条都没生效」,而且不报错、编译也绿。2026-09-20 截图才看出来。
+func TestUI数字样式不带px(t *testing.T) {
+	r, cap := newUI(t, `
+		const { h } = __linplayer_sdk;
+		definePlugin({ pages: { p: () => h('Text', {style: {fontSize: 22, gap: 14, opacity: 0.5, direction: 'row'}}, '标题') } })
+	`)
+	if err := r.UIMount("s1", "page", "p", nil); err != nil {
+		t.Fatal(err)
+	}
+	cap.wait(t, func() bool { return hasProp(cap.ops(t), "style") })
+
+	var style map[string]any
+	for _, o := range cap.ops(t) {
+		if set, ok := o["set"].(map[string]any); ok {
+			if s, ok := set["style"].(map[string]any); ok {
+				style = s
+			}
+		}
+	}
+	if style == nil {
+		t.Fatalf("没收到 style:\n%s", cap.dump())
+	}
+	for _, k := range []string{"fontSize", "gap", "opacity"} {
+		v, ok := style[k]
+		if !ok {
+			t.Errorf("style 里没有 %s(收到 %v)", k, style)
+			continue
+		}
+		if _, isNum := v.(float64); !isNum {
+			t.Errorf("style.%s 到壳那边是 %#v —— 应该是数字", k, v)
+		}
+	}
+	// 字符串值原样保留,别把 'row' 也动了
+	if style["direction"] != "row" {
+		t.Errorf("style.direction 被改成了 %#v", style["direction"])
+	}
+}

@@ -315,6 +315,9 @@ public partial class MainWindow : Window
             _ = Task.Delay(2500).ContinueWith(_ => Dispatcher.UIThread.Post(
                 () => throw new InvalidOperationException("自检:故意扔的异常")));
         if (string.IsNullOrEmpty(want) || _core is null) return;
+        // 自检:先用开发版加载一个本地插件目录(不必先打包再安装)
+        if (Environment.GetEnvironmentVariable("LP_SELFCHECK_DEVPLUGIN") is { Length: > 0 } devDir)
+            _core.PluginDevLoad(new { dir = devDir }).GetAwaiter().GetResult();
         var arg = want.Contains(':') ? want[(want.IndexOf(':') + 1)..] : "";
         var srv = Nav.Session?.server ?? "";
         switch (want.Split(':')[0])
@@ -362,6 +365,18 @@ public partial class MainWindow : Window
                     break;
                 }
             case "icons": Nav.Push(new IconLibraryPage(_core, srv, () => { })); break;
+            /* 自检:插件自己画的页面(SPEC 7.2 的 page surface)。
+                pluginpage:<插件id>:<页面id> —— 要看的是**渲染器真把 ops 变成了控件**,
+                而这件事编译不出来、命令也全绿,只有真渲染一次才现形。 */
+            case "pluginpage":
+                {
+                    // 插件 id 自带一个「/」(作者/名字),所以页面 id 取**最后一个**「/」之后
+                    var slash = arg.LastIndexOf('/');
+                    var pluginId = slash > 0 ? arg[..slash] : arg;
+                    var pageId = slash > 0 ? arg[(slash + 1)..] : "panel";
+                    Nav.Push(new PluginPageHost(_core, pluginId, pageId, "插件页"));
+                    break;
+                }
             // 造法也给上 —— 不给的话自检跳过去的页刷新按钮不画,
             // 而真实路径(点库卡)是给了的,两条路长得不一样就没法照着截图判断
             case "grid":

@@ -93,7 +93,7 @@ function Gallery() {
       <TextInput placeholder="输点什么,失焦时才回传(非受控,D135)" onChangeText={setText} />
       <Text style={{ color: 'token:Ink2' }}>收到:{text || '(还没有)'}</Text>
       <View style={{ direction: 'row', align: 'center', gap: 10 }}>
-        <Switch checked={on} onToggle={setOn} />
+        <Switch value={on} onChange={setOn} />
         <Text>开关现在是 {on ? '开' : '关'}</Text>
       </View>
 

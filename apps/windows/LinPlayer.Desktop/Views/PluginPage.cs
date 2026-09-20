@@ -543,6 +543,26 @@ public sealed class PluginDetailPage : PageBase
         var contrib = Mi.Arr(d, "contributes").Select(x => x.GetString()).ToArray();
         if (contrib.Length > 0) _root.Children.Add(Card("它做了什么", PluginPage.Note(string.Join("、", contrib))));
 
+        // 插件自己画的页面(SPEC 7.2 D84):每一个给一个入口,点了挂一个 surface
+        var manifest = d.TryGetProperty("manifest", out var mf) ? mf : default;
+        var pages = manifest.ValueKind == JsonValueKind.Object && manifest.TryGetProperty("contributes", out var cs)
+            ? Mi.Arr(cs, "pages") : [];
+        if (pages.Count > 0)
+        {
+            var row = new WrapPanel { ItemSpacing = 10, LineSpacing = 10 };
+            foreach (var p in pages)
+            {
+                var pid = Mi.Str(p, "id");
+                var title = Mi.Str(p, "title") is { Length: > 0 } pt ? pt : pid;
+                row.Children.Add(PluginPage.Btn(title, () =>
+                {
+                    Nav.Push(new PluginPageHost(_core, _id, pid, title), () => new PluginDetailPage(_core, _id));
+                    return Task.CompletedTask;
+                }));
+            }
+            _root.Children.Add(Card("页面", row));
+        }
+
         var usage = d.TryGetProperty("usage", out var u) ? u : default;
         var total = Mi.Num(usage, "kv") + Mi.Num(usage, "data");
         _root.Children.Add(Card("占用", new StackPanel

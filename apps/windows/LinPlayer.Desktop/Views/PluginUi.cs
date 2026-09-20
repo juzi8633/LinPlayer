@@ -19,7 +19,7 @@ namespace LinPlayer.Desktop.Views;
 /// 想加一个组件就在 <see cref="Make"/> 里加一行;想加一个样式属性就在
 /// <see cref="ApplyStyle"/> 里加一行。别在这里写业务判断 —— 业务在插件那边。</para>
 ///
-/// <para>★ 未知组件画占位、未知属性直接忽略(D319):老宿主遇到新组件时,
+/// <para>未知组件画占位、未知属性直接忽略(D319):老宿主遇到新组件时,
 /// 用户看到的是「这一块需要更新 LinPlayer」,而不是整页崩掉或者一片空白。</para>
 /// </summary>
 public sealed class PluginSurface : UserControl
@@ -29,8 +29,11 @@ public sealed class PluginSurface : UserControl
     private readonly CoreClient _core;
     private readonly string _plugin, _target, _kind;
     private readonly object? _props;
-    private readonly Dictionary<int, Control> _nodes = [];
-    private readonly Dictionary<int, string> _texts = [];
+    /* ☠ 值是 object 不是 Control:文本节点必须是 Run。
+        第一版把 #text 也做成 TextBlock,于是 <Text>你好</Text> 里那个文本节点
+        找不到能塞它的容器(TextBlock 不是 Panel),被静默丢掉 ——
+        截图上是「整页只剩一个按钮,别处一片空白」,而且不报错。 */
+    private readonly Dictionary<int, object> _nodes = [];
     private readonly Border _host = new();
     private string _surface = "";
 
@@ -101,12 +104,20 @@ public sealed class PluginSurface : UserControl
             switch (Mi.Str(op, "op"))
             {
                 case "root":
-                    _nodes[0] = RootPanel();
-                    _host.Child = _nodes[0];
-                    break;
+                    {
+                        var root = RootPanel();
+                        _nodes[0] = root;
+                        _host.Child = root;
+                        break;
+                    }
                 case "create":
-                    _nodes[Id(op, "id")] = Make(Mi.Str(op, "type"));
-                    break;
+                    {
+                        var type = Mi.Str(op, "type");
+                        _nodes[Id(op, "id")] = type == "#text"
+                            ? new Avalonia.Controls.Documents.Run()
+                            : Make(type);
+                        break;
+                    }
                 case "text":
                     SetText(Id(op, "id"), Mi.Str(op, "value"));
                     break;
@@ -127,30 +138,80 @@ public sealed class PluginSurface : UserControl
     private static int Id(JsonElement o, string k) =>
         o.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : -1;
 
-    private static Panel RootPanel() => new StackPanel { Orientation = Orientation.Vertical };
+    private static Panel RootPanel() => new FlexPanel();
 
     private void Insert(JsonElement op)
     {
         var parentId = Id(op, "parent");
         var id = Id(op, "id");
         if (!_nodes.TryGetValue(parentId, out var parent) || !_nodes.TryGetValue(id, out var child)) return;
-        // 已经在别处的节点先摘掉:同一个 id 再次 insert 是**移动**,不是新建
-        Detach(child);
         var before = op.TryGetProperty("before", out var b) && b.ValueKind == JsonValueKind.Number ? b.GetInt32() : -1;
-        var kids = ChildrenOf(parent);
-        if (kids == null) return;
-        var at = kids.Count;
-        if (before >= 0 && _nodes.TryGetValue(before, out var refCtl))
+        _nodes.TryGetValue(before, out var refNode);
+
+        // 文本节点进父 TextBlock 的 Inlines:多段文本、顺序、更新全都由它管
+        if (child is Avalonia.Controls.Documents.Run run)
         {
-            var i = kids.IndexOf(refCtl);
-            if (i >= 0) at = i;
+            var host = parent as TextBlock ?? TextHostOf(parent);
+            if (host == null) return;
+            host.Inlines ??= [];
+            host.Inlines.Remove(run);
+            var at = host.Inlines.Count;
+            if (refNode is Avalonia.Controls.Documents.Run rr)
+            {
+                var k = host.Inlines.IndexOf(rr);
+                if (k >= 0) at = k;
+            }
+            host.Inlines.Insert(at, run);
+            return;
         }
-        kids.Insert(at, child);
+        if (child is not Control cc || parent is not Control pc) return;
+        // 已经在别处的节点先摘掉:同一个 id 再次 insert 是移动,不是新建
+        Detach(cc);
+        var kids = ChildrenOf(pc);
+        if (kids == null) return;
+        var at2 = kids.Count;
+        if (refNode is Control refCtl)
+        {
+            var k2 = kids.IndexOf(refCtl);
+            if (k2 >= 0) at2 = k2;
+        }
+        kids.Insert(at2, cc);
+    }
+
+    /// <summary>不是 TextBlock 的父节点收到文本时,给它补一个 TextBlock 装(Chip 那种 Border)。</summary>
+    private static TextBlock? TextHostOf(object parent)
+    {
+        switch (parent)
+        {
+            case Border bo:
+                if (bo.Child is TextBlock e1) return e1;
+                var t1 = new TextBlock { TextWrapping = TextWrapping.Wrap };
+                bo.Child = t1;
+                return t1;
+            case ContentControl co:
+                if (co.Content is TextBlock e2) return e2;
+                var t2 = new TextBlock { TextWrapping = TextWrapping.Wrap };
+                co.Content = t2;
+                return t2;
+            case Panel pa:
+                var t3 = new TextBlock { TextWrapping = TextWrapping.Wrap };
+                pa.Children.Add(t3);
+                return t3;
+            default:
+                return null;
+        }
     }
 
     private void Remove(int id)
     {
-        if (!_nodes.TryGetValue(id, out var c)) return;
+        if (!_nodes.TryGetValue(id, out var n)) return;
+        if (n is Avalonia.Controls.Documents.Run run)
+        {
+            (run.Parent as TextBlock)?.Inlines?.Remove(run);
+            _nodes.Remove(id);
+            return;
+        }
+        if (n is not Control c) return;
         Detach(c);
         // 子树的节点表一起丢,否则一页开开关关几次之后这张表只增不减
         DropSubtree(c);
@@ -158,13 +219,10 @@ public sealed class PluginSurface : UserControl
 
     private void DropSubtree(Control c)
     {
-        foreach (var kv in new List<KeyValuePair<int, Control>>(_nodes))
+        foreach (var kv in new List<KeyValuePair<int, object>>(_nodes))
         {
-            if (ReferenceEquals(kv.Value, c) || IsDescendant(kv.Value, c))
-            {
+            if (ReferenceEquals(kv.Value, c) || (kv.Value is Control kc && IsDescendant(kc, c)))
                 _nodes.Remove(kv.Key);
-                _texts.Remove(kv.Key);
-            }
         }
     }
 
@@ -218,10 +276,9 @@ public sealed class PluginSurface : UserControl
 
     private void SetText(int id, string value)
     {
-        _texts[id] = value;
-        // 文本节点自己没有控件:把它记在父节点上,由父节点(Text / Button)显示
-        if (!_nodes.TryGetValue(id, out var c)) return;
-        if (c is TextBlock tb) tb.Text = value;
+        if (!_nodes.TryGetValue(id, out var n)) return;
+        if (n is Avalonia.Controls.Documents.Run run) run.Text = value;
+        else if (n is TextBlock tb) tb.Text = value;
     }
 
     // ---------------------------------------------------------------- 组件
@@ -229,8 +286,8 @@ public sealed class PluginSurface : UserControl
     private Control Make(string type) => type switch
     {
         "#text" => new TextBlock { TextWrapping = TextWrapping.Wrap },
-        "View" or "Column" => new StackPanel { Orientation = Orientation.Vertical },
-        "Row" => new StackPanel { Orientation = Orientation.Horizontal },
+        "View" or "Column" => new FlexPanel(),
+        "Row" => new FlexPanel { Horizontal = true },
         "Stack" => new Panel(),
         "ScrollView" => new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled },
         "Text" => new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Tok.Of("Ink") },
@@ -241,14 +298,16 @@ public sealed class PluginSurface : UserControl
         "Button" => new Button { Classes = { "ghost" } },
         "Pressable" => new Button { Classes = { "ghost" }, Padding = new Thickness(0), Background = Brushes.Transparent },
         "TextInput" => new TextBox(),
-        "Switch" => new ToggleSwitch(),
+        // OnContent/OffContent 置空:Avalonia 默认会在开关边上写 "On"/"Off",
+        // 那是它自己的英文文案,不是插件给的内容
+        "Switch" => new ToggleSwitch { OnContent = null, OffContent = null },
         "Checkbox" => new CheckBox(),
         "Slider" => new Slider(),
         "Select" => new ComboBox(),
         "ProgressBar" => new ProgressBar { Height = 4 },
         "Chip" => new Border { Classes = { "chip" }, Padding = new Thickness(10, 6), CornerRadius = new CornerRadius(6), Background = Tok.Of("PanelAlt") },
         "ChipGroup" => new WrapPanel { ItemSpacing = 6, LineSpacing = 6 },
-        "SettingsGroup" or "PosterRow" => new StackPanel { Orientation = Orientation.Vertical, Spacing = 10 },
+        "SettingsGroup" or "PosterRow" => new FlexPanel { Gap = 10 },
         "PosterGrid" or "EpisodeGrid" => new WrapPanel { ItemSpacing = 14, LineSpacing = 14 },
         "Badge" => new Border { Padding = new Thickness(6, 2), CornerRadius = new CornerRadius(999), Background = Tok.Of("Accent") },
         // ★ 未知组件不是错误,是**版本差**(D319):画一块说明,别让整页空掉
@@ -290,7 +349,7 @@ public sealed class PluginSurface : UserControl
 
     private void ApplyProps(JsonElement op)
     {
-        if (!_nodes.TryGetValue(Id(op, "id"), out var c)) return;
+        if (!_nodes.TryGetValue(Id(op, "id"), out var pn) || pn is not Control c) return;
         if (op.TryGetProperty("unset", out var un) && un.ValueKind == JsonValueKind.Array)
             foreach (var n in un.EnumerateArray())
                 SetProp(c, n.GetString() ?? "", default, true);
@@ -316,15 +375,15 @@ public sealed class PluginSurface : UserControl
             case "title" or "label":
                 if (c is Button b) b.Content = unset ? null : v.ToString();
                 else if (c is TextBlock t) t.Text = unset ? "" : v.ToString();
-                else if (c is Border bd && bd.Child is TextBlock bt) bt.Text = unset ? "" : v.ToString();
+                else if (c is Border bd && TextHostOf(bd) is { } bt) bt.Text = unset ? "" : v.ToString();
                 break;
-            case "value":
-                if (c is TextBox tb) tb.Text = unset ? "" : v.ToString();
+            // Switch / Checkbox 在定义源里就叫 value(不是 checked)——
+            // 名字对不上的表现是「开关画出来了但永远是关的」,不报错
+            case "value" or "checked":
+                if (c is ToggleButton tg) tg.IsChecked = !unset && v.ValueKind == JsonValueKind.True;
+                else if (c is TextBox tb) tb.Text = unset ? "" : v.ToString();
                 else if (c is Slider sl && !unset && v.ValueKind == JsonValueKind.Number) sl.Value = v.GetDouble();
                 else if (c is ProgressBar pb && !unset && v.ValueKind == JsonValueKind.Number) pb.Value = v.GetDouble() * 100;
-                break;
-            case "checked" or "on":
-                if (c is ToggleButton tg) tg.IsChecked = !unset && v.ValueKind == JsonValueKind.True;
                 break;
             case "placeholder":
                 if (c is TextBox tb2) tb2.Watermark = unset ? null : v.ToString();
@@ -424,11 +483,11 @@ public sealed class PluginSurface : UserControl
         if (Num(s, "maxWidth") is { } xw) c.MaxWidth = xw;
         if (Num(s, "maxHeight") is { } xh) c.MaxHeight = xh;
         if (Num(s, "opacity") is { } op) c.Opacity = op;
-        if (Num(s, "grow") is { } g && g > 0 && c.Parent is StackPanel) c.HorizontalAlignment = HorizontalAlignment.Stretch;
+        if (Num(s, "grow") is { } g) FlexPanel.SetGrow(c, g);
 
         c.Margin = Edge(s, "margin", c.Margin);
-        if (c is Decorator or TemplatedControl) SetPadding(c, Edge(s, "padding", default));
-        if (Num(s, "gap") is { } gap && c is StackPanel sp) sp.Spacing = gap;
+        SetPadding(c, Edge(s, "padding", default));
+        if (Num(s, "gap") is { } gap && c is FlexPanel fp) { fp.Gap = gap; fp.InvalidateMeasure(); }
         if (Num(s, "radius") is { } r && c is Border bd) bd.CornerRadius = new CornerRadius(r);
         if (Brush(s, "background") is { } bg)
         {
@@ -443,19 +502,29 @@ public sealed class PluginSurface : UserControl
             tb4.FontWeight = fw.ToString() is "bold" or "600" or "700" ? FontWeight.SemiBold : FontWeight.Normal;
         if (s.TryGetProperty("textAlign", out var ta) && c is TextBlock tb5)
             tb5.TextAlignment = ta.ToString() switch { "center" => TextAlignment.Center, "end" or "right" => TextAlignment.Right, _ => TextAlignment.Left };
-        if (s.TryGetProperty("direction", out var dir) && c is StackPanel sp2)
-            sp2.Orientation = dir.ToString() == "row" ? Orientation.Horizontal : Orientation.Vertical;
-        if (s.TryGetProperty("justify", out var ju) && c is StackPanel sp3)
-            sp3.HorizontalAlignment = ju.ToString() switch { "center" => HorizontalAlignment.Center, "end" => HorizontalAlignment.Right, _ => HorizontalAlignment.Stretch };
-        if (s.TryGetProperty("align", out var al))
-            c.VerticalAlignment = al.ToString() switch { "center" => VerticalAlignment.Center, "end" => VerticalAlignment.Bottom, "start" => VerticalAlignment.Top, _ => c.VerticalAlignment };
+        if (c is FlexPanel fl)
+        {
+            if (s.TryGetProperty("direction", out var dir)) fl.Horizontal = dir.ToString() == "row";
+            if (s.TryGetProperty("justify", out var ju)) fl.Justify = ju.ToString();
+            if (s.TryGetProperty("align", out var al)) fl.AlignItems = al.ToString();
+            fl.InvalidateMeasure();
+        }
+        else if (s.TryGetProperty("align", out var al2))
+        {
+            c.VerticalAlignment = al2.ToString() switch
+            {
+                "center" => VerticalAlignment.Center, "end" => VerticalAlignment.Bottom,
+                "start" => VerticalAlignment.Top, _ => c.VerticalAlignment,
+            };
+        }
     }
 
     private static void SetPadding(Control c, Thickness t)
     {
         switch (c)
         {
-            case Decorator d when d is Border b: b.Padding = t; break;
+            case FlexPanel fp: fp.Pad = t; fp.InvalidateMeasure(); break;
+            case Border b: b.Padding = t; break;
             case TemplatedControl tc: tc.Padding = t; break;
         }
     }
@@ -483,4 +552,23 @@ public sealed class PluginSurface : UserControl
         return Color.TryParse(text, out var col) ? new SolidColorBrush(col) : null;
     }
 
+}
+
+/// <summary>
+/// 插件页的整页容器(SPEC 7.2 的 page surface)。标题是官方的,内容整块交给插件。
+/// </summary>
+public sealed class PluginPageHost : PageBase
+{
+    public PluginPageHost(CoreClient core, string plugin, string pageId, string title)
+    {
+        Content = Scrolled(new StackPanel
+        {
+            Spacing = 14,
+            Children =
+            {
+                H1(title),
+                new PluginSurface(core, plugin, pageId, "page"),
+            },
+        });
+    }
 }
