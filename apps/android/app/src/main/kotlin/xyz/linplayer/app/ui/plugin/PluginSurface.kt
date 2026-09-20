@@ -143,12 +143,18 @@ fun PluginSurface(
     var error by remember(plugin, target) { mutableStateOf("") }
 
     DisposableEffect(plugin, target) {
+        // 首帧预算(D543 的 300ms)量的是这里到第一批 ops 进树
+        val since = android.os.SystemClock.uptimeMillis()
         val job = app.bg.launch {
             runCatching {
                 app.call("plugin.ui.mount", args("plugin" to plugin, "target" to target, "kind" to kind))
             }.onSuccess { r ->
                 // 首帧跟着 mount 的返回值来:等事件的话会漏掉它(见 core/plugin/ui.go 那条)
                 tree.apply(r.obj()?.get("ops").arr())
+                xyz.linplayer.app.core.Logs.d(
+                    "插件UI",
+                    "$plugin/$target 首帧 ${android.os.SystemClock.uptimeMillis() - since} ms,${tree.nodes.size} 个节点",
+                )
                 surfaceId = r.obj().str("surface")
                 if (state == "loading") state = "ready"
             }

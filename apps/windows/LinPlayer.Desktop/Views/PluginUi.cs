@@ -36,6 +36,9 @@ public sealed class PluginSurface : UserControl
     private readonly Dictionary<int, object> _nodes = [];
     private readonly Border _host = new();
     private string _surface = "";
+    /// <summary>挂载起点。首帧预算(D543 的 300ms)量的是这里到第一批 ops 画完。</summary>
+    private readonly System.Diagnostics.Stopwatch _since = System.Diagnostics.Stopwatch.StartNew();
+    private bool _firstFrameLogged;
 
     public PluginSurface(CoreClient core, string plugin, string target, string kind = "block", object? props = null)
     {
@@ -164,6 +167,11 @@ public sealed class PluginSurface : UserControl
         }
         // 一帧里可能增删了窗口内的项,占位要跟着重算
         foreach (var n in _nodes.Values) if (n is ScrollViewer sv) VirtualInfo.Respace(sv);
+        if (!_firstFrameLogged)
+        {
+            _firstFrameLogged = true;
+            Log.I("插件UI", $"{_plugin}/{_target} 首帧 {_since.ElapsedMilliseconds} ms,{_nodes.Count} 个节点");
+        }
     }
 
     private static int Id(JsonElement o, string k) =>
