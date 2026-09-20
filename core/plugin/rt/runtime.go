@@ -57,6 +57,11 @@ type Runtime struct {
 	quit  chan struct{}
 	done  chan struct{}
 	dead  atomic.Bool
+	// ctx 这个插件的生命周期。停用 / 卸载时取消 —— 宿主替它起的长活
+	// (转写要跑的 ffmpeg 与 whisper 子进程)得跟着一起停,
+	// 否则关掉插件之后它们还在跑满 CPU,而界面上一点痕迹都没有。
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	mu    sync.Mutex
 	calls map[*call]struct{}
@@ -67,6 +72,8 @@ type Runtime struct {
 	uiSink UISink
 
 	logs *ring[LogEntry]
+	// slots 「壳问一句插件答一句」的回调槽(见 slots.go)。只在 JS 线程上碰。
+	slots *goja.Object
 	reqs *ring[RequestEntry]
 	kv   *kvStore
 	sec  *secretStore
@@ -122,6 +129,7 @@ func New(opt Options) (*Runtime, error) {
 		reqs:   newRing[RequestEntry](200),
 		timers: map[int64]*time.Timer{},
 	}
+	r.ctx, r.cancel = context.WithCancel(context.Background())
 	var err error
 	if r.kv, err = openKV(opt.DataDir); err != nil {
 		return nil, err
@@ -135,12 +143,18 @@ func New(opt Options) (*Runtime, error) {
 	if err := r.installGlobals(); err != nil {
 		return nil, err
 	}
+	if err := r.installSlots(); err != nil {
+		return nil, err
+	}
 	go r.loop()
 	return r, nil
 }
 
 // ID 插件 id。
 func (r *Runtime) ID() string { return r.opt.ID }
+
+// Ctx 插件生命周期的 context。宿主替插件起的长活挂在它上面。
+func (r *Runtime) Ctx() context.Context { return r.ctx }
 
 // post 投一个任务进循环。运行时已关就丢弃。
 func (r *Runtime) post(f func()) {
@@ -429,6 +443,7 @@ func (r *Runtime) Close() {
 	if !r.dead.CompareAndSwap(false, true) {
 		return
 	}
+	r.cancel()
 	envUnsubscribe(r)
 	// 还原它改过的 mpv 属性(SPEC 9.2 D302)。要赶在关循环之前 ——
 	// 关了之后宿主回调还能调,但插件那边已经没人能收结果了

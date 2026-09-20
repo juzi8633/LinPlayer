@@ -113,8 +113,13 @@ func commonFFmpegLocations() []string {
 // 顺序:用户指定 → 已下载缓存 → 随应用打包 → 系统 PATH → 常见安装位置。
 func ResolveFFmpeg(configured string) string {
 	name := exeName("ffmpeg")
-	if configured != "" && isFile(configured) {
-		return configured
+	if configured != "" {
+		/* 指定了就**只认它**。指错了回空串(=「没找到」),不偷偷回落到 PATH:
+		   回落的话用户指哪儿都不影响结果,而他以为自己换了一个 ffmpeg。 */
+		if isFile(configured) {
+			return configured
+		}
+		return ""
 	}
 	if cached := filepath.Join(binDir(), name); isFile(cached) {
 		return cached
@@ -144,8 +149,11 @@ func ResolveFFmpeg(configured string) string {
 // 找不到返回空串。
 func ResolveWhisper(configured string) string {
 	name := exeName("whisper-cli")
-	if configured != "" && isFile(configured) {
-		return configured
+	if configured != "" {
+		if isFile(configured) {
+			return configured
+		}
+		return "" // 同 ResolveFFmpeg:指定了就只认它
 	}
 	if cached := filepath.Join(binDir(), name); isFile(cached) {
 		return cached
@@ -238,12 +246,26 @@ func extractFFmpegFromZip(zipPath, out string) error {
 			return fmt.Errorf("解包失败: %w", err)
 		}
 		defer rc.Close()
-		dst, err := os.Create(out)
+		/* ☠ 先写 .part 再改名。直接往最终名字上写的话,中途失败会留下一个
+		   半截的 ffmpeg.exe,而 ResolveFFmpeg 只判「文件在不在」—— 它会被
+		   一直当成可用的 ffmpeg,每次转写都在同一个地方失败,重下也不会覆盖。 */
+		tmp := out + ".part"
+		dst, err := os.Create(tmp)
 		if err != nil {
 			return fmt.Errorf("写 ffmpeg 失败: %w", err)
 		}
-		defer dst.Close()
-		if _, err := io.Copy(dst, rc); err != nil {
+		_, cerr := io.Copy(dst, rc)
+		closeErr := dst.Close()
+		if cerr != nil || closeErr != nil {
+			_ = os.Remove(tmp)
+			if cerr == nil {
+				cerr = closeErr
+			}
+			return fmt.Errorf("写 ffmpeg 失败: %w", cerr)
+		}
+		_ = os.Remove(out)
+		if err := os.Rename(tmp, out); err != nil {
+			_ = os.Remove(tmp)
 			return fmt.Errorf("写 ffmpeg 失败: %w", err)
 		}
 		return nil

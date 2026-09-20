@@ -12,6 +12,7 @@ package rt
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"sync"
 	"time"
 
@@ -28,22 +29,7 @@ func (r *Runtime) installNavUI(sdk *goja.Object) {
 	vm := r.vm
 	id := r.opt.ID
 
-	// ask 把一件事交给壳做。need 说明这件事要壳的哪项能力。
-	ask := func(op string, args any, timeout time.Duration) goja.Value {
-		if !Caps().Shell {
-			p, _, reject := vm.NewPromise()
-			_ = reject(r.newPluginError(KindUnsupported,
-				"这一版壳还没接 "+op+"(导航与对话框要壳实现)"))
-			return vm.ToValue(p)
-		}
-		return r.async(func() (any, error) {
-			out, err := ShellRequest(context.Background(), id, op, args, timeout)
-			if err != nil {
-				return nil, err
-			}
-			return json.RawMessage(out), nil
-		})
-	}
+	ask := r.shellAsk
 	/*
 		只发不等的那几个:导航与显隐是命令,不是问句。
 
@@ -53,16 +39,7 @@ func (r *Runtime) installNavUI(sdk *goja.Object) {
 		  插件那头都表现为「调了没反应」,而错误只到得了壳的 logcat。
 		  现在它进 console 日志,调试面板的「日志」块里看得到。
 	*/
-	tell := func(op string, args any) {
-		if !Caps().Shell {
-			r.throw(KindUnsupported, "这一版壳还没接 "+op+"(导航要壳实现)")
-		}
-		go func() {
-			if _, err := ShellRequest(context.Background(), id, op, args, actionTimeout); err != nil {
-				r.logs.add(LogEntry{TS: nowMS(), Level: "error", Msg: op + " 没做成:" + err.Error()})
-			}
-		}()
-	}
+	tell := r.shellTell
 
 	nav := vm.NewObject()
 	_ = sdk.Set("nav", nav)
@@ -87,9 +64,7 @@ func (r *Runtime) installNavUI(sdk *goja.Object) {
 	   壳每次要返回时问一次,回 false 才拦下 —— 反过来(插件主动说「我要拦」)
 	   的话,插件崩了返回键就永远按不动了。 */
 	_ = nav.Set("onBack", func(cb goja.Callable) goja.Value {
-		stop := subscribeEvent("nav.backRequest", func(v any) {
-			r.post(func() { _, _ = cb(goja.Undefined(), r.jsValue(v)) })
-		})
+		stop := r.addSlot(SlotBack, cb)
 		r.disposes = append(r.disposes, stop)
 		d := vm.NewObject()
 		_ = d.Set("dispose", stop)
@@ -112,9 +87,20 @@ func (r *Runtime) installNavUI(sdk *goja.Object) {
 			o = map[string]any{}
 		}
 		if !notifyAllowed(id) {
-			// 超额不是错误(D547:折叠成一条「xx 还有 N 条通知」,不丢)——
-			// 抛错的话插件会以为自己参数写错了,而真相是这一小时它已经发了 5 条
-			return r.async(func() (any, error) { return map[string]any{"folded": true}, nil })
+			/* 超额不是错误,也**不是丢掉**(D547):折叠成一条「xx 还有 N 条通知」。
+			   ☠ 上一版到这里就 return 了,于是「折叠」这件事核心层没做、
+			   壳那边注释写着「折叠在核心层」—— 两边都以为是对方的事,通知直接没了。 */
+			n, send := notifyFold(id)
+			if send {
+				r.shellTell("ui.notify", map[string]any{
+					"plugin": id, "folded": true, "count": n,
+					"title": "还有 " + strconv.Itoa(n) + " 条通知",
+					"body":  "这个插件这一小时里发得太多,后面的合并成了这一条",
+				})
+			}
+			return r.async(func() (any, error) {
+				return map[string]any{"folded": true, "suppressed": n}, nil
+			})
 		}
 		o["plugin"] = id
 		return ask("ui.notify", o, actionTimeout)
@@ -130,14 +116,39 @@ func (r *Runtime) installNavUI(sdk *goja.Object) {
 通知配额(D547):每插件每小时最多 5 条,超出折叠成一条,**不丢**。
 
 ☠ 限在**这一层**而不是壳那边:壳有三个,限三遍就会有三套口径;
-  而「一小时 5 条」是产品承诺,不是某个平台的行为。
+
+	而「一小时 5 条」是产品承诺,不是某个平台的行为。
 */
 const notifyPerHour = 5
 
+// foldWindow 折叠通知最快多久发一次。不限的话「超额」本身变成了一条条通知。
+const foldWindow = 5 * time.Minute
+
 var notifyLog = struct {
-	mu   sync.Mutex
-	sent map[string][]time.Time
-}{sent: map[string][]time.Time{}}
+	mu         sync.Mutex
+	sent       map[string][]time.Time
+	suppressed map[string]int
+	lastFold   map[string]time.Time
+}{sent: map[string][]time.Time{}, suppressed: map[string]int{}, lastFold: map[string]time.Time{}}
+
+/*
+notifyFold 记一条被折叠的通知,并回答「这次要不要把折叠提示发出去」。
+
+回的 n 是**这一轮累计压下了多少条**:折叠提示发出去之后清零,
+下一批再攒。不清零的话数字只增不减,用户会以为有几百条没看的。
+*/
+func notifyFold(plugin string) (int, bool) {
+	notifyLog.mu.Lock()
+	defer notifyLog.mu.Unlock()
+	notifyLog.suppressed[plugin]++
+	n := notifyLog.suppressed[plugin]
+	if time.Since(notifyLog.lastFold[plugin]) < foldWindow {
+		return n, false
+	}
+	notifyLog.lastFold[plugin] = time.Now()
+	notifyLog.suppressed[plugin] = 0
+	return n, true
+}
 
 func notifyAllowed(plugin string) bool {
 	cut := time.Now().Add(-time.Hour)
@@ -155,4 +166,38 @@ func notifyAllowed(plugin string) bool {
 	}
 	notifyLog.sent[plugin] = append(kept, time.Now())
 	return true
+}
+
+/*
+shellAsk 把一件事交给壳做并等结果。
+
+☠ 壳没声明能做这些事时**当场**回一个已拒绝的 Promise,不排一条注定超时的请求:
+
+	60 秒后才报「超时」的话,插件作者会以为是自己的参数写错了。
+*/
+func (r *Runtime) shellTell(op string, args any) {
+	if !Caps().Shell {
+		r.throw(KindUnsupported, "这一版壳还没接 "+op+"(要壳实现)")
+	}
+	id := r.opt.ID
+	go func() {
+		if _, err := ShellRequest(context.Background(), id, op, args, actionTimeout); err != nil {
+			r.logs.add(LogEntry{TS: nowMS(), Level: "error", Msg: op + " 没做成:" + err.Error()})
+		}
+	}()
+}
+
+func (r *Runtime) shellAsk(op string, args any, timeout time.Duration) goja.Value {
+	if !Caps().Shell {
+		p, _, reject := r.vm.NewPromise()
+		_ = reject(r.newPluginError(KindUnsupported, "这一版壳还没接 "+op+"(要壳实现)"))
+		return r.vm.ToValue(p)
+	}
+	return r.async(func() (any, error) {
+		out, err := ShellRequest(context.Background(), r.opt.ID, op, args, timeout)
+		if err != nil {
+			return nil, err
+		}
+		return json.RawMessage(out), nil
+	})
 }

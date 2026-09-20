@@ -67,6 +67,14 @@ func playerHooks() *rt.PlayerHooks {
 		},
 		AddSubtitle: addSubtitle,
 		Transcribe:  transcribeCurrent,
+		PlayURL: func(u string, headers map[string]any, meta map[string]any) error {
+			a := map[string]any{"url": u, "headers": headers}
+			for k, v := range meta {
+				a[k] = v
+			}
+			_, err := bus.Invoke(context.Background(), "player.playUrl", a)
+			return err
+		},
 		GetSubtitleText: func(trackID int) (any, error) {
 			return bus.Invoke(context.Background(), "player.getSubtitleText",
 				map[string]any{"track_id": float64(trackID)})
@@ -125,6 +133,7 @@ func observeProp(prop string, hz float64, cb func(any)) (func(), error) {
 		defer t.Stop()
 		var last any
 		var seen bool
+		var badOnce bool
 		for {
 			select {
 			case <-stop:
@@ -132,8 +141,16 @@ func observeProp(prop string, hz float64, cb func(any)) (func(), error) {
 			case <-t.C:
 				out, err := bus.Invoke(context.Background(), "player.mpvGet", map[string]any{"name": prop})
 				if err != nil {
+					/* 属性名拼错时每一轮都会错。上一版直接 continue,表现是
+					   「订阅了但从不回调」—— 插件作者会以为是这个属性没变化。
+					   头一次就说出来,之后不刷屏(播放没起来时也会错)。 */
+					if !badOnce {
+						badOnce = true
+						bus.Logf("warn", "插件订阅的 mpv 属性 %s 读不到:%v", prop, err)
+					}
 					continue
 				}
+				badOnce = false
 				m, _ := out.(map[string]any)
 				v := m["value"]
 				if seen && fmt.Sprint(v) == fmt.Sprint(last) {

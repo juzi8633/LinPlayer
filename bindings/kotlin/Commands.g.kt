@@ -62,6 +62,7 @@ object LinPlayerCommandNames {
         "emby.search",
         "emby.seasonEpisodes",
         "emby.seriesSeasons",
+        "emby.providers",
         "emby.setBlocked",
         "emby.setFavorite",
         "emby.setPlayed",
@@ -107,6 +108,7 @@ object LinPlayerCommandNames {
         "player.play",
         "player.playExternal",
         "player.playLocal",
+        "player.playUrl",
         "player.screenshot",
         "player.seek",
         "player.setAspectRatio",
@@ -309,6 +311,8 @@ object LinPlayerCommandNames {
         "player.getSubtitleText",
         "plugin.setEnv",
         "plugin.shellResult",
+        "plugin.backRequest",
+        "plugin.playerKey",
         "plugin.setCookies",
         "plugin.ui.mount",
         "plugin.ui.unmount",
@@ -317,7 +321,7 @@ object LinPlayerCommandNames {
     )
 }
 
-// ---- Emby 浏览与详情 · emby.* (44 条) ----
+// ---- Emby 浏览与详情 · emby.* (45 条) ----
 suspend fun LinPlayerCommands.embyAggregateOverview(args: Map<String, Any?>? = null): JsonElement =
     call("emby.aggregateOverview", args)
 suspend fun LinPlayerCommands.embyAggregateSearch(args: Map<String, Any?>? = null): JsonElement =
@@ -384,6 +388,8 @@ suspend fun LinPlayerCommands.embySeasonEpisodes(args: Map<String, Any?>? = null
     call("emby.seasonEpisodes", args)
 suspend fun LinPlayerCommands.embySeriesSeasons(args: Map<String, Any?>? = null): JsonElement =
     call("emby.seriesSeasons", args)
+suspend fun LinPlayerCommands.embyProviders(args: Map<String, Any?>? = null): JsonElement =
+    call("emby.providers", args)
 suspend fun LinPlayerCommands.embySetBlocked(args: Map<String, Any?>? = null): JsonElement =
     call("emby.setBlocked", args)
 suspend fun LinPlayerCommands.embySetFavorite(args: Map<String, Any?>? = null): JsonElement =
@@ -451,7 +457,7 @@ suspend fun LinPlayerCommands.accountTestConnection(args: Map<String, Any?>? = n
 suspend fun LinPlayerCommands.accountUpdateAccount(args: Map<String, Any?>? = null): JsonElement =
     call("account.updateAccount", args)
 
-// ---- 播放器 · player.* (52 条) ----
+// ---- 播放器 · player.* (53 条) ----
 suspend fun LinPlayerCommands.playerAddSubtitle(args: Map<String, Any?>? = null): JsonElement =
     call("player.addSubtitle", args)
 suspend fun LinPlayerCommands.playerChapterInfo(args: Map<String, Any?>? = null): JsonElement =
@@ -478,6 +484,8 @@ suspend fun LinPlayerCommands.playerPlayExternal(args: Map<String, Any?>? = null
     call("player.playExternal", args)
 suspend fun LinPlayerCommands.playerPlayLocal(args: Map<String, Any?>? = null): JsonElement =
     call("player.playLocal", args)
+suspend fun LinPlayerCommands.playerPlayUrl(args: Map<String, Any?>? = null): JsonElement =
+    call("player.playUrl", args)
 suspend fun LinPlayerCommands.playerScreenshot(args: Map<String, Any?>? = null): JsonElement =
     call("player.screenshot", args)
 suspend fun LinPlayerCommands.playerSeek(args: Map<String, Any?>? = null): JsonElement =
@@ -819,7 +827,7 @@ suspend fun LinPlayerCommands.syncCalendarLibrary(args: Map<String, Any?>? = nul
 suspend fun LinPlayerCommands.syncCalendarDue(args: Map<String, Any?>? = null): JsonElement =
     call("sync.calendarDue", args)
 
-// ---- 插件 · plugin.* (44 条) ----
+// ---- 插件 · plugin.* (46 条) ----
 suspend fun LinPlayerCommands.pluginList(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.list", args)
 suspend fun LinPlayerCommands.pluginPendingRestart(args: Map<String, Any?>? = null): JsonElement =
@@ -898,6 +906,10 @@ suspend fun LinPlayerCommands.pluginSetEnv(args: Map<String, Any?>? = null): Jso
     call("plugin.setEnv", args)
 suspend fun LinPlayerCommands.pluginShellResult(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.shellResult", args)
+suspend fun LinPlayerCommands.pluginBackRequest(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.backRequest", args)
+suspend fun LinPlayerCommands.pluginPlayerKey(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.playerKey", args)
 suspend fun LinPlayerCommands.pluginSetCookies(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.setCookies", args)
 suspend fun LinPlayerCommands.pluginUiMount(args: Map<String, Any?>? = null): JsonElement =

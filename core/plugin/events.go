@@ -46,10 +46,9 @@ func onPlayerStatus(raw json.RawMessage) {
 		return
 	}
 	now := playerSnapshot{itemID: s.ItemID, paused: s.Paused, eof: s.EOF, buffering: s.Buffering}
-	np := map[string]any{
-		"itemId": s.ItemID, "position": s.Position, "duration": s.Duration,
-		"paused": s.Paused,
-	}
+	// 形状由定义源说了算(见 nowplaying.go):item / positionSec / durationSec
+	np := nowPlaying(s.ItemID, s.Position, s.Duration)
+	np["paused"] = s.Paused
 
 	evMu.Lock()
 	prev := evLast
@@ -69,7 +68,8 @@ func onPlayerStatus(raw json.RawMessage) {
 		if prev.eof {
 			reason = "eof"
 		}
-		end := map[string]any{"itemId": prev.itemID, "reason": reason}
+		end := nowPlaying(prev.itemID, s.Position, s.Duration)
+		end["reason"] = reason
 		rt.EmitAppEvent("player.end", end)
 	}
 	if now.started && prev.started {
@@ -81,7 +81,9 @@ func onPlayerStatus(raw json.RawMessage) {
 			}
 		}
 		if now.eof && !prev.eof {
-			rt.EmitAppEvent("player.end", map[string]any{"itemId": now.itemID, "reason": "eof"})
+			eof := nowPlaying(now.itemID, s.Position, s.Duration)
+			eof["reason"] = "eof"
+			rt.EmitAppEvent("player.end", eof)
 		}
 		if now.buffering != prev.buffering {
 			rt.EmitAppEvent("player.buffering", map[string]any{"buffering": now.buffering})

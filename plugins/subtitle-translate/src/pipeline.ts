@@ -109,8 +109,17 @@ export async function translateDocument(
     }
   }
 
-  if (failed >= total && lastErr) {
-    throw new Error('翻译引擎不可用,全部 ' + total + ' 条都失败了:' + ((lastErr && lastErr.message) || lastErr))
+  /* ☠ 判的是**条数**,不是「有没有拿到一个 truthy 的错误对象」。
+     上一版写成 `failed >= total && lastErr`:引擎 reject 一个空串 / undefined 时
+     lastErr 是 falsy,于是全部失败也静默交出一份没翻的字幕 —— 用户看到的是
+     「翻译了但没变化」,而真相是引擎根本不可用。 */
+  if (failed >= total) {
+    const why = (lastErr && lastErr.message) || String(lastErr || '引擎没说原因')
+    throw new Error('翻译引擎不可用,全部 ' + total + ' 条都失败了:' + why)
+  }
+  // 大部分失败也要留痕:99/100 失败时字幕看起来「有内容」,没人会怀疑是这里
+  if (failed > 0) {
+    console.warn('翻译有 ' + failed + '/' + total + ' 条没成功,这些条回退成了原文')
   }
 }
 

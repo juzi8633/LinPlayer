@@ -10,6 +10,7 @@ package rt
 //     一个订阅就能把事件循环占满,而表现是「插件一装播放就卡」。
 
 import (
+	"context"
 	"strings"
 	"sync"
 
@@ -21,25 +22,26 @@ import (
 // redactedProps 读出来是脱敏值的 mpv 属性。
 //
 // ☠ 这张表是 D11 的最后一道门:`path` / `stream-open-filename` 里带着 api_key,
-//   `http-header-fields` 里带着 Authorization。少一条就等于把 Emby 凭据交出去,
-//   而调用方看到的是一条完全正常的属性读。
+//
+//	`http-header-fields` 里带着 Authorization。少一条就等于把 Emby 凭据交出去,
+//	而调用方看到的是一条完全正常的属性读。
 var redactedProps = map[string]bool{
-	"path":                  true,
-	"stream-open-filename":  true,
-	"stream-path":           true,
-	"http-header-fields":    true,
-	"working-directory":     true,
-	"playlist":              true,
-	"playlist-path":         true,
-	"file-local-options":    true,
-	"referrer":              true,
-	"user-agent":            true,
-	"cookies-file":          true,
-	"sub-file-paths":        true,
-	"screenshot-directory":  true,
-	"input-ipc-server":      true,
-	"log-file":              true,
-	"config-dir":            true,
+	"path":                 true,
+	"stream-open-filename": true,
+	"stream-path":          true,
+	"http-header-fields":   true,
+	"working-directory":    true,
+	"playlist":             true,
+	"playlist-path":        true,
+	"file-local-options":   true,
+	"referrer":             true,
+	"user-agent":           true,
+	"cookies-file":         true,
+	"sub-file-paths":       true,
+	"screenshot-directory": true,
+	"input-ipc-server":     true,
+	"log-file":             true,
+	"config-dir":           true,
 }
 
 // bannedCommands 对插件不开放的 mpv 命令(SPEC 9.1)。
@@ -143,12 +145,11 @@ type PlayerHooks struct {
 	Play            func(item any, opts map[string]any) error
 	PlayURL         func(url string, headers map[string]any, meta map[string]any) error
 	Screenshot      func() ([]byte, error)
-	OpenPanel       func(panel string)
-	SetOsdVisible   func(visible bool)
 	GetSubtitleText func(trackID int) (any, error)
 	AddSubtitle     func(content any, opts map[string]any) (int, error)
-	Transcribe      func(opts map[string]any, onProgress func(float64)) (any, error)
-	ExtractFrames   func(item any, times []float64, opts map[string]any) ([][]byte, error)
+	// Transcribe ctx 是插件的生命周期:插件被停用时正在跑的子进程要跟着停。
+	Transcribe    func(ctx context.Context, opts map[string]any, onProgress func(float64)) (any, error)
+	ExtractFrames func(item any, times []float64, opts map[string]any) ([][]byte, error)
 }
 
 // ---------------------------------------------------------------- 安装
@@ -223,6 +224,19 @@ func (r *Runtime) installPlayer(sdk *goja.Object) {
 			if CommandBanned(name) {
 				return nil, &Error{Kind: KindPermission,
 					Message: "mpv 命令 " + name + " 对插件不开放:换片走 player.play / player.playUrl(SPEC 9.1)"}
+			}
+			/* ☠ 改属性的那几条命令要**走 set 的那条路**,不能从 command 溜过去。
+			   mpv 的 `set` / `cycle` / `add` / `multiply` 能改任意属性 ——
+			   上一版这里不记账也不看脱敏清单,于是插件用 command('set','sub-scale',…)
+			   改的东西停用时不还原(D302 白写),而 `cycle pause` 这种连改了什么都不知道。 */
+			if isPropWrite(name) {
+				if len(args) == 0 {
+					return nil, &Error{Kind: KindInvalid, Message: "mpv 命令 " + name + " 要指明改哪个属性"}
+				}
+				prop, _ := args[0].(string)
+				if err := r.notePropWrite(h, prop); err != nil {
+					return nil, err
+				}
 			}
 			if err := need(h.Command, "player.command"); err != nil {
 				return nil, err
@@ -306,17 +320,13 @@ func (r *Runtime) installPlayer(sdk *goja.Object) {
 		})
 	})
 
+	/* 这两件是**壳的活**:打开官方子面板、显隐 OSD 都在界面那一层。
+	   上一版留了两个宿主钩子,而 core/plugin 一个都没填 —— 插件调了没反应。 */
 	_ = o.Set("openPanel", func(panel string) {
-		if h == nil || h.OpenPanel == nil {
-			r.throw(KindUnsupported, "这一版宿主没有提供 player.openPanel")
-		}
-		h.OpenPanel(panel)
+		r.shellTell("player.openPanel", map[string]any{"panel": panel})
 	})
 	_ = o.Set("setOsdVisible", func(visible bool) {
-		if h == nil || h.SetOsdVisible == nil {
-			r.throw(KindUnsupported, "这一版宿主没有提供 player.setOsdVisible")
-		}
-		h.SetOsdVisible(visible)
+		r.shellTell("player.setOsdVisible", map[string]any{"visible": visible})
 	})
 
 	_ = o.Set("getSubtitleText", func(c goja.FunctionCall) goja.Value {
@@ -359,8 +369,19 @@ func (r *Runtime) installPlayer(sdk *goja.Object) {
 			if err := need(h.Transcribe, "player.transcribe"); err != nil {
 				return nil, err
 			}
-			return h.Transcribe(opts, onProgress)
+			return h.Transcribe(r.ctx, opts, onProgress)
 		})
+	})
+
+	/* 按键(D563)。壳按下键时问一次核心层,回调回 true 就不再按默认处理。
+	   只在这个插件有可见的播放器面板/覆盖层时问得到 —— 判可见在壳那边,
+	   因为「哪一层在最上面」只有壳知道。 */
+	_ = o.Set("onKey", func(cb goja.Callable) goja.Value {
+		stop := r.addSlot(SlotKey, cb)
+		r.disposes = append(r.disposes, stop)
+		d := vm.NewObject()
+		_ = d.Set("dispose", stop)
+		return d
 	})
 
 	_ = o.Set("extractFrames", func(c goja.FunctionCall) goja.Value {
@@ -400,4 +421,29 @@ func (r *Runtime) throwErr(err error) {
 		r.throw(e.Kind, e.Message)
 	}
 	r.throw(KindInternal, err.Error())
+}
+
+// propWriteCommands 会改属性的 mpv 命令。第一个参数是属性名。
+var propWriteCommands = map[string]bool{
+	"set": true, "cycle": true, "add": true, "multiply": true,
+	"cycle-values": true, "change-list": true,
+}
+
+func isPropWrite(name string) bool { return propWriteCommands[strings.ToLower(strings.TrimSpace(name))] }
+
+// notePropWrite 走一遍 player.set 的规矩:脱敏清单上的不许改,改了的记账。
+func (r *Runtime) notePropWrite(h *PlayerHooks, prop string) error {
+	if prop == "" {
+		return &Error{Kind: KindInvalid, Message: "没给属性名"}
+	}
+	if PropRedacted(prop) {
+		return &Error{Kind: KindPermission, Message: "属性 " + prop + " 对插件只读(SPEC 9.1)"}
+	}
+	if h != nil && h.Get != nil {
+		before, _ := h.Get(prop)
+		r.props.note(prop, before)
+	} else {
+		r.props.note(prop, nil)
+	}
+	return nil
 }

@@ -33,14 +33,16 @@ function enabled(): boolean {
 
 async function scrobble(action: 'start' | 'pause' | 'stop', np: any) {
   if (!enabled()) return
-  const m = idsOf(np && np.item ? np.item : np) || remembered(String((np && np.itemId) || ''))
+  const item = (np && np.item) || {}
+  const m = idsOf(item) || remembered(String(item.id || ''))
   if (!m) {
     console.log('scrobble 跳过:这一条没有 TMDB / IMDb id,对不上 Trakt 的条目')
     return
   }
+  // 进度优先用事件里带的(那是这一刻的真值);播放器状态是兜底
   const st = player.state() as any
-  const d = (st && st.duration) || 0
-  const p = (st && st.position) || 0
+  const d = Number(np && np.durationSec) || (st && st.duration) || 0
+  const p = Number(np && np.positionSec) || (st && st.position) || 0
   const progress = d > 0 ? Math.min(100, Math.max(0, (p / d) * 100)) : 0
   const body: any = { progress }
   if (m.kind === 'movie') body.movie = { ids: m.ids }
@@ -67,8 +69,8 @@ export const scrobbleStop = (np: any) => scrobble('stop', np)
 export async function markBangumiEpisode(np: any) {
   if (!enabled()) return
   const item = (np && np.item) || {}
-  const subject = (item.externalIds && item.externalIds.bangumi) || remembered('bgm:' + (np.itemId || ''))
-  const episode = item.bangumiEpisodeId || (np && np.bangumiEpisodeId)
+  const subject = (item.externalIds && item.externalIds.bangumi) || remembered('bgm:' + (item.id || ''))
+  const episode = item.bangumiEpisodeId || (np && np.episodeId)
   if (!subject) return
   try {
     await bangumi.request('POST', '/v0/users/-/collections/' + subject, { type: 3 })

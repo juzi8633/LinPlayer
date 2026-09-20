@@ -143,6 +143,29 @@ func RegisterCommands(version string) {
 		wc, _ := a["with_children"].(bool)
 		return defaultClient.Detail(ctx, s, id, wc)
 	})
+	/* providers 条目的外部 id 表(Tmdb / Imdb / Tvdb / …)。
+	   分集自己通常没刮到这些,要回头问它所属的剧 —— 同步插件拿它对应 Trakt 条目,
+	   对不上就只能按片名搜,而片名搜在多语言库里经常搜错部。 */
+	list("emby.providers", func(ctx context.Context, s *Session, a map[string]any) (any, error) {
+		id := str(a, "item_id")
+		if id == "" {
+			return nil, bus.NewErr(bus.EInvalid, "缺少 item_id")
+		}
+		out := defaultClient.SeriesProviders(ctx, s, id)
+		if len(out) == 0 {
+			if sid := str(a, "series_id"); sid != "" {
+				out = defaultClient.SeriesProviders(ctx, s, sid)
+			}
+		}
+		// 键统一成小写:`.d.ts` 的 ExternalIds 是 tmdb/imdb/douban/bangumi
+		low := map[string]string{}
+		for k, v := range out {
+			if v = strings.TrimSpace(v); v != "" {
+				low[strings.ToLower(k)] = v
+			}
+		}
+		return low, nil
+	})
 	list("emby.seriesSeasons", func(ctx context.Context, s *Session, a map[string]any) (any, error) {
 		return defaultClient.Seasons(ctx, s, str(a, "series_id"))
 	})

@@ -309,7 +309,7 @@ func TestUI调试面板能渲染出来(t *testing.T) {
 	root := repoRoot(t)
 	dir := filepath.Join(root, "plugins", "devtools")
 	if _, err := os.Stat(dir); err != nil {
-		t.Skip("仓库里没有 plugins/devtools")
+		t.Fatal("仓库里没有 plugins/devtools —— 它是首发官方插件,不在就是真出事了")
 	}
 	paths.SetRoot(t.TempDir())
 	if _, err := config.Load(); err != nil {

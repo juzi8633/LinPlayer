@@ -234,6 +234,7 @@ func (r *Runtime) installSDK() error {
 	r.installEvents(sdk)
 	r.installServers(sdk)
 	r.installExt(sdk)
+	r.installSystem(sdk)
 	if err := r.installUI(sdk); err != nil {
 		return err
 	}

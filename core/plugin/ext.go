@@ -107,7 +107,7 @@ transcribeCurrent 转写**正在播的那一条**(D488)。
 ☠ 地址取自 mpv 的 `path`,不是让插件传:带 token 的取流地址只有宿主拿得到(D11)。
   开了预取代理时 `path` 是本地那一条,ffmpeg 照样读得了,而且不用再带鉴权头。
 */
-func transcribeCurrent(opts map[string]any, onProgress func(float64)) (any, error) {
+func transcribeCurrent(ctx context.Context, opts map[string]any, onProgress func(float64)) (any, error) {
 	url, _ := mpvProp("path").(string)
 	if url == "" {
 		return nil, fmt.Errorf("现在没有在播的东西,没法转写")
@@ -121,7 +121,7 @@ func transcribeCurrent(opts map[string]any, onProgress func(float64)) (any, erro
 		model = m
 	}
 	lang, _ := opts["lang"].(string)
-	text, err := transcribe.Transcribe(context.Background(), transcribe.Options{
+	text, err := transcribe.Transcribe(ctx, transcribe.Options{
 		URL: url, Headers: mpvHeaders(), Lang: lang, Model: model,
 	}, onProgress)
 	if err != nil {

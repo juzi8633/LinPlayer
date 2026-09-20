@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
+
+	"linplayer/core/bus"
 )
 
 // 错误类型,与 plugin-sdk.d.ts 的 PluginErrorKind 一一对应(附录 20.2)。
@@ -53,6 +55,9 @@ func (r *Runtime) toError(v any) error {
 	case error:
 		if errors.As(x, &ie) {
 			return &Error{Kind: KindTimeout, Message: "插件运行超时,已打断"}
+		}
+		if e := fromBusErr(x); e != nil {
+			return e
 		}
 		return &Error{Kind: KindInternal, Message: "插件内部错误", Detail: x.Error()}
 	case goja.Value:
@@ -207,3 +212,36 @@ func (g *ring[T]) list() []T {
 }
 
 func nowMS() int64 { return time.Now().UnixMilli() }
+
+/*
+fromBusErr 核心层命令的错误码 → 插件那边的 kind。
+
+☠ 不转的话**所有**宿主命令失败在插件那头都是 `internal`:
+
+	「还没连 Trakt」和「Trakt 服务器挂了」长得一模一样,插件只能都当成故障重试。
+	少了这一层,`.d.ts` 那张 PluginErrorKind 表对宿主 API 就是摆设。
+*/
+func fromBusErr(err error) *Error {
+	var be *bus.Err
+	if !errors.As(err, &be) {
+		return nil
+	}
+	kind := KindInternal
+	switch be.Code {
+	case bus.EAuth:
+		kind = KindNeedLogin
+	case bus.ENetwork:
+		kind = KindNetwork
+	case bus.EUpstream:
+		kind = KindSiteDown
+	case bus.EUnsupported, bus.EShutdown:
+		kind = KindUnsupported
+	case bus.ENotFound:
+		kind = KindNotFound
+	case bus.EPermission:
+		kind = KindPermission
+	case bus.EInvalid:
+		kind = KindInvalid
+	}
+	return &Error{Kind: kind, Message: be.Msg, Detail: be.Detail}
+}

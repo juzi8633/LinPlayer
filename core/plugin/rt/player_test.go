@@ -67,9 +67,26 @@ func jsonPlain(v any) string {
 // 清单里的属性读出来必须是脱敏值 —— 一条都不许漏。
 func TestPlayer脱敏清单上的属性读不到真值(t *testing.T) {
 	const secret = "http://服务器/x?api_key=不该被插件看见"
+	/* ☠ 判据是**逐名对账**,不是「表里至少有几项」。
+	   上一版写的是 `len(names) < 8`(表里有 16 项)—— 删掉
+	   `http-header-fields` 与 `loadfile` 之后四条用例全绿,
+	   而那两行正是 Authorization 与「插件自己拼地址去播」这两个口子。
+	   加新项不用改这里;**删项会当场红**,要删就得在这里一起删、说清为什么。 */
+	must := []string{
+		"path", "stream-open-filename", "stream-path", "http-header-fields",
+		"working-directory", "playlist", "playlist-path", "file-local-options",
+		"referrer", "user-agent", "cookies-file", "sub-file-paths",
+		"screenshot-directory", "input-ipc-server", "log-file", "config-dir",
+	}
 	names := RedactedProps()
-	if len(names) < 8 {
-		t.Fatalf("脱敏清单只有 %d 项 —— 表被删空了?", len(names))
+	have := map[string]bool{}
+	for _, n := range names {
+		have[n] = true
+	}
+	for _, n := range must {
+		if !have[n] {
+			t.Fatalf("脱敏清单里少了 %q —— 这一项读出来带着凭据", n)
+		}
 	}
 	for _, name := range append(names, "playlist/0/filename") {
 		r, fp := playerRT(t, ``)
@@ -106,6 +123,16 @@ func TestPlayer清单外的属性照常读得到(t *testing.T) {
 
 // 换片类命令对插件不开放(SPEC 9.1):放开等于让插件自己拼带 token 的地址去播。
 func TestPlayer换片类命令对插件不开放(t *testing.T) {
+	// 同上:逐名对账。删一行表的话这里先红。
+	for _, n := range []string{
+		"loadfile", "loadlist", "playlist-play-index", "playlist-next", "playlist-prev",
+		"playlist-remove", "playlist-clear", "run", "subprocess", "quit",
+		"load-config-file", "load-script",
+	} {
+		if !CommandBanned(n) {
+			t.Fatalf("禁用命令表里少了 %q —— 插件能拿它绕开宿主换片", n)
+		}
+	}
 	for _, name := range BannedCommands() {
 		r, fp := playerRT(t, ``)
 		_, err := r.Eval(context.Background(), BudgetData, "x.js",
@@ -142,3 +169,43 @@ func TestPlayer停用时还原改过的属性(t *testing.T) {
 }
 
 func jsonQuote(s string) string { b, _ := json.Marshal(s); return string(b) }
+
+/*
+改属性的 mpv 命令不许绕过 set 的规矩(SPEC 9.1 9.2,D302)。
+
+☠ `command('set', 'sub-scale', '2')` 和 `set('sub-scale','2')` 对用户是同一件事,
+  而上一版前者既不记账也不看脱敏清单:插件改过的东西停用时不还原(D302 白写),
+  脱敏清单上的属性也能被写。两条路的规矩必须一样。
+*/
+func TestPlayer用command改属性也要记账与挡脱敏项(t *testing.T) {
+	r, fp := playerRT(t, ``)
+	fp.vals["sub-scale"] = "1.0"
+
+	if _, err := r.Eval(context.Background(), BudgetData, "x.js",
+		`__linplayer_sdk.player.command('set', 'sub-scale', '2.5')`); err != nil {
+		t.Fatalf("正常属性用 command 改应当放行:%v", err)
+	}
+	r.RestoreProps()
+	fp.mu.Lock()
+	sets := append([]string(nil), fp.sets...)
+	fp.mu.Unlock()
+	restored := false
+	for _, s := range sets {
+		if strings.HasPrefix(s, "sub-scale=1.0") {
+			restored = true
+		}
+	}
+	if !restored {
+		t.Errorf("用 command 改的属性停用时没还原:%v", sets)
+	}
+
+	// 脱敏清单上的属性:从 command 这条路也要挡下来
+	_, err := r.Eval(context.Background(), BudgetData, "x.js",
+		`__linplayer_sdk.player.command('set', 'http-header-fields', 'Authorization: 偷来的')`)
+	if err == nil {
+		t.Fatal("command('set','http-header-fields',…) 放行了 —— 插件能改取流请求头")
+	}
+	if kindOf(err) != string(KindPermission) {
+		t.Errorf("挡下来的类型是 %s,应当是 permission:%v", kindOf(err), err)
+	}
+}

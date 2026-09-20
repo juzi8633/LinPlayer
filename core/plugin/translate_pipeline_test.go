@@ -29,7 +29,7 @@ func buildPipeline(t *testing.T) *rt.Runtime {
 	src := filepath.Join(repoRoot(t), "plugins", "subtitle-translate", "src", "pipeline.ts")
 	b, err := os.ReadFile(src)
 	if err != nil {
-		t.Skip("仓库里没有 plugins/subtitle-translate/src/pipeline.ts")
+		t.Fatalf("读 plugins/subtitle-translate/src/pipeline.ts 失败: %v", err)
 	}
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "src"), 0o755); err != nil {

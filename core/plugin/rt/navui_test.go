@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -64,28 +65,85 @@ func TestNavUI成员一个都不许少(t *testing.T) {
 	}
 }
 
-// 通知配额(D547):超出**折叠**,不是抛错、更不是丢。
-func TestUI通知配额超了要折叠不是报错(t *testing.T) {
+/*
+通知配额(D547):超出**折叠**,不是抛错、更不是丢。
+
+☠ 上一版只调 `notifyAllowed` 这个 helper,从不走 `ui.notify` —— 而真实路径上
+
+	超额那一支直接 return 了,「折叠」一条都没发过;壳那边的注释还写着
+	「折叠在核心层」。两边都以为是对方的事,通知就这么没了。
+	所以这一条**必须从 `ui.notify` 进去**,并且看壳真的收到了那条折叠通知。
+*/
+func TestUI通知超额要真发出一条折叠通知(t *testing.T) {
 	SetShellCaps(ShellCaps{Shell: true})
 	t.Cleanup(func() { SetShellCaps(ShellCaps{}) })
-	const id = "配额测试/插件"
-	for i := 0; i < notifyPerHour; i++ {
-		if !notifyAllowed(id) {
-			t.Fatalf("第 %d 条就被拦了,配额是 %d", i+1, notifyPerHour)
+
+	var live atomic.Bool
+	live.Store(true)
+	t.Cleanup(func() { live.Store(false) })
+	var mu sync.Mutex
+	var got []string
+	bus.Tap(func(name string, data json.RawMessage) {
+		if name != "plugin.shellRequest" || !live.Load() {
+			return
+		}
+		var m struct {
+			ID   int64           `json:"id"`
+			Op   string          `json:"op"`
+			Args json.RawMessage `json:"args"`
+		}
+		if json.Unmarshal(data, &m) != nil {
+			return
+		}
+		if m.Op == "ui.notify" {
+			mu.Lock()
+			got = append(got, string(m.Args))
+			mu.Unlock()
+		}
+		ShellResult(m.ID, true, json.RawMessage("null"), nil)
+	})
+
+	r := newRT(t, ``)
+	// 配额 + 3 条:前 5 条照发,后面的要折叠成一条
+	for i := 0; i < notifyPerHour+3; i++ {
+		if _, err := r.Eval(context.Background(), BudgetData, "x.js",
+			`__linplayer_sdk.ui.notify({title:'第几条'})`); err != nil {
+			t.Fatalf("第 %d 条 notify 抛了:%v", i+1, err)
 		}
 	}
-	if notifyAllowed(id) {
-		t.Fatalf("发了 %d 条之后还放行 —— 配额没生效", notifyPerHour)
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		n := len(got)
+		folded := false
+		for _, g := range got {
+			if strings.Contains(g, `"folded":true`) {
+				folded = true
+			}
+		}
+		mu.Unlock()
+		if folded {
+			if n > notifyPerHour+1 {
+				t.Fatalf("超额的那几条没被折叠,壳收到了 %d 条", n)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
+	mu.Lock()
+	defer mu.Unlock()
+	t.Fatalf("超额之后一条折叠通知都没发出去,壳收到的是:%v", got)
 }
 
 /*
 壳把 nav 这类命令办砸了,插件那头要看得见。
 
 ☠ 这几个 op 在定义源里返回 `void`,没有 Promise 可拒。上一版把错误
-  `_, _ =` 丢了,于是「路由名写错」「这一端没这个页面」「壳没接角标」
-  三种都表现为「调了没反应」—— 两端的壳各自独立报了这同一件事。
-  判据不是「有没有打日志」这种形式,是**错误文本真的出现在插件自己的日志里**。
+
+	`_, _ =` 丢了,于是「路由名写错」「这一端没这个页面」「壳没接角标」
+	三种都表现为「调了没反应」—— 两端的壳各自独立报了这同一件事。
+	判据不是「有没有打日志」这种形式,是**错误文本真的出现在插件自己的日志里**。
 */
 func TestNav壳办砸了要进插件日志(t *testing.T) {
 	SetShellCaps(ShellCaps{Shell: true})

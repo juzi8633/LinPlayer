@@ -192,7 +192,7 @@ async function onEnd(np: any) {
 
 function percentOf(np: any): number {
   const st = player.state() as any
-  const d = (st && st.duration) || np.duration || 0
-  const p = (st && st.position) || np.position || 0
+  const d = Number(np && np.durationSec) || (st && st.duration) || 0
+  const p = Number(np && np.positionSec) || (st && st.position) || 0
   return d > 0 ? Math.round((p / d) * 100) : 0
 }

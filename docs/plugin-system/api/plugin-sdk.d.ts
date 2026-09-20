@@ -1088,7 +1088,18 @@ export declare namespace player {
   function transcribe(opts?: { lang?: string; model?: string; onProgress?: (p: number) => void }): Promise<{ format: 'srt'; text: string }>
   /** 抽帧(需 ffmpeg 组件,宿主带 token 取流)。@see D538 */
   function extractFrames(item: MediaItem | string, times: number[], opts?: { width?: number; server?: string }): Promise<ArrayBuffer[]>
+  /**
+   * 播放器按键:只在这个插件有可见的播放器面板/覆盖层时问到。
+   * 回调返回 true = 这一下我接走了,宿主不再按默认处理。@see D563
+   */
+  function onKey(cb: (e: { key: PlayerKey; repeat?: boolean }) => boolean | Promise<boolean>): Disposable
 }
+
+/** 遥控器 / 键盘上与播放有关的键。数字键给直播输频道号。@see D563 */
+export type PlayerKey =
+  | 'up' | 'down' | 'left' | 'right' | 'ok' | 'back' | 'menu' | 'info'
+  | 'channelUp' | 'channelDown' | 'playPause' | 'stop'
+  | '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9'
 
 // ════════════════════════════════════════════════════════════════════
 // 25. 导航与页面 @see D84 D85 D133 D219 D220 D305 D407 D500

@@ -25,7 +25,7 @@ var SDKSpec = map[string][]string{
 	"media": {"favorites", "getChildren", "getItem", "getLatest", "history", "search", "setFavorite", "setPlayed", "setProgress"},
 	"nav": {"back", "onBack", "push", "replace", "setBadge", "setPageOptions"},
 	"oauth": {"authorize", "refresh"},
-	"player": {"addSubtitle", "command", "extractFrames", "get", "getSubtitleText", "observe", "openPanel", "play", "playUrl", "screenshot", "set", "setOsdVisible", "state", "tracks", "transcribe"},
+	"player": {"addSubtitle", "command", "extractFrames", "get", "getSubtitleText", "observe", "onKey", "openPanel", "play", "playUrl", "screenshot", "set", "setOsdVisible", "state", "tracks", "transcribe"},
 	"proxy": {"route", "url"},
 	"registry": {"list", "put", "remove", "watch"},
 	"secrets": {"get", "remove", "set"},

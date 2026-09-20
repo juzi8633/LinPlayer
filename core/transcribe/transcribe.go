@@ -6,7 +6,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"hash/fnv"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -50,14 +49,21 @@ func Transcribe(ctx context.Context, opt Options, onProgress func(float64)) (str
 		return "", err
 	}
 
-	dir := filepath.Join(paths.TempDir(), "transcribe")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	/* ☠ 每次一个**独立目录**,不能按地址哈希命名:同一条流被转写两次
+	   (用户点了两下、或者实时与整轨同时跑)时,两边写同一个 wav、
+	   先跑完的那个 defer 把另一边的文件删掉 —— 表现是「转写到一半说没产出字幕」。 */
+	root := filepath.Join(paths.TempDir(), "transcribe")
+	if err := os.MkdirAll(root, 0o755); err != nil {
 		return "", fmt.Errorf("建临时目录失败: %w", err)
 	}
-	stem := filepath.Join(dir, fmt.Sprintf("t_%08x", fnv32(opt.URL)))
+	dir, err := os.MkdirTemp(root, "t")
+	if err != nil {
+		return "", fmt.Errorf("建临时目录失败: %w", err)
+	}
+	defer os.RemoveAll(dir)
+	stem := filepath.Join(dir, "a")
 	wav := stem + ".wav"
 	srt := stem + ".srt"
-	defer func() { _ = os.Remove(wav); _ = os.Remove(srt) }()
 
 	report(onProgress, 0)
 	if err := extractAudio(ctx, deps.FFmpeg, opt, wav); err != nil {
@@ -84,12 +90,6 @@ func report(f func(float64), v float64) {
 	if f != nil {
 		f(v)
 	}
-}
-
-func fnv32(s string) uint32 {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(s))
-	return h.Sum32()
 }
 
 // headerBlock 把请求头拼成 ffmpeg -headers 要的一坨。

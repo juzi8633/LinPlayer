@@ -25,7 +25,11 @@ D514 的门禁:宿主 API 的**定义源是 `docs/plugin-system/api/plugin-sdk.d
 
 // implementedFully 这些命名空间声称「定义源里有几个就实现几个」。
 // 阶段 ② 起逐个往里加 —— 加进来之后少一个成员就红。
-var implementedFully = []string{"storage", "secrets", "cookies", "assets", "crypt", "html", "js", "registry", "settings", "app"}
+var implementedFully = []string{
+	"storage", "secrets", "cookies", "assets", "crypt", "html", "js", "registry", "settings", "app",
+	// 阶段 ③ 做齐的:少一个成员当场红
+	"player", "nav", "ui", "events", "ext", "system", "servers", "trakt", "bangumi",
+}
 
 // sdkShape 问运行时:__linplayer_sdk 上真有哪些命名空间、每个下面有哪些键。
 func sdkShape(t *testing.T) map[string][]string {
@@ -265,10 +269,6 @@ var notYetImplemented = map[string]string{
 	"oauth.refresh":      "同上",
 	"proxy.route":        "本地代理路由跟阶段 ④ 的直播一起接",
 	"proxy.url":          "同上",
-	"system.clipboard":   "剪贴板 / 打开外部应用 / 分享要壳实现,阶段 ③ 接",
-	"system.openApp":     "同上",
-	"system.openUrl":     "同上",
-	"system.share":       "同上",
 	"wallpaper.set":      "壁纸是阶段 ⑤",
 
 	// media.*(D92 的「封装好的有限接口」):要先把图片地址脱 api_key、

@@ -91,6 +91,7 @@
 | [x] | `emby.search` | `search` | `query: String, types: Option<Vec<String>>, limit: Option<u32>, parent_id: Option<String>` | `Result<Vec<Item>, String>` | ✅ |
 | [x] | `emby.seasonEpisodes` | `season_episodes` | `parent_id: String, start_index: Option<i64>, limit: Option<i64>` | `Page` | ✅ |
 | [x] | `emby.seriesSeasons` | `series_seasons` | `series_id: String` | `Result<Vec<emby::SeasonInfo>, String>` | ✅ |
+| [x] | `emby.providers` | **新增** | `item_id: String, series_id: Option<String>` | `Map<String,String>` | ✅ | <!-- 条目的外部 id 表(tmdb/imdb/…),键小写。同步插件拿它对 Trakt 条目;分集自己没刮到就问它所属的剧 -->
 | [x] | `emby.setBlocked` | `set_blocked` | `item_id: String, name: String, blocked: bool` | `()` | ✅ |
 | [x] | `emby.setFavorite` | `set_favorite` | `item_id: String, fav: bool` | `Result<(), String>` | ✅ |
 | [x] | `emby.setPlayed` | `set_played` | `item_id: String, played: bool` | `Result<(), String>` | ✅ |
@@ -146,6 +147,7 @@
 | [x] | `player.play` | `play` | `item_id: String, resume_secs: f64, from_start: Option<bool>, media_source_id: Option<String>, engine: Option<String>` | `Result<PlayResult, String>` | ✅ |
 | [x] | `player.playExternal` | `play_external` | `item_id: String, resume_secs: f64, media_source_id: Option<String>, engine: Option<String>` | `Result<String, String>` | ✅ |
 | [x] | `player.playLocal` | `play_local` | `id: String, resume_secs: f64` | `Result<f64, String>` | ✅ |
+| [x] | `player.playUrl` | **新增** | `url: String, headers: Option<Map<String,String>>, title: Option<String>, start_secs: Option<f64>` | `{url, title}` | ✅ | <!-- 直接播一条地址(直播频道 / 插件找到的流)。不走 Emby 上报与续播记录 -->
 | [x] | `player.screenshot` | `screenshot` | `dir: Option<String>` | `Result<String, String>` | ✅ |
 | [x] | `player.seek` | `seek` | `pos: f64` | `Result<(), String>` | ✅ |
 | [x] | `player.setAspectRatio` | `set_aspect_ratio` | `ratio: String` | `Result<(), String>` | ✅ |
@@ -388,6 +390,8 @@
 | [x] | `player.getSubtitleText` | **新增** | `track_id?` | `{format,text}` | — | <!-- 字幕轨全文(SPEC 9.7 D487):宿主带 token 拉,插件拿不到地址 -->
 | [x] | `plugin.setEnv` | **新增** | `theme_mode, theme_tokens, reduced_motion` | `—` | ✅ |
 | [x] | `plugin.shellResult` | **新增** | `id, ok, data?, error?` | `—` | ✅ |
+| [x] | `plugin.backRequest` | **新增** | `plugin: Option<String>` | `{handled: bool}` | ✅ | <!-- 壳按下返回键时问一次:有插件用 nav.onBack 接走就回 true(D85) -->
+| [x] | `plugin.playerKey` | **新增** | `key: String, repeat: Option<bool>, plugin: Option<String>` | `{consumed: bool}` | ✅ | <!-- 播放器按键问一次:插件的 player.onKey 接走就回 true(D563)。TV 直播换台/数字键靠它 -->
 | [x] | `plugin.setCookies` | **新增** | `plugin_id, jar, url, cookies` | `—` | ✅ |
 | [x] | `plugin.ui.mount` | **新增** | `plugin, target, kind, props?` | `{surface,frame,ops}` | ✅ |
 | [x] | `plugin.ui.unmount` | **新增** | `surface` | `—` | ✅ |

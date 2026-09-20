@@ -25,7 +25,7 @@ func TestSourceMap报错栈映射回TS行号(t *testing.T) {
 	root := repoRoot(t)
 	dir := filepath.Join(root, "plugins", "devtools")
 	if _, err := os.Stat(filepath.Join(dir, "src")); err != nil {
-		t.Skip("仓库里没有 plugins/devtools/src")
+		t.Fatal("仓库里没有 plugins/devtools/src —— 它是首发官方插件,不在就是真出事了")
 	}
 	paths.SetRoot(t.TempDir())
 	if _, err := config.Load(); err != nil {

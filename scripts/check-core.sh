@@ -29,7 +29,11 @@ step "1. go vet + go test"
 # ★ libmpv 要在 DLL 搜索路径上:core/player 是 cgo 包,它的测试二进制起不来就是
 #   0xc0000135(找不到 DLL),而那个错误看起来像「测试失败」而不是「环境不对」。
 #   2026-08-31 真绊过一次:之前一直是 go 的测试缓存在挡着,包一改动就现形。
-( cd "$ROOT/core" && PATH="$ROOT/third_party/libmpv:$PATH" go vet ./...   && PATH="$ROOT/third_party/libmpv:$PATH" go test ./... ) || fail=$((fail + 1))
+# ☠ `-count=1` 不许去掉:有几条测试跑的是**插件的 .ts 源文件**(拿真文件编出来在 goja 里跑),
+#   而 go 的测试缓存只认 Go 侧的输入 —— 改坏 `plugins/*/src/*.ts` 之后 `go test` 会回
+#   `ok (cached)`,门禁照样全绿。2026-09-21 实测:改坏三处解析逻辑,带缓存全绿,
+#   加 -count=1 后当场红。
+( cd "$ROOT/core" && PATH="$ROOT/third_party/libmpv:$PATH" go vet ./...   && PATH="$ROOT/third_party/libmpv:$PATH" go test -count=1 ./... ) || fail=$((fail + 1))
 
 step "2. 出库"
 bash "$ROOT/scripts/build-core.sh" >/dev/null || fail=$((fail + 1))

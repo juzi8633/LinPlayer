@@ -296,3 +296,72 @@
 | `media` / `system` / `oauth` / `emby` / `download` 命名空间 | 都记在 `rt/sdk_contract_test.go` 的 `notYetImplemented` 账上,每条带「什么时候做」。账是判据的一部分:不记在账上的缺口会让那条判据当场红 |
 | `<Player>` 两端仍是「不可用」占位 | D561 的结论要给 GL 初始化/销毁加引用计数 + 前台仲裁,跟着这一批一起做 |
 | 审计剩下的 7 条欠账 | 见上一节 |
+
+---
+
+# 阶段 ③ 的对抗审计与返工(2026-09-21)
+
+派了一个只读代码、不读我结论的审计 agent。它抓到的东西比这一轮自己写的判据多 ——
+下面按「它说了什么 / 我验了什么 / 改成什么样」记,**每条都反向注入验过会红**。
+
+## 一、最要命的一条:同步插件的记账一次都没发生过
+
+| | |
+|---|---|
+| 症状 | `linplayer/sync` 的 scrobble 从来没真发出去过,而盯它的测试正因为「它没发生」才绿 |
+| 根因 | 事件载荷的字段名和定义源**三个全对不上**:`.d.ts:1041` 是 `item` / `positionSec` / `durationSec`,宿主发的是 `itemId` / `position` / `duration`(旧 `core/plugin/events.go:48`) |
+| 用户能看到的 | 插件日志里一句「这一条没有 TMDB / IMDb id」—— 把宿主的问题说成了片源的问题,用户会去怀疑刮削 |
+| 假绿怎么来的 | 判据写的是 `strings.Contains(msg, "scrobble")`,而那句跳过日志里正好有这四个字 |
+| 现在 | `core/plugin/nowplaying.go` 按定义源组载荷,并且**真去取外部 id**(`emby.providers`,新命令);测试改成拿假的代发命令记账,判「`/scrobble/start` 有没有被调到」 |
+| 反向注入 | 把载荷改回 `itemId/position/duration` → `sync_plugin_test.go:153` 当场红:`没等到代发 "/scrobble/start";这一轮实际发出去的是:[]` |
+
+## 二、判据本身的返工
+
+| 原来 | 问题 | 现在 |
+|---|---|---|
+| `rt/player_test.go:72` `len(names) < 8` | 表里 16 项,删掉 `http-header-fields` 和 `loadfile` 之后四条用例全绿 | 逐名对账(`player_test.go:81`),删项当场红;加项不用改 |
+| `rt/navui_test.go:63` 只调 `notifyAllowed` | 真实路径上超额那一支直接 return,「折叠」核心层没做、壳注释写着「折叠在核心层」—— 两边都以为是对方的事 | 从 `ui.notify` 进,看壳**真的收到**那条折叠通知(`navui_test.go:70`);折叠在 `rt/navui.go:116 notifyFold` |
+| 四处 `t.Skip("仓库里没有 …")` | 仓库资产找不到 = 真出事了,不是跳过的理由 | 改成 `t.Fatal`;转写那条改成指一个不存在的路径,任何机器上都走得到 |
+| `implementedFully` 不含新命名空间 | player/nav/ui/events/ext/system 少成员不会红 | 九个命名空间全进表(`sdk_contract_test.go:27`) |
+| `go test` 带缓存 | 跑插件 `.ts` 的那几条测试,改坏 TS 之后回 `ok (cached)`,门禁全绿 | `check-core.sh:36` 加 `-count=1`,注释写死不许去掉 |
+
+## 三、静默失败(逐条改掉)
+
+| 位置 | 原来的表现 | 现在 |
+|---|---|---|
+| `rt/navui.go` `tell()` | `nav.*` 的错误被 `_, _ =` 丢掉 → 「路由名写错」「这一端没这个页面」都表现为「调了没反应」 | 落进插件自己的日志(`navui.go:61`),调试面板看得到 |
+| `rt/navui.go` `nav.onBack` | 订的是一个**没人发**的事件,返回值还被丢掉 —— 「回调返回 false 阻止返回」从来没生效 | 改成壳主动问(`rt/slots.go` + `plugin.backRequest`),D563 |
+| `core/bus/bus.go` `Emit` | `q == nil` 时直接 return,进程内旁路整条链是死的 | 旁路通知挪到队列判空**之前**(`bus.go:146`) |
+| `rt/errors.go` | 宿主命令的错误码全被压成 `internal`:「还没连 Trakt」和「Trakt 挂了」长得一样 | `fromBusErr`(`errors.go:225`)把 9 个错误码转成对应 kind |
+| `core/plugin/player.go` `observeProp` | 属性名拼错时每轮 `continue` → 「订阅了但从不回调」 | 头一次就 `bus.Logf("warn", …)` |
+| `rt/player.go` `command` | `command('set', …)` 既不记账也不看脱敏清单 → D302 的还原白写,脱敏项能被改 | 走同一条规矩(`player.go:229 notePropWrite`) |
+| `pipeline.ts:112` | `failed >= total && lastErr`:引擎 reject 一个 falsy 值时全部失败也静默交出原文 | 只判条数;部分失败也 `console.warn` 留痕 |
+| `live.tsx:22` | `useEffect` 依赖数组为空 → 设置里开「实时模式」要退出重进才生效 | 依赖 `[live, target, engineId]`;失败也留痕 |
+| `core/transcribe` | 临时文件按地址哈希命名(两次转写互删)、`context.Background()`(停用插件后 ffmpeg/whisper 继续跑满 CPU)、解包失败留半截 exe 在最终名上 | 每次独立临时目录;ctx 绑插件生命周期(`rt.Runtime.Ctx()`);解包先写 `.part` 再改名 |
+| `rt/system.go` `badAppTarget` | 漏 UNC、`\?\`、POSIX 绝对路径 | 三种都挡(`system.go:86`),测试里各一条 |
+
+## 四、审计说了、我验完认为**不成立**的
+
+| 它说的 | 实测 |
+|---|---|
+| 模型下载被上游提前截断会当成「已下载」 | Go 的 transport 对「Content-Length 说 1MB 只给 4KB」自己就报 `unexpected EOF`,`Download` 那条路会删掉 `.part`。长度自检还是加了(上游不给长度时它是第二道),但判据改成钉**结果**(正式文件不许存在),不钉报错文案 |
+
+## 五、这一轮新增的能力
+
+| 件 | 出处 | 为什么 |
+|---|---|---|
+| `player.onKey`(D563) | `rt/slots.go` + `core/plugin/keys.go` + `plugin.playerKey` | 没有它 SPEC 17.2 的 TV 直播操作一条都做不了,而 D544 把它们列成验收项 —— 规格自相矛盾,按 DECISIONS 判并追了决定 |
+| `system` 命名空间 | `rt/system.go` + 两端壳 | D196 D197;`openApp` 挡本机文件与本机路径(挡的是本机程序,不是「不认识的 scheme」) |
+| `ext` 命名空间 | `rt/ext.go` + `core/plugin/ext.go` | D380~D382;确认框放 rt 这一层,壳问不了人就**不下** |
+| `player.playUrl` | `core/player/playurl.go` | 直播频道要播一条裸地址,且**不能**走 Emby 上报那条路 |
+| `emby.providers` | `core/emby/commands.go:146` | 同步插件要外部 id 才对得上 Trakt 条目 |
+
+## 六、还没做的(阶段 ③ 剩下的)
+
+| 项 | 为什么 |
+|---|---|
+| **实际登录一次跑通 scrobble**(D545 明写) | 要真的 Trakt / Bangumi 账号,我手上没有。现在至少「有 id 就一定会发」这条有判据钉着了 |
+| `media` / `oauth` / `emby` / `download` 命名空间 | 记在 `rt/sdk_contract_test.go` 的 `notYetImplemented` 账上,每条带「什么时候做」 |
+| `<Player>` 两端仍是「不可用」占位 | D561 的结论要给 GL 初始化/销毁加引用计数 + 前台仲裁 |
+| 两端壳还没接 `player.openPanel` / `player.setOsdVisible` / `plugin.backRequest` / `plugin.playerKey` | 核心层这一侧已经齐了;壳侧跟阶段 ④ 的直播 TV 操作一起做 |
+| 审计提的 `NowPlaying` 之外的契约核对 | 这一轮只对齐了 `NowPlaying`;`.d.ts` 与宿主载荷的**逐个**核对要做成门禁 |

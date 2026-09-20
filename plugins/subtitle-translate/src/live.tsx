@@ -19,11 +19,17 @@ import { engineOf } from './engines'
 export function LiveOverlay() {
   const [line, setLine] = useState('')
 
+  // 依赖里带上这几项:上一版是空数组,用户在设置里打开「实时模式」
+  // 要退出重进才生效,而界面上开关已经是开着的
+  const live = !!settings.get('live')
+  const target = String(settings.get('target') || 'zh-Hans')
+  const engineId = String(settings.get('engine') || 'openai')
+
   useEffect(() => {
-    if (!settings.get('live')) return
-    const to = String(settings.get('target') || 'zh-Hans')
+    if (!live) return
+    const to = target
     const from = String(settings.get('source') || 'auto')
-    const engine = engineOf(String(settings.get('engine') || 'openai'))
+    const engine = engineOf(engineId)
 
     let current = ''
     let seq = 0
@@ -41,12 +47,16 @@ export function LiveOverlay() {
           last = (out && out[0]) || ''
           setLine(last)
         },
-        () => { if (mine === seq) setLine('') },
+        (e) => {
+          // 失败要留痕:全静默的话用户只看到「实时翻译开着但一行都没有」
+          console.warn('实时翻译这一句没成功:' + ((e && e.message) || e))
+          if (mine === seq) setLine('')
+        },
       )
     }, { hz: 4 })
 
     return () => sub.dispose()
-  }, [])
+  }, [live, target, engineId])
 
   if (!line) return null
   return (

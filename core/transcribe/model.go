@@ -221,5 +221,12 @@ func downloadTo(ctx context.Context, u, out string, onProgress func(done, total 
 			return fmt.Errorf("下载中断: %w", rerr)
 		}
 	}
+	/* ☠ 收到的字节数要对得上 Content-Length。上游提前断流时 `Read` 回的就是
+	   EOF —— 不比这一下的话,半截权重会被改名成正式文件,`Downloaded()` 从此
+	   一直说「已下载」,而 whisper 每次都在同一个地方解析失败。用户看到的是
+	   「转写失败」,删了重下也没用,因为根本不会重下。 */
+	if total > 0 && got != total {
+		return fmt.Errorf("下载不完整:收到 %d 字节,应当是 %d —— 网络中途断了,请重试", got, total)
+	}
 	return nil
 }

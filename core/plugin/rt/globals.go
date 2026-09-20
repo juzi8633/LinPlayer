@@ -342,7 +342,13 @@ func (r *Runtime) jsValue(v any) goja.Value {
 func (r *Runtime) errValue(err error) goja.Value {
 	e, ok := err.(*Error)
 	if !ok {
-		e = &Error{Kind: KindInternal, Message: err.Error()}
+		// 核心层命令的错误码要转成插件那边的 kind(见 fromBusErr):
+		// 不转的话「还没连账号」和「服务器挂了」在插件那头都是 internal
+		if be := fromBusErr(err); be != nil {
+			e = be
+		} else {
+			e = &Error{Kind: KindInternal, Message: err.Error()}
+		}
 	}
 	o := r.newPluginError(e.Kind, e.Message)
 	if e.RetryAfter > 0 {
