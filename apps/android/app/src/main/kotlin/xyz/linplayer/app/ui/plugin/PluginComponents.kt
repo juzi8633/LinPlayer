@@ -37,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -149,7 +150,7 @@ internal fun Modifier.plugFocusEvents(n: UiNode, surface: String, app: AppState)
 
 @Composable
 private fun Modifier.memoFocus(id: Int): Modifier =
-    this.memo("plug.$id", claimsInitialFocus(id))
+    this.memo(plugKey(id), claimsInitialFocus(id))
 
 /**
  * 一颗可选 chip。两端各用各的官方那颗:手机 [ToneChip],TV `TvButton`(自带焦点态与放大)。
@@ -163,7 +164,7 @@ internal fun PlugChip(
     if (LocalPluginTv.current) xyz.linplayer.app.tv.kit.TvButton(
         label, primary = on, enabled = enabled,
         modifier = Modifier.memo(
-            "plug.$nodeId.$index", index == 0 && claimsInitialFocus(nodeId),
+            plugKey(nodeId, index), index == 0 && claimsInitialFocus(nodeId),
         ),
         onClick = onClick,
     ) else ToneChip(label, on, Modifier) { if (enabled) onClick() }
@@ -210,7 +211,7 @@ internal fun PosterCard(
             title = it0.cardTitle, sub = remarks ?: it0.cardSub.orEmpty(),
             watched = it0.played, unplayed = it0.unplayed.toInt(),
             modifier = Modifier.memo(
-                "plug.$id.$index", index == 0 && claimsInitialFocus(id),
+                plugKey(id, index), index == 0 && claimsInitialFocus(id),
             ),
             onLongClick = onLongPress,
             onClick = onPress,
@@ -552,7 +553,7 @@ internal fun PlugSlider(n: UiNode, m: Modifier, surface: String, app: AppState) 
         onValueChange = { nv -> v = nv; fire(app, surface, n.fn("onChange"), nv) },
         modifier = m.then(
             if (LocalPluginTv.current)
-                Modifier.memo("plug.${n.id}", claimsInitialFocus(n.id))
+                Modifier.memo(plugKey(n.id), claimsInitialFocus(n.id))
             else Modifier
         ),
         enabled = !n.bool("disabled"),
@@ -760,5 +761,48 @@ internal fun PlugPlayer(n: UiNode, m: Modifier) {
         "内嵌播放器",
         "视频层跟随区域还没做;先用 nav 跳官方播放页",
         m.height((n.style().numOf("height") ?: 200.0).dp),
+    )
+}
+
+/**
+ * 输入框(SPEC 7.4,D135)。
+ *
+ * 默认**非受控**:原生自己维护文字,只在失焦与提交时回传。
+ * 声明 `live` 才逐字回传 —— 每敲一个字过一次桥,一千项的筛选框会在输入时卡住,
+ * 而那正是非受控的由来。
+ */
+/** 回车**按下**那一刻。抬起也发一次的话 onSubmit 会被调两遍。 */
+private fun isEnterDown(ev: androidx.compose.ui.input.key.KeyEvent): Boolean {
+    val k = ev.nativeKeyEvent.keyCode
+    return (k == android.view.KeyEvent.KEYCODE_ENTER || k == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER) &&
+        ev.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN
+}
+
+@Composable
+internal fun PlugTextInput(n: UiNode, m: Modifier, surface: String, app: AppState) {
+    val live = n.bool("live")
+    val changeFn = n.fn("onChangeText")
+    val submitFn = n.fn("onSubmit")
+    var text by androidx.compose.runtime.remember(n.id) {
+        androidx.compose.runtime.mutableStateOf(n.str("defaultValue").orEmpty())
+    }
+    xyz.linplayer.app.ui.components.LpField(
+        text,
+        {
+            text = it
+            if (live) fire(app, surface, changeFn, it)
+        },
+        n.str("placeholder").orEmpty(),
+        m.fillMaxWidth()
+            // 非受控那一档在失焦时回传一次:不回传的话插件永远拿不到用户输的东西
+            .onFocusChanged { st -> if (!st.isFocused && !live) fire(app, surface, changeFn, text) }
+            .onPreviewKeyEvent { ev ->
+                if (isEnterDown(ev) && submitFn != null && !n.bool("multiline")) {
+                    fire(app, surface, submitFn, text); true
+                } else false
+            },
+        password = n.bool("secret"),
+        lines = if (n.bool("multiline")) 3 else 1,
+        enabled = !n.bool("disabled"),
     )
 }

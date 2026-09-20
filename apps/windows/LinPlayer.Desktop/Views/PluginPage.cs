@@ -536,7 +536,7 @@ public sealed class PluginDetailPage : PageBase
         {
             var vals = d.TryGetProperty("values", out var v) ? v : default;
             var form = new StackPanel { Spacing = 10 };
-            foreach (var s in settings) if (SettingRow(s, vals) is { } row) form.Children.Add(row);
+            foreach (var s in settings) if (SettingRow(_core, _id, s, vals) is { } row) form.Children.Add(row);
             _root.Children.Add(Card("设置", form));
         }
 
@@ -603,7 +603,8 @@ public sealed class PluginDetailPage : PageBase
         _root.Children.Add(Card("版本与管理", ops));
     }
 
-    private Control? SettingRow(JsonElement s, JsonElement vals)
+    /// <summary>一条声明式设置项画成控件。官方设置页里的插件分节也用它(SPEC 6.2)。</summary>
+    internal static Control? SettingRow(CoreClient core, string id, JsonElement s, JsonElement vals)
     {
         var key = Mi.Str(s, "key");
         var title = Mi.Str(s, "title") is { Length: > 0 } t ? t : key;
@@ -611,7 +612,7 @@ public sealed class PluginDetailPage : PageBase
             : s.TryGetProperty("default", out var df) ? df : default;
         async Task Save(object? value)
         {
-            try { await _core.PluginSetSetting(new { id = _id, key, value }); }
+            try { await core.PluginSetSetting(new { id, key, value }); }
             catch (Exception e) { Toast.Error("没存上:" + LibraryPage.Advice(e)); }
         }
         Control? input = null;
@@ -673,7 +674,7 @@ public sealed class PluginDetailPage : PageBase
                 var action = Mi.Str(s, "action");
                 return Described(PluginPage.Btn(title, async () =>
                 {
-                    await _core.SourceRunCommand(new { plugin_id = _id, command = action });
+                    await core.SourceRunCommand(new { plugin_id = id, command = action });
                     Toast.Show("完成");
                 }), s);
             case "group":

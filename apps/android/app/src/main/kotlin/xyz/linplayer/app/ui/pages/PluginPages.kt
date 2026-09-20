@@ -428,7 +428,7 @@ fun PluginDetailPage(nav: NavController, entry: NavBackStackEntry) {
 
 /** manifest 设置项的一行。password 值存密钥区(核心层管),这里只当普通文本框画。 */
 @Composable
-private fun SettingRow(app: AppState, id: String, s: JsonObject, cur: JsonElement?) {
+internal fun SettingRow(app: AppState, id: String, s: JsonObject, cur: JsonElement?) {
     val scope = rememberCoroutineScope()
     val key = s.str("key") ?: return
     val title = s.str("title")?.takeIf { it.isNotEmpty() } ?: key

@@ -137,7 +137,13 @@ fun TvRoot(app: AppState) {
 /** 主题 + 字阶 + 深色底 + Toast。拆出来是给 JVM 出图 / 焦点测试直接挂真页面用的。 */
 @Composable
 fun TvFrame(app: AppState, config: ViewConfiguration = LocalViewConfiguration.current, content: @Composable () -> Unit) {
-    CompositionLocalProvider(LocalApp provides app, LocalTvType provides TypeB, LocalViewConfiguration provides config) {
+    /* 插件 UI 在 TV 上必须整个 shell 都走可聚焦的那一套。只在插件整页上给的话,
+       锚点块(详情页 / 设置页)画出来的是手机控件 —— 它们**没有 FocusTarget**,
+       遥控器的方向键把它们当不存在直接跳过,而截图上按钮画得好好的。 */
+    CompositionLocalProvider(
+        LocalApp provides app, LocalTvType provides TypeB, LocalViewConfiguration provides config,
+        xyz.linplayer.app.ui.plugin.LocalPluginTv provides true,
+    ) {
         MaterialTheme(colorScheme = darkColorScheme(background = TvC.bg, surface = TvC.surface2, onSurface = TvC.fg)) {
             Box(Modifier.fillMaxSize().background(TvC.bg)) {
                 content()

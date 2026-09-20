@@ -33,9 +33,9 @@ public static class PluginShell
         var app = Avalonia.Application.Current;
         var dark = app?.ActualThemeVariant != Avalonia.Styling.ThemeVariant.Light;
         var tokens = new Dictionary<string, object>();
-        foreach (var (name, key) in ColorTokens)
+        foreach (var (name, key) in PluginTokens.Colors)
             if (Tok.Of(key) is Avalonia.Media.ISolidColorBrush b) tokens[name] = Hex(b.Color);
-        foreach (var (name, v) in NumberTokens) tokens[name] = v;
+        foreach (var (name, v) in PluginTokens.Numbers) tokens[name] = v;
         _ = core.PluginSetEnv(new
         {
             reduced_motion = Motion.Reduced,
@@ -46,23 +46,9 @@ public static class PluginShell
 
     private static string Hex(Avalonia.Media.Color c) => $"#{c.R:x2}{c.G:x2}{c.B:x2}{c.A:x2}";
 
-    private static readonly (string Name, string Key)[] ColorTokens =
-    [
-        ("color.bg", "Bg"), ("color.surface", "Panel"), ("color.surfaceAlt", "PanelAlt"),
-        ("color.ink", "Ink"), ("color.ink2", "Ink2"), ("color.ink3", "Ink3"),
-        ("color.line", "Line"), ("color.lineStrong", "LineStrong"),
-        ("color.accent", "Accent"), ("color.accentInk", "AccentInk"), ("color.accentSoft", "AccentSoft"),
-        ("color.ok", "Ok"), ("color.warn", "Warn"), ("color.danger", "Danger"),
-    ];
+    // 表在渲染器那边(PluginTokens):解 `token:名字` 和报给核心层用的是**同一张**。
+    // 两处各写一份的话,改一个名字就有一处会悄悄失效(D556)。
 
-    // 刻度是枚举不是区间(见 CLAUDE.md 的那张表):这里就是那把尺子对外的那一份
-    private static readonly (string Name, double Value)[] NumberTokens =
-    [
-        ("radius.small", 6), ("radius.card", 10), ("radius.pill", 999),
-        ("space.xs", 2), ("space.sm", 6), ("space.md", 10), ("space.lg", 14), ("space.xl", 18),
-        ("font.size.body", 14), ("font.size.title", 18), ("font.size.h1", 26),
-        ("motion.duration.fast", 120), ("motion.duration.normal", 220),
-    ];
 
     public static void Handle(CoreClient core, JsonElement req)
     {

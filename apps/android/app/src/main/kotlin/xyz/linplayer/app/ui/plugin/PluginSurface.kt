@@ -135,6 +135,8 @@ fun PluginSurface(
     kind: String = "block",
     props: Map<String, Any?>? = null,
     modifier: Modifier = Modifier,
+    claimInitialFocus: Boolean = true,
+    focusNs: String? = null,
 ) {
     val app = LocalApp.current
     val tree = remember(plugin, target) { SurfaceTree() }
@@ -150,7 +152,12 @@ fun PluginSurface(
         val since = PluginNavClock.take()
         val job = app.bg.launch {
             runCatching {
-                app.call("plugin.ui.mount", args("plugin" to plugin, "target" to target, "kind" to kind))
+                /* props 在**挂载那一刻**读一次:核心层没有「改 props」这条命令,
+                   跟着重组重发只会把同一块反复重挂。所以调用方要么等数据齐了再挂,
+                   要么自己换 key 重挂。 */
+                val mountArgs = args("plugin" to plugin, "target" to target, "kind" to kind)
+                app.call("plugin.ui.mount", JsonObject(
+                    mountArgs + (props?.let { mapOf("props" to jsonOf(it)) } ?: emptyMap())))
             }.onSuccess { r ->
                 // 首帧跟着 mount 的返回值来:等事件的话会漏掉它(见 core/plugin/ui.go 那条)
                 tree.apply(r.obj()?.get("ops").arr())
@@ -224,8 +231,11 @@ fun PluginSurface(
     // density 只是让上面那段在缩放变化时也重算一次
     @Suppress("UNUSED_EXPRESSION") density
 
-    // 这一块里第一个可交互元素吃初始焦点(TV);0 = 还没人认领
-    val firstFocus = remember(plugin, target) { mutableStateOf(0) }
+    /* 这一块里第一个可交互元素吃初始焦点(TV);0 = 还没人认领。
+       ☠ 官方页上的锚点块要传 claimInitialFocus=false:那一页的初始焦点归官方元素
+       (详情页是播放键),插件块抢过去就成了「进页焦点落在一块插件里」。
+       -1 是「谁都别认领」—— 节点 id 从 1 起,永远匹配不上。 */
+    val firstFocus = remember(plugin, target) { mutableStateOf(if (claimInitialFocus) 0 else -1) }
     val focusKeys = remember(plugin, target) { androidx.compose.runtime.mutableStateMapOf<
         String, androidx.compose.ui.focus.FocusRequester>() }
 
@@ -233,6 +243,9 @@ fun PluginSurface(
         androidx.compose.runtime.CompositionLocalProvider(
             LocalPluginFirstFocus provides firstFocus,
             LocalPluginFocusKeys provides focusKeys,
+            // 一页挂两块以上插件时必须给 [focusNs]:两边的节点 id 都从 1 起,
+            // 不分开的话后挂的那块把先挂的 requester 覆盖掉,返回时焦点落到别人身上
+            LocalPluginKeyNs provides (focusNs ?: ""),
         ) {
         when {
             state == "error" -> PluginError(error)

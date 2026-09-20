@@ -57,6 +57,11 @@ import xyz.linplayer.app.tv.kit.TvText
 import xyz.linplayer.app.tv.kit.TvW
 import xyz.linplayer.app.tv.kit.contentArea
 import xyz.linplayer.app.tv.kit.tvType
+import xyz.linplayer.app.ui.plugin.SectionBlock
+import xyz.linplayer.app.ui.plugin.heading
+import xyz.linplayer.app.ui.plugin.jsonOf
+import xyz.linplayer.app.ui.plugin.rememberSettingsSections
+import xyz.linplayer.app.ui.plugin.valueOf
 import xyz.linplayer.app.ui.pages.args
 import xyz.linplayer.app.ui.pages.fmtSize
 import xyz.linplayer.app.ui.pages.jsonArrayOf
@@ -110,6 +115,14 @@ fun SettingsPage() {
                             7 -> item { StorageGroup(overlay) }
                             else -> item { AboutGroup(overlay) }
                         }
+                        /* 插件分节(SPEC 6.2 D286)。「网络」那一类对应 `settings.network`,
+                           它是凭据页(D407)—— 故意不给锚点,挡掉的条数由加载时打日志。 */
+                        val anchor = when (cat) {
+                            0 -> "settings"; 1 -> "settings.playback"; 3 -> "settings.subtitle"
+                            4 -> "settings.danmaku"; 7 -> "settings.storage"; 8 -> "settings.about"
+                            else -> null
+                        }
+                        if (anchor != null) item { PluginSections(anchor, overlay) }
                     }
                 }
             }
@@ -654,5 +667,105 @@ private fun AboutGroup(overlay: Overlay) {
                 checking = false
             }
         })
+    }
+}
+
+// ---------------------------------------------------------------- 插件分节
+
+/**
+ * 官方设置页里的插件分节(SPEC 6.2)。
+ *
+ * 这里**不能复用手机那份 SettingRow**:它画的是 LpCell / LpField,在 TV 上
+ * 既没有焦点态也拿不到遥控器焦点 —— 看得见按不到的控件比没有更糟。
+ * 所以声明式设置项在这里用 TV 自己的 [PanelItem] / [TvTextField] 重画一遍。
+ */
+@Composable
+private fun PluginSections(page: String, overlay: Overlay) {
+    val app = LocalApp.current
+    val scope = rememberCoroutineScope()
+    val data = rememberSettingsSections(page)
+    data.sections.forEach { s ->
+        Group(s.heading())
+        if (s.block.isNotEmpty()) SectionBlock(s, Modifier.fillMaxWidth())
+        s.settings.forEach { item ->
+            PluginSettingRow(app, scope, overlay, s.pluginId, item, data.valueOf(s, item))
+        }
+    }
+}
+
+/** 一条插件设置项。改完即发,失败回滚 + Toast —— 和这一页所有官方行同一个口径。 */
+@Composable
+private fun PluginSettingRow(
+    app: AppState, scope: CoroutineScope, overlay: Overlay,
+    id: String, s: JsonObject, cur: JsonElement?,
+) {
+    val key = s.str("key") ?: return
+    val title = s.str("title")?.takeIf { it.isNotEmpty() } ?: key
+    val desc = s.str("description")
+    var v by remember(id, key, cur) { mutableStateOf(cur) }
+    val fk = "set.plug.$id.$key"
+    fun send(nv: Any?, back: JsonElement?) = scope.launch {
+        runCatching {
+            app.call("plugin.setSetting", JsonObject(mapOf(
+                "id" to JsonPrimitive(id), "key" to JsonPrimitive(key), "value" to jsonOf(nv))))
+        }.onFailure { v = back; app.report(it) }
+    }
+    when (s.str("type")) {
+        "group" -> Group(title)
+        "toggle" -> {
+            val on = (v as? JsonPrimitive)?.content == "true"
+            PanelItem(title, sub = desc, switch = on, modifier = Modifier.memo(fk), onClick = {
+                val back = v
+                v = JsonPrimitive(!on)
+                send(!on, back)
+            })
+        }
+        "select" -> {
+            val opts = s["options"].arr().mapNotNull { it.obj() }
+                .map { (it.str("label") ?: it.str("value") ?: "") to (it.str("value") ?: "") }
+            val now = (v as? JsonPrimitive)?.content ?: ""
+            PanelItem(title, value = opts.firstOrNull { it.second == now }?.first ?: now, sub = desc,
+                chevron = true, modifier = Modifier.memo(fk), onClick = {
+                    overlay.pick(title, opts, now) { picked ->
+                        val back = v
+                        v = JsonPrimitive(picked)
+                        send(picked, back)
+                    }
+                })
+        }
+        "button" -> PanelItem(title, sub = desc, modifier = Modifier.memo(fk), onClick = {
+            scope.launch {
+                runCatching { app.call("source.runCommand", args("plugin_id" to id, "command" to (s.str("action") ?: ""))) }
+                    .onSuccess { app.toast("完成", ToastKind.Ok) }.onFailure { app.report(it) }
+            }
+        })
+        "slider" -> {
+            val min = s.dbl("min") ?: 0.0
+            val max = s.dbl("max") ?: 100.0
+            val step = (s.dbl("step") ?: 1.0).takeIf { it > 0 } ?: 1.0
+            val now = (v as? JsonPrimitive)?.content?.toDoubleOrNull() ?: min
+            PanelItem(title, value = "%.10g".format(now).trimEnd('0').trimEnd('.'), sub = desc,
+                step = true, modifier = Modifier.memo(fk), onStep = { d ->
+                    val back = v
+                    val nv = (now + d * step).coerceIn(min, max)
+                    v = JsonPrimitive(nv)
+                    send(nv, back)
+                })
+        }
+        "text", "password", "number" -> {
+            var text by remember(v) { mutableStateOf((v as? JsonPrimitive)?.content ?: "") }
+            Row(Modifier.padding(horizontal = TvSp.x16, vertical = TvSp.x6), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.width(240.dp)) {
+                    TvText(title, tvType.body, TvC.fg2)
+                    if (desc != null) TvText(desc, tvType.meta, TvC.fg3, maxLines = 2)
+                }
+                Spacer(Modifier.width(TvSp.x12))
+                TvTextField(text, { text = it }, desc ?: "", width = 360.dp, modifier = Modifier.memo(fk),
+                    password = s.str("type") == "password", number = s.str("type") == "number",
+                    onSubmit = { t -> send(if (s.str("type") == "number") t.toDoubleOrNull() ?: 0.0 else t, v) })
+            }
+        }
+        // multiselect 这类复杂项不画:画出来点了不生效比没有更糟(和手机端同一条)
+        else -> Unit
     }
 }

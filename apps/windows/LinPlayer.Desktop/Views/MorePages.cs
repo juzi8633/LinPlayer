@@ -566,6 +566,8 @@ public sealed class SettingsPage : PageBase
                 var home = await Safe(() => core.PrefsGetHomeSettings(new { }));
                 var writeback = await Safe(() => core.PrefsGetWritebackSettings(new { }));
                 var update = await Safe(() => core.PrefsGetUpdateSettings(new { }));
+                // 插件声明的分节(SPEC 6.2 D286)。和别的组一样各拉各的:没装插件时它就是空数组
+                var psecs = await Safe(() => core.PluginSettingsSections(new { }));
 
                 Dispatcher.UIThread.Post(() =>
                 {
@@ -628,6 +630,17 @@ public sealed class SettingsPage : PageBase
                     Add(gAdv, Storage(core, paths));
                     // 不挂 Features 开关:它是排查工具,任何版本都得有
                     Add(gAdv, SettingsSections.Logging(core));
+
+                    /* 插件分节挂在各大节末尾:官方项在前,插件在后(SPEC 6.2)。
+                       只给这三节 —— 「网络」「高级」在 SPEC 20.3 里没有锚点,
+                       给了等于我们自己发明一个公开契约。 */
+                    if (psecs is { } ps)
+                    {
+                        PluginSettingsSections.Fill(core, ps, new Dictionary<string, StackPanel>
+                        {
+                            ["常规"] = gGeneral, ["播放"] = gPlay, ["弹幕与字幕"] = gDanmaku,
+                        });
+                    }
 
                     foreach (var (name, body) in secs)
                     {

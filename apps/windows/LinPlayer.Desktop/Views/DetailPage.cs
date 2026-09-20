@@ -26,6 +26,14 @@ public sealed class DetailPage : PageBase
     private readonly string _server;
     private readonly Button _back = null!;
 
+    /// <summary>
+    /// 这一页上插件占了哪些锚点(SPEC 6.2)。
+    ///
+    /// <para>在第一次渲染之前就拿到:晚一步就得为了它把整页重画一遍,
+    /// 而用户看到的是「页面出来了又闪一下变了样」。</para>
+    /// </summary>
+    private PluginAnchorSet _anchors = PluginAnchorSet.Empty;
+
     /// <summary>分集。<b>和头部分开拉</b> —— 见构造函数里那段注释。</summary>
     private Task<List<CardItem>>? _episodesTask;
     private readonly ContentControl _episodesHost = new();
@@ -168,6 +176,8 @@ public sealed class DetailPage : PageBase
             try
             {
                 var s = Nav.Session!;
+                // 锚点表排在取详情之前:它是本机一次往返,而缓存命中的那条路径紧接着就画
+                _anchors = await PluginAnchorSet.Load(core);
                 /* <b>with_children = false</b>。
                    原来是 true —— 核心层会在**同一条命令里**先拉条目、再把**全部分集**
                    拉完才返回。实测最长的剧全量拉 1.8MB / 1841ms,
@@ -484,8 +494,16 @@ public sealed class DetailPage : PageBase
         // Episode 也算:集详情页要有选集栏,分集表挂在它所属的剧底下(见 EpisodesParent)
         var isShow = type is "Series" or "Season" or "Episode";
 
+        /* 插件锚点(SPEC 6.2):官方块外面包一层,包不上的就是官方块原样。
+           props 给整份条目数据(D160)—— 插件要的是「这一页在讲哪个条目」,
+           而不是让它自己再拉一次详情。 */
+        void Anchored(string anchor, Control? official)
+        {
+            if (_anchors.Wrap(anchor, official, d) is { } c) body.Children.Add(c);
+        }
+
         // ---- ① 头图:通栏 24:8 剧照带 ----
-        _heroHost.Content = Hero(d, id, type, name, series);
+        _heroHost.Content = _anchors.Wrap("detail.header", Hero(d, id, type, name, series), d);
         // ---- ② 播放键 / 简介 / 媒体信息:在带子下面,不压在图上 ----
         body.Children.Add(HeroBody(d, id, type));
 
@@ -496,14 +514,14 @@ public sealed class DetailPage : PageBase
         if (isShow)
         {
             _episodesHost.Content = Skeleton.Grid(true, 8, EpisodeCardWidth);
-            body.Children.Add(Loose(_episodesHost));
+            Anchored("detail.episodes", Loose(_episodesHost));
         }
         // 合集的成员和分集共用这个挂点:两者是同一件事(「这个条目下面有什么」),
         // 各挂一个的话重画时要记得清两处,而漏清的表现是内容叠两份。
         else if (type == "BoxSet")
         {
             _episodesHost.Content = Skeleton.Grid(false, 8, Responsive.S(Bounds.Width, 168, 112));
-            body.Children.Add(Loose(_episodesHost));
+            Anchored("detail.episodes", Loose(_episodesHost));
         }
 
         // ---- 演职人员 ----
@@ -515,7 +533,6 @@ public sealed class DetailPage : PageBase
         var people = Arr2(d, "people");
         if (people.Count > 0)
         {
-            body.Children.Add(H2($"演职人员 · {people.Count} 人"));
             // 头像 84 在窄窗口上一排只摆得下三个,换档要整条重建(虚拟化下只造屏上那几个)
             var peopleHost = new ContentControl();
             _rescalePeople = () =>
@@ -524,7 +541,11 @@ public sealed class DetailPage : PageBase
                 peopleHost.Content = Carousel.Rail(people, x => PersonCell(x, av), av, out _);
             };
             _rescalePeople();
-            body.Children.Add(peopleHost);
+            Anchored("detail.cast", new StackPanel
+            {
+                Spacing = 14,
+                Children = { H2($"演职人员 · {people.Count} 人"), peopleHost },
+            });
         }
 
         // ---- 媒体信息 ----
@@ -534,7 +555,10 @@ public sealed class DetailPage : PageBase
         // ---- 相似推荐 ----
         // 挂点先摆上,内容异步补:为了这一块让整页晚出来是本末倒置,
         // 而它又常常是空的(刮削不全的库上 Similar 直接回空)
-        body.Children.Add(Loose(_similarHost));
+        Anchored("detail.similar", Loose(_similarHost));
+
+        // 页尾是纯注入位:官方本来没有这一块,插件不来它就不存在
+        Anchored("detail.footer", null);
         _ = LoadSimilar(id);
     }
 
@@ -693,8 +717,9 @@ public sealed class DetailPage : PageBase
         var titleSlot = new ContentControl { Content = titleRef };
         var head = new StackPanel { Spacing = 10, VerticalAlignment = VerticalAlignment.Bottom };
         if (Crumb(d, series) is { } crumb) head.Children.Add(crumb);
-        head.Children.Add(titleSlot);
-        head.Children.Add(Chips(d, type));
+        // 评分挂在元信息片那一行上:★ 分数就在里面,单独摆一块「评分」会和它重一份
+        foreach (var (anchor, official) in new (string, Control)[] { ("detail.title", titleSlot), ("detail.ratings", Chips(d, type)) })
+            if (_anchors.Wrap(anchor, official, d) is { } c) head.Children.Add(c);
         _ = SwapLogo(titleSlot, id);
 
         // ---- 左上返回 / 右上动作组(草稿第 12、13 条)----
@@ -874,7 +899,7 @@ public sealed class DetailPage : PageBase
     private Control HeroBody(JsonElement d, string id, string type)
     {
         var col = new StackPanel { Spacing = 14 };
-        col.Children.Add(PlayRow(d, id, type));
+        if (_anchors.Wrap("detail.actions", PlayRow(d, id, type), d) is { } acts) col.Children.Add(acts);
         // 标语:没有就整行不画(实测只有约三分之一的条目有)
         var tagline = Str(d, "tagline");
         if (tagline != "")
@@ -886,7 +911,8 @@ public sealed class DetailPage : PageBase
             });
         }
         var overview = Str(d, "overview");
-        if (overview != "") col.Children.Add(Overview(overview));
+        if (_anchors.Wrap("detail.overview", overview != "" ? Overview(overview) : null, d) is { } ov)
+            col.Children.Add(ov);
         /* 媒体信息 / 版本条。**异步补,不挡头部** —— 它要多打一次 PlaybackInfo,
            为了这一行让标题晚出来是本末倒置。 */
         col.Children.Add(Loose(_mediaHost));

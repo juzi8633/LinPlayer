@@ -80,6 +80,11 @@ import xyz.linplayer.app.ui.components.OptRow
 import xyz.linplayer.app.ui.components.PrimaryAction
 import xyz.linplayer.app.ui.components.SectionTitle
 import xyz.linplayer.app.ui.components.ToneChip
+import xyz.linplayer.app.ui.plugin.Anchored
+import xyz.linplayer.app.ui.plugin.LocalAnchors
+import xyz.linplayer.app.ui.plugin.PluginAnchors
+import xyz.linplayer.app.ui.plugin.detailProps
+import xyz.linplayer.app.ui.plugin.rememberAnchorScope
 import xyz.linplayer.app.ui.components.dissolve
 import xyz.linplayer.app.ui.components.pressable
 import xyz.linplayer.app.ui.components.toneScene
@@ -348,18 +353,31 @@ fun DetailPage(nav: NavController, entry: NavBackStackEntry) {
         }
 
         // ★ 取色底铺满整屏并且**不跟着滚**:图往上走、色留在原地,那一层视差就是「华丽」的来源
+        /* 插件注入位(SPEC 6.2)。详情还没回来时先给一张空表:props 是**挂载那一刻**
+           读走的,拿 null 条目挂上去的插件块此后永远收不到真数据。 */
+        val anchors = rememberAnchorScope(PluginAnchors.Detail, detailProps(d))
+        androidx.compose.runtime.CompositionLocalProvider(
+            LocalAnchors provides if (d == null) xyz.linplayer.app.ui.plugin.AnchorScope() else anchors
+        ) {
         Box(Modifier.fillMaxSize().background(toneScene(tone, c.bg))) {
             LazyColumn(Modifier.fillMaxSize(), list, contentPadding = pad) {
                 item("hero") {
-                    if (isEpisode) EpisodeHead(app, route.itemId, d, list) {
-                        d.str("series_id")?.let { sid ->
-                            nav.navigate(Route.Detail(sid, "Series"))
+                    Anchored(PluginAnchors.DETAIL_HEADER) {
+                        if (isEpisode) EpisodeHead(app, route.itemId, d, list) {
+                            d.str("series_id")?.let { sid ->
+                                nav.navigate(Route.Detail(sid, "Series"))
+                            }
                         }
+                        else SeriesHead(app, route.itemId, d, list)
                     }
-                    else SeriesHead(app, route.itemId, d, list)
                 }
 
-                item("data") {
+                // 标题画在头图**里面**,没有独立的一块可以换掉,所以这里是纯插入位:
+                // 「标题下方」(SPEC 20.3)—— hide 没有东西可藏,replace 等同于 after
+                item("anchor-title") { Anchored(PluginAnchors.DETAIL_TITLE, Modifier.padding(horizontal = Sp.x16)) {} }
+
+                // 评分就在这条数据带里(★ 评分是第一格),锚点挂它
+                item("data") { Anchored(PluginAnchors.DETAIL_RATINGS, Modifier.padding(horizontal = Sp.x16)) {
                     val cells = buildList {
                         d.dbl("rating")?.takeIf { it > 0 }?.let { add("%.1f".format(it) to "★ 评分") }
                         d.long("year")?.let { add(it.toString() to "年份") }
@@ -372,7 +390,7 @@ fun DetailPage(nav: NavController, entry: NavBackStackEntry) {
                         Spacer(Modifier.height(Sp.x16))
                         DataStrip(cells)
                     }
-                }
+                } }
 
                 item("tags") {
                     /* 类型 / 标签 / 工作室这三种**能点**
@@ -395,7 +413,9 @@ fun DetailPage(nav: NavController, entry: NavBackStackEntry) {
                     }
                 }
 
-                if (!isBoxSet) item("actions") {
+                item("actions") { Anchored(PluginAnchors.DETAIL_ACTIONS, Modifier.padding(horizontal = Sp.x16)) {
+                    // 合集不是一部片,没有播放按钮 —— 但锚点位照留,插件还能往这儿挂
+                    if (isBoxSet) return@Anchored
                     val resume = d.dbl("resume_secs") ?: 0.0
                     val runtime = d.dbl("runtime_secs") ?: 0.0
                     val nextEp = episodes.firstOrNull { !it.played } ?: episodes.firstOrNull()
@@ -462,14 +482,15 @@ fun DetailPage(nav: NavController, entry: NavBackStackEntry) {
                                不提供任何东西,只是把这一排挤窄。 */
                         }
                     }
-                }
+                } }
 
                 /* ☠ 季 / 集**排在动作按钮和简介之间**【用户定 2026-09-06】。
                    原来它们排在「播放选项 / 媒体信息 / 演职人员」后面 —— 进剧集详情页
                    最常做的事是**找集**,不是读简介,把选集推到三屏以下等于没做。
                    ★ 一季的剧也画季那一栏:用户报「季度没显示出来」正是这一条 ——
                      `seasons.size > 1` 把单季剧整条藏掉了,而那是最常见的情况。 */
-                if (seasons.isNotEmpty()) item("seasons") {
+                item("seasons") { Anchored(PluginAnchors.DETAIL_SEASONS, Modifier.padding(horizontal = Sp.x16)) {
+                    if (seasons.isEmpty()) return@Anchored
                     SectionTitle("季")
                     Row(
                         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
@@ -487,9 +508,10 @@ fun DetailPage(nav: NavController, entry: NavBackStackEntry) {
                             }
                         }
                     }
-                }
+                } }
 
-                if (episodes.isNotEmpty()) item("episodes") {
+                item("episodes") { Anchored(PluginAnchors.DETAIL_EPISODES, Modifier.padding(horizontal = Sp.x16)) {
+                    if (episodes.isEmpty()) return@Anchored
                     SectionTitle(
                         curSeason?.name?.let { "$it · 选集" } ?: "选集",
                         trailing = { Dim3("已看 ${episodes.count { it.played }} / ${episodes.size}") },
@@ -498,7 +520,7 @@ fun DetailPage(nav: NavController, entry: NavBackStackEntry) {
                         app, episodes, currentId = route.itemId,
                         onOpen = { ep -> nav.navigate(Route.Detail(ep.id, "Episode")) },
                     )
-                }
+                } }
 
                 /* 合集的成员。**影片和剧集分成两段**(用户 2026-09-08:
                    「合集要把影片和剧集分开,方便用户查找」)。
@@ -525,11 +547,13 @@ fun DetailPage(nav: NavController, entry: NavBackStackEntry) {
                         }
                 }
 
-                d.str("overview")?.takeIf { it.isNotBlank() }?.let { ov ->
-                    item("overview") { Overview(ov) }
-                }
+                item("overview") { Anchored(PluginAnchors.DETAIL_OVERVIEW, Modifier.padding(horizontal = Sp.x16)) {
+                    d.str("overview")?.takeIf { it.isNotBlank() }?.let { ov -> Overview(ov) }
+                } }
 
-                if (people.isNotEmpty()) item("people") { People(app, people) }
+                item("people") { Anchored(PluginAnchors.DETAIL_CAST, Modifier.padding(horizontal = Sp.x16)) {
+                    if (people.isNotEmpty()) People(app, people)
+                } }
 
                 /* 播放选项:**版本 / 线路 / 音轨 / 字幕**【用户点名要的四项】。
                    剧集页不画 —— 那是整部剧,选版本没有意义;进到某一集里才有。 */
@@ -574,14 +598,16 @@ fun DetailPage(nav: NavController, entry: NavBackStackEntry) {
                    ★ 换季那一栏一动,下面的集数栏当场跟着换 —— 两栏是一条链,不是两个列表。
                    ★ 点一集进的是**这一集的详情页**,不是直接起播:起播是详情页里那颗大按钮。
                      上一版是一条竖着的长列表,把整页撑得看不到下面的相似推荐。 */
-                if (similar.isNotEmpty()) item("similar") {
+                item("similar") { Anchored(PluginAnchors.DETAIL_SIMILAR, Modifier.padding(horizontal = Sp.x16)) {
+                    if (similar.isEmpty()) return@Anchored
                     LpRow("相似推荐", similar, { app.imageUrl(it.id, "Primary", 330) },
                         { nav.navigate(Route.Detail(it.id, it.type)) },
                         menu = { cardActions(app, scope, it) })
-                }
+                } }
 
-                item("tail") { Spacer(Modifier.height(Sp.x26)) }
+                item("tail") { Anchored(PluginAnchors.DETAIL_FOOTER, Modifier.padding(horizontal = Sp.x16)) { Spacer(Modifier.height(Sp.x26)) } }
             }
+        }
         }
     }
 

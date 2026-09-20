@@ -25,15 +25,17 @@ fun ReportPluginEnv(app: AppState) {
     val c = Lp.colors
     val scale = LocalMotionScale.current
     LocalContext.current // 取过一次才保证在 Compose 树里调用
+    /* 表在渲染器那边:解 `token:名字` 和报上去的是**同一张**(D556)。
+       各写一份的话,改一个名字就有一处会悄悄失效,而失效的表现只是「颜色不对」。
+       取色要在组合期做 —— tokenColor 是 @Composable,进不了 LaunchedEffect。 */
+    val tokens = mutableMapOf<String, Any>()
+    for (n in xyz.linplayer.app.ui.plugin.TOKEN_COLOR_NAMES) {
+        xyz.linplayer.app.ui.plugin.tokenColor(n)?.let { tokens[n] = hex(it) }
+    }
+    for (n in xyz.linplayer.app.ui.plugin.TOKEN_NUMBER_NAMES) {
+        xyz.linplayer.app.ui.plugin.tokenNumber(n)?.let { tokens[n] = it }
+    }
     LaunchedEffect(c, scale) {
-        val tokens = mutableMapOf<String, Any>(
-            "color.bg" to hex(c.bg), "color.surface" to hex(c.s1), "color.surfaceAlt" to hex(c.s2),
-            "color.ink" to hex(c.fg), "color.ink2" to hex(c.fg2), "color.ink3" to hex(c.fg3),
-            "color.line" to hex(c.line), "color.lineStrong" to hex(c.line2),
-            "color.accent" to hex(c.acc), "color.accentInk" to hex(c.accFg), "color.accentSoft" to hex(c.accDim),
-            "color.ok" to hex(c.ok), "color.warn" to hex(c.warn), "color.danger" to hex(c.bad),
-        )
-        tokens.putAll(NumberTokens)
         withContext(Dispatchers.IO) {
             runCatching {
                 app.core.callJson("plugin.setEnv", toJsonObject(mapOf(
@@ -51,11 +53,3 @@ private fun hex(c: Color): String {
     val v = c.toArgb()
     return "#%02x%02x%02x%02x".format((v shr 16) and 0xFF, (v shr 8) and 0xFF, v and 0xFF, (v shr 24) and 0xFF)
 }
-
-/** 刻度是枚举不是区间(UI_MOBILE.md §1.3):这里是那把尺子对外的那一份。 */
-private val NumberTokens = mapOf<String, Any>(
-    "radius.small" to 6, "radius.card" to 10, "radius.pill" to 999,
-    "space.xs" to 2, "space.sm" to 6, "space.md" to 10, "space.lg" to 14, "space.xl" to 18,
-    "font.size.body" to 14, "font.size.title" to 18, "font.size.h1" to 26,
-    "motion.duration.fast" to 120, "motion.duration.normal" to 220,
-)

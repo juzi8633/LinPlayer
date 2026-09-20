@@ -536,6 +536,41 @@ public sealed class PluginSurface : UserControl
             case "placeholder":
                 if (c is TextBox tb2) tb2.Watermark = unset ? null : v.ToString();
                 break;
+            // 非受控(D135):原生自己维护文字,`defaultValue` 只在第一次落下去
+            case "defaultValue":
+                if (c is TextBox tbd && !unset && string.IsNullOrEmpty(tbd.Text)) tbd.Text = v.ToString();
+                break;
+            case "secret":
+                if (c is TextBox tbs) tbs.PasswordChar = !unset && v.ValueKind == JsonValueKind.True ? '●' : ' ';
+                break;
+            case "multiline":
+                if (c is TextBox tbm)
+                {
+                    tbm.AcceptsReturn = !unset && v.ValueKind == JsonValueKind.True;
+                    tbm.TextWrapping = tbm.AcceptsReturn ? TextWrapping.Wrap : TextWrapping.NoWrap;
+                }
+                break;
+            /* live(D135):逐字回传。默认**不逐字** —— 每敲一个字过一次桥,
+               一千项的筛选框会在输入时卡住,而那正是非受控的由来。 */
+            case "live":
+                if (c is TextBox tbl)
+                {
+                    var on = !unset && v.ValueKind == JsonValueKind.True;
+                    TextInputInfo.SetLive(tbl, on);
+                    tbl.TextChanged -= OnTextLive;
+                    if (on) tbl.TextChanged += OnTextLive;
+                }
+                break;
+            // horizontal 对两种滚动容器都成立:ScrollView 与虚拟列表用的是同一个控件
+            case "horizontal":
+                if (c is ScrollViewer hsv)
+                {
+                    var h = !unset && v.ValueKind == JsonValueKind.True;
+                    hsv.HorizontalScrollBarVisibility = h ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled;
+                    hsv.VerticalScrollBarVisibility = h ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto;
+                    if (hsv.Content is FlexPanel hfp) { hfp.Horizontal = h; hfp.InvalidateMeasure(); }
+                }
+                break;
             case "src":
                 if (c is Image img && !unset) LoadImage(img, v.ToString());
                 else if (c is PluginIcon ic && !unset) ic.SetSrc(_core, v.ToString());
@@ -665,6 +700,14 @@ public sealed class PluginSurface : UserControl
                     if (fn >= 0) tb.LostFocus += OnTextCommit;
                 }
                 break;
+            case "onSubmit":
+                if (c is TextBox tbe)
+                {
+                    TextInputInfo.SetSubmitFn(tbe, fn);
+                    tbe.KeyDown -= OnTextSubmit;
+                    if (fn >= 0) tbe.KeyDown += OnTextSubmit;
+                }
+                break;
             case "onToggle" or "onChange" or "onSelect" or "onItemPress":
                 if (c is ToggleButton tg)
                 {
@@ -726,6 +769,22 @@ public sealed class PluginSurface : UserControl
         _ = _core.PluginUiEvent(new { surface = _surface, fn, args = new object[] { new { from = first, to = last } } });
     }
 
+    /// <summary>逐字回传(声明了 live 才挂,D135)。</summary>
+    private void OnTextLive(object? sender, Avalonia.Controls.TextChangedEventArgs e)
+    {
+        if (sender is TextBox tb && TextInputInfo.Live(tb) && tb.Tag is int fn && fn >= 0)
+            _ = _core.PluginUiEvent(new { surface = _surface, fn, args = new object[] { tb.Text ?? "" } });
+    }
+
+    /// <summary>回车提交。多行输入框里回车是换行,不是提交。</summary>
+    private void OnTextSubmit(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.Key != Avalonia.Input.Key.Enter || sender is not TextBox tb || tb.AcceptsReturn) return;
+        var fn = TextInputInfo.SubmitFn(tb);
+        if (fn < 0) return;
+        _ = _core.PluginUiEvent(new { surface = _surface, fn, args = new object[] { tb.Text ?? "" } });
+    }
+
     private void OnTextCommit(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is TextBox tb && tb.Tag is int fn && fn >= 0)
@@ -772,8 +831,14 @@ public sealed class PluginSurface : UserControl
 
     // ---------------------------------------------------------------- 样式(SPEC 7.5)
 
-    private static double? Num(JsonElement o, string k) =>
-        o.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : null;
+    /// <summary>取一个长度值。数字直接用,`token:名字` 查 SPEC 20.4 那张表(D556)。</summary>
+    private static double? Num(JsonElement o, string k)
+    {
+        if (!o.TryGetProperty(k, out var v)) return null;
+        if (v.ValueKind == JsonValueKind.Number) return v.GetDouble();
+        if (v.ValueKind == JsonValueKind.String) return NumToken(v.GetString() ?? "");
+        return null;
+    }
 
     private static void ApplyStyle(Control c, JsonElement s)
     {
@@ -853,10 +918,29 @@ public sealed class PluginSurface : UserControl
     private static IBrush? Brush(JsonElement s, string k) =>
         s.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? BrushOf(v.GetString() ?? "") : null;
 
+    /* `token:` 后面跟的是 **SPEC 20.4 的名字**(`color.accent`),不是 Avalonia 的键。
+       直接 `Tok.Of("color.accent")` 查不到,而 Tok 查不到时返回**透明** ——
+       表现是那段文字整个看不见,不报错。走和 plugin.setEnv 同一张表(D556):
+       两处各写一份的话,改一个名字就有一处会悄悄失效。 */
     internal static IBrush? BrushOf(string text)
     {
-        if (text.StartsWith("token:", StringComparison.Ordinal)) return Tok.Of(text[6..]);
-        return Color.TryParse(text, out var col) ? new SolidColorBrush(col) : null;
+        if (!text.StartsWith("token:", StringComparison.Ordinal))
+            return Color.TryParse(text, out var col) ? new SolidColorBrush(col) : null;
+        var name = text[6..];
+        foreach (var (n, key) in PluginTokens.Colors)
+            if (n == name) return Tok.Of(key);
+        // 老写法(直接写 Avalonia 键名)照旧认:阶段 ② 的示例页里有
+        return Tok.Of(name);
+    }
+
+    /// <summary>数值 token(`radius: 'token:radius.card'`,SPEC 7.5 的原例)。认不出来返回 null。</summary>
+    internal static double? NumToken(string text)
+    {
+        if (!text.StartsWith("token:", StringComparison.Ordinal)) return null;
+        var name = text[6..];
+        foreach (var (n, v) in PluginTokens.Numbers)
+            if (n == name) return v;
+        return null;
     }
 
 }
@@ -960,4 +1044,23 @@ internal static class VirtualInfo
         c.SetValue(LastP, key);
         return true;
     }
+}
+
+/// <summary>
+/// 输入框在控件上记的那两件事(逐字开关、提交回调号)。
+///
+/// <para>不能都挤在 <c>Tag</c> 里:<c>Tag</c> 已经被 onChangeText 的回调号占着,
+/// 再塞一个就会互相覆盖 —— 表现是「改了名字之后回车不灵了」。</para>
+/// </summary>
+internal static class TextInputInfo
+{
+    private static readonly AttachedProperty<bool> LiveP =
+        AvaloniaProperty.RegisterAttached<Control, Control, bool>("TiLive");
+    private static readonly AttachedProperty<int> SubmitP =
+        AvaloniaProperty.RegisterAttached<Control, Control, int>("TiSubmit", -1);
+
+    internal static void SetLive(Control c, bool on) => c.SetValue(LiveP, on);
+    internal static bool Live(Control c) => c.GetValue(LiveP);
+    internal static void SetSubmitFn(Control c, int fn) => c.SetValue(SubmitP, fn);
+    internal static int SubmitFn(Control c) => c.GetValue(SubmitP);
 }

@@ -1108,3 +1108,31 @@ internal static class PluginButton
     }
 }
 
+
+/// <summary>
+/// 主题 token 表(SPEC 20.4,D556)。
+///
+/// <para>解 `token:名字` 和报给核心层(<c>plugin.setEnv</c>)用的是**同一张**表。
+/// 两处各写一份的话,改一个名字就有一处会悄悄失效 —— 而失效的表现是
+/// 「那段文字画成了透明」(Tok 查不到时返回 Transparent),不报错。</para>
+/// </summary>
+internal static class PluginTokens
+{
+    internal static readonly (string Name, string Key)[] Colors =
+    [
+        ("color.bg", "Bg"), ("color.surface", "Panel"), ("color.surfaceAlt", "PanelAlt"),
+        ("color.ink", "Ink"), ("color.ink2", "Ink2"), ("color.ink3", "Ink3"),
+        ("color.line", "Line"), ("color.lineStrong", "LineStrong"),
+        ("color.accent", "Accent"), ("color.accentInk", "AccentInk"), ("color.accentSoft", "AccentSoft"),
+        ("color.ok", "Ok"), ("color.warn", "Warn"), ("color.danger", "Danger"),
+    ];
+
+    // 刻度是枚举不是区间(见 CLAUDE.md 的那张表):这里就是那把尺子对外的那一份
+    internal static readonly (string Name, double Value)[] Numbers =
+    [
+        ("radius.small", 6), ("radius.card", 10), ("radius.pill", 999),
+        ("space.xs", 2), ("space.sm", 6), ("space.md", 10), ("space.lg", 14), ("space.xl", 18),
+        ("font.size.body", 14), ("font.size.title", 18), ("font.size.h1", 26),
+        ("motion.duration.fast", 120), ("motion.duration.normal", 220),
+    ];
+}

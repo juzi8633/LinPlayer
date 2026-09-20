@@ -87,6 +87,14 @@ internal val LocalPluginFocusKeys =
 internal val LocalPluginFirstFocus =
     androidx.compose.runtime.staticCompositionLocalOf<androidx.compose.runtime.MutableState<Int>?> { null }
 
+/** 焦点记忆键的前缀,每个 surface 一份(见 PluginSurface 那条)。 */
+internal val LocalPluginKeyNs = androidx.compose.runtime.staticCompositionLocalOf { "" }
+
+/** 插件节点的焦点记忆键。拼前缀是为了让同一页上的两块插件不撞键。 */
+@Composable
+internal fun plugKey(vararg parts: Any): String =
+    LocalPluginKeyNs.current + "plug." + parts.joinToString(".")
+
 /** 这个节点要不要吃初始焦点。 */
 @Composable
 internal fun claimsInitialFocus(id: Int): Boolean {
@@ -141,13 +149,7 @@ internal fun RenderNode(n: UiNode, surface: String, app: AppState) {
                 enabled = !n.bool("disabled"),
             )
         ) { n.children.forEach { RenderNode(it, surface, app) } }
-        "TextInput" -> xyz.linplayer.app.ui.components.LpField(
-            n.str("defaultValue").orEmpty(), { fire(app, surface, n.fn("onChangeText"), it) },
-            n.str("placeholder").orEmpty(), m.fillMaxWidth(),
-            password = n.bool("secret"),
-            lines = if (n.bool("multiline")) 3 else 1,
-            enabled = !n.bool("disabled"),
-        )
+        "TextInput" -> PlugTextInput(n, m, surface, app)
         "Switch", "Checkbox" -> {
             val on = n.bool("value") || n.bool("checked")
             androidx.compose.material3.Switch(
@@ -282,27 +284,74 @@ private fun UnknownComponent(type: String, m: Modifier) {
 
 // ---------------------------------------------------------------- 样式(SPEC 7.5)
 
-internal fun JsonObject?.numOf(k: String): Double? =
-    (this?.get(k) as? kotlinx.serialization.json.JsonPrimitive)?.content?.toDoubleOrNull()
+/** 取一个长度值。数字直接用,`token:名字` 查 SPEC 20.4 那张表(D556)。 */
+internal fun JsonObject?.numOf(k: String): Double? {
+    val p = this?.get(k) as? kotlinx.serialization.json.JsonPrimitive ?: return null
+    p.content.toDoubleOrNull()?.let { return it }
+    if (p.isString && p.content.startsWith("token:")) return tokenNumber(p.content.removePrefix("token:"))
+    return null
+}
 
 internal fun JsonObject?.strOf(k: String): String? =
     (this?.get(k) as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
 
 internal fun JsonObject?.dirRow(): Boolean = this.strOf("direction") == "row"
 
-/** `token:名字` 走主题(D89),`#rrggbb` 直接解析;认不出来就不上色。 */
+/**
+ * `token:名字` 走主题(D89 D556),`#rrggbb` 直接解析;认不出来就不上色。
+ *
+ * 名字是 **SPEC 20.4 的那一套**(`color.accent`),和 `plugin.setEnv` 报上去的
+ * 是同一张表 —— 两处各写一份的话,改一个名字就有一处会悄悄失效,
+ * 而失效的表现是「那段文字用了默认色」,没人会发现。
+ */
+@Composable
+internal fun tokenColor(name: String): Color? = when (name) {
+    "color.bg" -> Lp.colors.bg
+    "color.surface" -> Lp.colors.s1
+    "color.surfaceAlt", "PanelAlt", "s2" -> Lp.colors.s2
+    "color.ink", "Ink", "fg" -> Lp.colors.fg
+    "color.ink2", "Ink2", "fg2" -> Lp.colors.fg2
+    "color.ink3", "Ink3", "fg3" -> Lp.colors.fg3
+    "color.line", "Line", "line" -> Lp.colors.line
+    "color.lineStrong" -> Lp.colors.line2
+    "color.accent", "Accent", "acc" -> Lp.colors.acc
+    "color.accentInk" -> Lp.colors.accFg
+    "color.accentSoft" -> Lp.colors.accDim
+    "color.ok" -> Lp.colors.ok
+    "color.warn" -> Lp.colors.warn
+    "color.danger" -> Lp.colors.bad
+    else -> null
+}
+
+/** SPEC 20.4 的 token 名。解 `token:名字` 和报给核心层用的是**同一张**表(D556)。 */
+internal val TOKEN_COLOR_NAMES = listOf(
+    "color.bg", "color.surface", "color.surfaceAlt",
+    "color.ink", "color.ink2", "color.ink3",
+    "color.line", "color.lineStrong",
+    "color.accent", "color.accentInk", "color.accentSoft",
+    "color.ok", "color.warn", "color.danger",
+)
+
+internal val TOKEN_NUMBER_NAMES = listOf(
+    "radius.small", "radius.card", "radius.pill",
+    "space.xs", "space.sm", "space.md", "space.lg", "space.xl",
+    "font.size.body", "font.size.title", "font.size.h1",
+    "motion.duration.fast", "motion.duration.normal",
+)
+
+/** 数值 token(`radius: 'token:radius.card'`,SPEC 7.5 的原例)。刻度见 UI_MOBILE.md §1.3。 */
+internal fun tokenNumber(name: String): Double? = when (name) {
+    "radius.small" -> 6.0; "radius.card" -> 10.0; "radius.pill" -> 999.0
+    "space.xs" -> 2.0; "space.sm" -> 6.0; "space.md" -> 10.0; "space.lg" -> 14.0; "space.xl" -> 18.0
+    "font.size.body" -> 14.0; "font.size.title" -> 18.0; "font.size.h1" -> 26.0
+    "motion.duration.fast" -> 120.0; "motion.duration.normal" -> 220.0
+    else -> null
+}
+
 @Composable
 private fun colorOf(s: JsonObject?, k: String): Color? {
     val v = s.strOf(k) ?: return null
-    if (v.startsWith("token:")) return when (v.removePrefix("token:")) {
-        "Accent", "acc" -> Lp.colors.acc
-        "Ink", "fg" -> Lp.colors.fg
-        "Ink2", "fg2" -> Lp.colors.fg2
-        "Ink3", "fg3" -> Lp.colors.fg3
-        "PanelAlt", "s2" -> Lp.colors.s2
-        "Line", "line" -> Lp.colors.line
-        else -> null
-    }
+    if (v.startsWith("token:")) return tokenColor(v.removePrefix("token:"))
     return runCatching { Color(android.graphics.Color.parseColor(v)) }.getOrNull()
 }
 
@@ -495,7 +544,7 @@ private fun TvListRow(listId: Int, index: Int, content: @Composable () -> Unit) 
         Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(if (on) Color.White.copy(alpha = 0.10f) else Color.Transparent)
-            .memo("plug.list.$listId.$index", index == 0 && claimsInitialFocus(listId))
+            .memo(plugKey("list", listId, index), index == 0 && claimsInitialFocus(listId))
             .focusable(interactionSource = src)
     ) { content() }
 }
@@ -518,7 +567,7 @@ private fun hasInteractive(n: UiNode): Boolean =
  */
 @Composable
 private fun renderTv(n: UiNode, m: Modifier, surface: String, app: AppState): Boolean {
-    val key = "plug.${n.id}"
+    val key = plugKey(n.id)
     val interactive = n.type in interactiveTypes
     val initial = interactive && claimsInitialFocus(n.id)
     val enabled = !n.bool("disabled")

@@ -65,6 +65,12 @@ import xyz.linplayer.app.tv.kit.PanelGroup
 import xyz.linplayer.app.tv.kit.PanelItem
 import xyz.linplayer.app.tv.kit.Probe
 import xyz.linplayer.app.tv.kit.ProvideColumnSpec
+import xyz.linplayer.app.ui.plugin.Anchored
+import xyz.linplayer.app.ui.plugin.AnchorScope
+import xyz.linplayer.app.ui.plugin.LocalAnchors
+import xyz.linplayer.app.ui.plugin.PluginAnchors
+import xyz.linplayer.app.ui.plugin.detailProps
+import xyz.linplayer.app.ui.plugin.rememberAnchorScope
 import xyz.linplayer.app.tv.kit.ProvideRowKeyline
 import xyz.linplayer.app.tv.kit.RowTitle
 import xyz.linplayer.app.tv.kit.ScopeChips
@@ -310,11 +316,22 @@ fun DetailPage(r: TvRoute.Detail) {
                 Skel(Modifier.width(560.dp).height(60.dp))
             }
             is Block.Ok -> ProvideColumnSpec(above = 64.dp, below = TvDim.safeV + TvDim.captionH) {
-                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = TvDim.safeV, bottom = TvDim.safeV)) {
-                    when (type) {
-                        "Series", "Season" -> SeriesBody(r.itemId, b.value, overlay, scope)
-                        "BoxSet" -> BoxSetBody(r.itemId, b.value, overlay, scope)
-                        else -> MovieBody(r.itemId, b.value, overlay, scope)
+                /* 插件注入位(SPEC 6.2)。插进来的块在**同一个滚动 Column 里**,
+                   遥控器的 ↑↓ 是按几何找焦点的 —— 只要块在这棵树上就进得去,
+                   官方元素之间的先后也不被打断。放到 Box 外面叠一层的话
+                   它会变成一块焦点永远走不到的死块,而截图上看不出来。 */
+                androidx.compose.runtime.CompositionLocalProvider(
+                    LocalAnchors provides rememberAnchorScope(PluginAnchors.Detail, detailProps(b.value))
+                ) {
+                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = TvDim.safeV, bottom = TvDim.safeV)) {
+                        when (type) {
+                            "Series", "Season" -> SeriesBody(r.itemId, b.value, overlay, scope)
+                            "BoxSet" -> BoxSetBody(r.itemId, b.value, overlay, scope)
+                            else -> MovieBody(r.itemId, b.value, overlay, scope)
+                        }
+                        Column(Modifier.padding(horizontal = TvDim.safeH)) {
+                            Anchored(PluginAnchors.DETAIL_FOOTER) {}
+                        }
                     }
                 }
             }
@@ -326,18 +343,27 @@ fun DetailPage(r: TvRoute.Detail) {
 @Composable
 private fun DetailHead(d: JsonObject, meta: String, tags: List<String> = emptyList(), overlay: Overlay, lines: Int) {
     val t = tvType
-    TvText(d.str("name") ?: "", t.display, TvC.fg, weight = TvW.bold, maxLines = 2)
-    Spacer(Modifier.height(TvSp.x4))
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        d.dbl("rating")?.takeIf { it > 0 }?.let {
-            TvText("★ %.1f".format(it), t.meta, TvC.acc, weight = TvW.semi)
-            Spacer(Modifier.width(TvSp.x8))
+    // 三个 body 都走这一份,所以标题 / 评分 / 简介三个锚点只在这里接一次
+    Anchored(PluginAnchors.DETAIL_HEADER) {
+        Anchored(PluginAnchors.DETAIL_TITLE) {
+            TvText(d.str("name") ?: "", t.display, TvC.fg, weight = TvW.bold, maxLines = 2)
         }
-        TvText(meta, t.meta, TvC.fg2)
-        tags.forEach { Spacer(Modifier.width(TvSp.x6)); Badge(it, TvC.surface3, TvC.fg2) }
+        Spacer(Modifier.height(TvSp.x4))
+        Anchored(PluginAnchors.DETAIL_RATINGS) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                d.dbl("rating")?.takeIf { it > 0 }?.let {
+                    TvText("★ %.1f".format(it), t.meta, TvC.acc, weight = TvW.semi)
+                    Spacer(Modifier.width(TvSp.x8))
+                }
+                TvText(meta, t.meta, TvC.fg2)
+                tags.forEach { Spacer(Modifier.width(TvSp.x6)); Badge(it, TvC.surface3, TvC.fg2) }
+            }
+        }
+        Spacer(Modifier.height(TvSp.x8))
+        Anchored(PluginAnchors.DETAIL_OVERVIEW) {
+            OverviewBlock(d.str("overview").orEmpty(), lines, overlay, "detail.overview")
+        }
     }
-    Spacer(Modifier.height(TvSp.x8))
-    OverviewBlock(d.str("overview").orEmpty(), lines, overlay, "detail.overview")
 }
 
 /** 收藏开关。**乐观更新,失败回滚**(§6.1:一次动作失败 → Toast 原因 + UI 回滚)。 */
@@ -424,6 +450,7 @@ private fun SeriesBody(id: String, d: JsonObject, overlay: Overlay, scope: Corou
     Column(Modifier.padding(horizontal = TvDim.safeH)) {
         DetailHead(d, meta, overlay = overlay, lines = 3)
         Spacer(Modifier.height(TvSp.x16))
+        Anchored(PluginAnchors.DETAIL_ACTIONS) {
         Row(horizontalArrangement = Arrangement.spacedBy(TvSp.x12)) {
             // 主按钮上写明是哪一集:那是用户按播放时唯一想知道的事
             TvButton(when {
@@ -459,7 +486,9 @@ private fun SeriesBody(id: String, d: JsonObject, overlay: Overlay, scope: Corou
                 }
             })
         }
+        }
         val ss = seasons.orEmpty()
+        Anchored(PluginAnchors.DETAIL_SEASONS) {
         if (ss.size > 1) {
             Spacer(Modifier.height(TvSp.x16))
             // 切季**只换分集行**,上半屏不动(整页重画会丢焦点)
@@ -469,20 +498,24 @@ private fun SeriesBody(id: String, d: JsonObject, overlay: Overlay, scope: Corou
                     scope.launch { loadEpisodes(ss[i].id) }
                 })
         }
+        }
         Spacer(Modifier.height(TvSp.x12))
     }
-    when (val e = episodes) {
-        is Block.Loading -> Row(Modifier.padding(start = TvDim.safeH), horizontalArrangement = Arrangement.spacedBy(TvSp.x12)) {
-            repeat(5) { Skel(Modifier.size(TvDim.epW, TvDim.epH)) }
+    // 分集行是满幅的,插件块得自己吃安全边距,否则它顶到屏幕边上(电视会切掉)
+    Anchored(PluginAnchors.DETAIL_EPISODES, Modifier.padding(horizontal = TvDim.safeH)) {
+        when (val e = episodes) {
+            is Block.Loading -> Row(Modifier.padding(start = TvDim.safeH), horizontalArrangement = Arrangement.spacedBy(TvSp.x12)) {
+                repeat(5) { Skel(Modifier.size(TvDim.epW, TvDim.epH)) }
+            }
+            is Block.Fail -> xyz.linplayer.app.tv.kit.InlineError(e.message, Modifier.padding(start = TvDim.safeH))
+            is Block.Ok -> EpisodeCards(e.value, currentId = null, targetId = tg?.id, keyPrefix = "detail.ep",
+                onOpen = { nav.push(TvRoute.Episode(it.id)) },
+                onMenu = { item -> overlay.openCardMenu(app, nav, scope, item) })
         }
-        is Block.Fail -> xyz.linplayer.app.tv.kit.InlineError(e.message, Modifier.padding(start = TvDim.safeH))
-        is Block.Ok -> EpisodeCards(e.value, currentId = null, targetId = tg?.id, keyPrefix = "detail.ep",
-            onOpen = { nav.push(TvRoute.Episode(it.id)) },
-            onMenu = { item -> overlay.openCardMenu(app, nav, scope, item) })
     }
-    SimilarRow(similar, overlay, scope)
+    Anchored(PluginAnchors.DETAIL_SIMILAR, Modifier.padding(horizontal = TvDim.safeH)) { SimilarRow(similar, overlay, scope) }
     Column(Modifier.padding(horizontal = TvDim.safeH)) {
-        PeopleBlock(peopleOf(d), "detail.people")
+        Anchored(PluginAnchors.DETAIL_CAST) { PeopleBlock(peopleOf(d), "detail.people") }
     }
 }
 
@@ -591,6 +624,7 @@ private fun MovieBody(id: String, d: JsonObject, overlay: Overlay, scope: Corout
     Column(Modifier.padding(horizontal = TvDim.safeH)) {
         DetailHead(d, meta, tags, overlay, lines = 2)
         Spacer(Modifier.height(TvSp.x16))
+        Anchored(PluginAnchors.DETAIL_ACTIONS) {
         Row(horizontalArrangement = Arrangement.spacedBy(TvSp.x12)) {
             TvButton(if (resume > 0) "继续播放 ${fmtTime(resume)}" else "播放", LpIcons.play, primary = true,
                 modifier = Modifier.memo("detail.play", initial = true), onClick = { scope.launch { pick.play(app, nav, id, title, false) } })
@@ -619,13 +653,14 @@ private fun MovieBody(id: String, d: JsonObject, overlay: Overlay, scope: Corout
                 }
             })
         }
+        }
         Spacer(Modifier.height(TvSp.x12))
         PickBar(pick, overlay, "detail")
         VersionRow(pick.cards, pick.shownKey(), pick.picked?.key, onPick = { pick.pickCard(it) }, down = { null }, above = TvSp.x20, gap = TvSp.x8)
-        PeopleBlock(peopleOf(d), "detail.people")
+        Anchored(PluginAnchors.DETAIL_CAST) { PeopleBlock(peopleOf(d), "detail.people") }
         shown?.let { MediaInfoBlock(it, "detail.media") }
     }
-    SimilarRow(similar, overlay, scope)
+    Anchored(PluginAnchors.DETAIL_SIMILAR, Modifier.padding(horizontal = TvDim.safeH)) { SimilarRow(similar, overlay, scope) }
 }
 
 @Composable

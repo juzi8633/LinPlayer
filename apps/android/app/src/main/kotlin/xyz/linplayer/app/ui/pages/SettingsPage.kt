@@ -149,6 +149,8 @@ fun SettingsPage(nav: NavController) {
                     LpCell("关于", icon = LpIcons.info) { nav.navigate(Route.SettingsSub("about")) }
                 }
             }
+            // 插件分节(SPEC 6.2 D286):根设置页对应锚点 `settings`
+            item("plugins-sections") { xyz.linplayer.app.ui.plugin.PhonePluginSections("settings") }
             item("tail") { Spacer(Modifier.height(Sp.x34)) }
         }
     }
@@ -196,6 +198,15 @@ fun SettingsSubPage(nav: NavController, entry: NavBackStackEntry) {
                     "update" -> UpdatePanel()
                     else -> AboutPanel()
                 }
+            }
+            // SPEC 20.3 只给了这几页锚点名;截屏 / mpv 配置 / 备份这些本来就不在那张表里
+            val anchor = when (route.group) {
+                "appearance" -> "settings.appearance"; "player" -> "settings.playback"
+                "danmaku" -> "settings.danmaku"; "storage" -> "settings.storage"
+                "about" -> "settings.about"; else -> null
+            }
+            if (anchor != null) item("plugins-sections") {
+                xyz.linplayer.app.ui.plugin.PhonePluginSections(anchor)
             }
             item("tail") { Spacer(Modifier.height(Sp.x34)) }
         }
