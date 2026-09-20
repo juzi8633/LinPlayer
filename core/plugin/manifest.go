@@ -109,6 +109,29 @@ type Contributes struct {
 			RecommendedReader string `json:"recommendedReader"`
 		} `json:"channels"`
 	} `json:"registry"`
+	// Anchors 官方页锚点上的注入 / 接管(SPEC 6.1 6.2,D155 D159)。
+	Anchors []Anchor `json:"anchors"`
+	// SettingsSections 官方设置页里的一节(D286 D289)。
+	SettingsSections []SettingsSection `json:"settingsSections"`
+	Pages            []struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	} `json:"pages"`
+}
+
+// Anchor 一条锚点贡献。mode:before / after(注入,全生效)· replace / hide(接管,只生效一个)。
+type Anchor struct {
+	Anchor string `json:"anchor"`
+	Mode   string `json:"mode"`
+	Block  string `json:"block,omitempty"`
+}
+
+// SettingsSection 官方设置页里的一节。
+type SettingsSection struct {
+	Anchor   string        `json:"anchor"`
+	Title    string        `json:"title"`
+	Settings []SettingItem `json:"settings,omitempty"`
+	Block    string        `json:"block,omitempty"`
 }
 
 // ServerType 插件在「添加服务器」里提供的服务器类型(D131)。

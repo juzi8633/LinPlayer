@@ -17,6 +17,7 @@ type devPlugin struct {
 	dir  string
 	m    *Manifest
 	code []byte
+	smap []byte
 	quit chan struct{}
 }
 
@@ -28,38 +29,41 @@ func (d *devPlugin) stop() {
 	}
 }
 
-// devCompile 读 manifest 并出 main.js:有 src/ 就现编 TS,没有就用目录里已打好的 main.js。
-func devCompile(dir string) (*Manifest, []byte, error) {
+// devCompile 读 manifest 并出 main.js + sourcemap:有 src/ 就现编 TS,没有就用目录里已打好的。
+//
+// sourcemap 一起带出来:开发模式正是最需要「报错栈映射回 TS 行号」的时候(SPEC 16.5)。
+func devCompile(dir string) (*Manifest, []byte, []byte, error) {
 	mb, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
 	if err != nil {
-		return nil, nil, errors.New("目录里没有 manifest.json")
+		return nil, nil, nil, errors.New("目录里没有 manifest.json")
 	}
 	m, err := ParseManifest(mb)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if _, err := EntryOf(dir); err == nil {
 		res, err := Build(dir)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
-		return m, res.JS, nil
+		return m, res.JS, res.SourceMap, nil
 	}
 	code, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(m.Main)))
 	if err != nil {
-		return nil, nil, errors.New("目录里既没有 src/ 源码也没有 " + m.Main)
+		return nil, nil, nil, errors.New("目录里既没有 src/ 源码也没有 " + m.Main)
 	}
-	return m, code, nil
+	smap, _ := os.ReadFile(filepath.Join(dir, filepath.FromSlash(m.Main)) + ".map")
+	return m, code, smap, nil
 }
 
 // DevLoad 加载本地目录为开发版插件,并开始监视改动。
 func (h *Host) DevLoad(dir string) (*Manifest, error) {
 	dir, _ = filepath.Abs(dir)
-	m, code, err := devCompile(dir)
+	m, code, smap, err := devCompile(dir)
 	if err != nil {
 		return nil, err
 	}
-	d := &devPlugin{dir: dir, m: m, code: code, quit: make(chan struct{})}
+	d := &devPlugin{dir: dir, m: m, code: code, smap: smap, quit: make(chan struct{})}
 	h.mu.Lock()
 	if old := h.dev[m.ID]; old != nil {
 		old.stop()
@@ -111,13 +115,13 @@ func (h *Host) devWatch(d *devPlugin) {
 			continue
 		}
 		last = s
-		m, code, err := devCompile(d.dir)
+		m, code, smap, err := devCompile(d.dir)
 		if err != nil {
 			bus.Emit("plugin.devError", map[string]string{"id": d.m.ID, "error": err.Error()}, "")
 			continue
 		}
 		h.mu.Lock()
-		d.m, d.code = m, code
+		d.m, d.code, d.smap = m, code, smap
 		h.mu.Unlock()
 		h.unload(m.ID)
 		if _, err := h.get(m.ID, "lazy"); err != nil {

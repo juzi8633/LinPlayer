@@ -32,11 +32,14 @@ return scope;
 /** SPEC 7.5 的样式子集。Preact 对名为 `style` 的属性会**逐键**写进 dom.style,
  *  所以这里给每个已知键定义 setter 把它收回来 —— 不用 Proxy,也不用每帧扫一遍对象
  *  (1000 项列表那种场合扫不起)。 */
+// ☠ 这张表少一个键,那个样式**连一条 op 都不发** —— 壳那边再怎么实现也没用,
+//    而插件作者看到的是「写了没反应」。paddingX / marginX 就这么漏过一整轮。
+//    判据在 rt/ui_test.go:它和 .d.ts 的 Style 逐键比对。
 const STYLE_KEYS = [
   'direction', 'justify', 'align', 'gap', 'grow', 'shrink', 'basis', 'wrap',
   'width', 'height', 'minWidth', 'maxWidth', 'minHeight', 'maxHeight',
-  'padding', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
-  'margin', 'marginTop', 'marginRight', 'marginBottom', 'marginLeft',
+  'padding', 'paddingX', 'paddingY', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+  'margin', 'marginX', 'marginY', 'marginTop', 'marginRight', 'marginBottom', 'marginLeft',
   'position', 'inset', 'top', 'left', 'right', 'bottom', 'zIndex', 'aspectRatio',
   'background', 'opacity', 'radius', 'borderWidth', 'borderColor', 'shadow',
   'backdropBlur', 'overflow',

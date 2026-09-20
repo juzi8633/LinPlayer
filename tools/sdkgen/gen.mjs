@@ -41,6 +41,10 @@ const components = []
  * 运行时一个没挂,插件拿到 undefined,而报错报在插件那边(D555)。 */
 const hooks = []
 
+/** `Style` 接口声明的样式键。
+ *  ☠ 最小 DOM 的白名单少一个键,那个样式连一条 op 都不发 —— 壳再实现也没用。 */
+const styleKeys = []
+
 for (const st of src.statements) {
   if (
     ts.isFunctionDeclaration(st) && st.name &&
@@ -57,6 +61,9 @@ for (const st of src.statements) {
   ) {
     hooks.push(st.name.text)
   }
+  if (ts.isInterfaceDeclaration(st) && st.name && st.name.text === 'Style') {
+    for (const m of st.members) if (m.name && ts.isIdentifier(m.name)) styleKeys.push(m.name.text)
+  }
   if (!ts.isModuleDeclaration(st) || !st.name || !ts.isIdentifier(st.name)) continue
   if (!st.body || !ts.isModuleBlock(st.body)) continue
   const names = membersOf(st.body)
@@ -66,6 +73,10 @@ for (const st of src.statements) {
 
 if (spec.size < 10) {
   console.error(`只解析出 ${spec.size} 个命名空间 —— 定义源的写法八成变了,先看清楚再改这个脚本`)
+  process.exit(1)
+}
+if (styleKeys.length < 30) {
+  console.error(`只解析出 ${styleKeys.length} 个样式键 —— 定义源里 Style 的写法八成变了`)
   process.exit(1)
 }
 if (hooks.length < 5) {
@@ -102,5 +113,11 @@ lines.push('// 少一个的表现是插件拿到 undefined,而报错报在插件
 lines.push('var SDKHooks = []string{')
 for (const h of hooks.slice().sort()) lines.push(`	${JSON.stringify(h)},`)
 lines.push('}')
+lines.push('')
+lines.push('// SDKStyleKeys 定义源里 Style 接口声明的样式键。最小 DOM 的白名单要和它一致,')
+lines.push('// 否则少的那个键连一条 op 都不发,壳再实现也没用。')
+lines.push('var SDKStyleKeys = []string{')
+for (const k of styleKeys.slice().sort()) lines.push(`	${JSON.stringify(k)},`)
+lines.push('}')
 writeFileSync(out, lines.join('\n') + '\n')
-console.log(`✓ ${spec.size} 个命名空间、${components.length} 个组件、${hooks.length} 个 hook → ${out}`)
+console.log(`✓ ${spec.size} 个命名空间、${components.length} 个组件、${hooks.length} 个 hook、${styleKeys.length} 个样式键 → ${out}`)

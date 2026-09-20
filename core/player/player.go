@@ -451,7 +451,15 @@ func pumpStatus() {
 		if !videoOutReady() {
 			continue
 		}
-		bus.Emit("player.status", statusFields(prop, propF, renderCalls.Load()), "player.status")
+		f := statusFields(prop, propF, renderCalls.Load())
+		// item_id 让插件那边认得出「换集了」(SPEC 9.1 的 player.episodeChange)。
+		// 没在播时是空串 —— 空串和「有条目但 id 取不到」要分得开,所以不发 nil
+		if t := Current(); t != nil {
+			f["item_id"] = t.ItemID
+		} else {
+			f["item_id"] = ""
+		}
+		bus.Emit("player.status", f, "player.status")
 	}
 }
 

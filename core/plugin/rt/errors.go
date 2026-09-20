@@ -56,7 +56,11 @@ func (r *Runtime) toError(v any) error {
 		}
 		return &Error{Kind: KindInternal, Message: "插件内部错误", Detail: x.Error()}
 	case goja.Value:
-		return valueToError(r.vm, x)
+		e := valueToError(r.vm, x)
+		// 栈里的位置全是 `main.js:1:2931`(整个插件打成一个文件),对作者毫无用处 ——
+		// 换成他写的 `src/panel.tsx:88:12`(SPEC 16.5 D81)
+		e.Detail = r.MapStack(e.Detail)
+		return e
 	}
 	return &Error{Kind: KindInternal, Message: "插件内部错误"}
 }

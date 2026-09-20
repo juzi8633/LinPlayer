@@ -231,6 +231,7 @@ func (r *Runtime) installSDK() error {
 	r.installDebug(sdk)
 	r.installPlayer(sdk)
 	r.installSync(sdk)
+	r.installEvents(sdk)
 	if err := r.installUI(sdk); err != nil {
 		return err
 	}

@@ -143,7 +143,38 @@ func Emit(name string, data any, mergeKey string) {
 		Logf("error", "事件 %s 序列化失败: %v", name, err)
 		return
 	}
+	notifyTaps(name, d)
 	q.push(&Event{T: "event", Name: name, Data: d, mergeKey: mergeKey})
+}
+
+// ---------------------------------------------------------------- 进程内旁路
+
+var (
+	tapMu sync.Mutex
+	taps  []func(name string, data json.RawMessage)
+)
+
+/*
+Tap 在**进程内**旁听所有事件。
+
+★ 为什么要有这个:事件队列是给壳的(一个消费者,见 SPEC §5.6 那条硬规矩),
+核心层里另一个包想知道「播放状态变了」时,不能去抢那个队列。
+☠ 旁听函数在 Emit 的调用线程上同步跑:它必须**很快且不回头调 bus** ——
+  在里面发事件会立刻自递归。要做慢活就自己投 goroutine。
+*/
+func Tap(fn func(name string, data json.RawMessage)) {
+	tapMu.Lock()
+	taps = append(taps, fn)
+	tapMu.Unlock()
+}
+
+func notifyTaps(name string, data json.RawMessage) {
+	tapMu.Lock()
+	fns := taps
+	tapMu.Unlock()
+	for _, f := range fns {
+		f(name, data)
+	}
 }
 
 // Partial 发一条流式中间结果(SPEC §5.7)。

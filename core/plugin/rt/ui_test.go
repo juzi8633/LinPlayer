@@ -504,3 +504,55 @@ func TestUI一次渲染的ops只提交一次(t *testing.T) {
 		t.Fatalf("一次渲染的 %d 条 op 被拆成了 %d 次提交 —— JS 这层没合批", addedOps, added)
 	}
 }
+
+/*
+最小 DOM 的样式白名单要和 `.d.ts` 的 `Style` 逐键对得上。
+
+☠ 白名单少一个键,那个样式**连一条 op 都不发** —— 壳那边再怎么实现也没用,
+  而插件作者看到的是「写了没反应」。`paddingX` / `marginX` 就这么漏了一整轮:
+  它们在 SPEC 7.5 的表里、在 `.d.ts` 里,只是没进白名单。
+
+这一条不是自己验自己:SDKStyleKeys 由 gen.mjs 从 `.d.ts` 解析,
+白名单在 tools/uibundle/src/dom.js 里手写,两边没有共同的源。
+*/
+func TestUI样式白名单与定义源逐键对齐(t *testing.T) {
+	if len(SDKStyleKeys) < 30 {
+		t.Fatal("SDKStyleKeys 太少 —— 生成器八成没抽到 Style")
+	}
+	// 每个键各发一次:白名单外的键 Preact 会写进 dom.style 然后被丢掉,一条 op 都不出
+	var props []string
+	for _, k := range SDKStyleKeys {
+		props = append(props, k+": 1")
+	}
+	r, cap := newUI(t, `
+		const { h } = __linplayer_sdk;
+		definePlugin({ pages: { p: () => h('View', { style: { `+strings.Join(props, ", ")+` } }) } })
+	`)
+	if err := r.UIMount("s1", "page", "p", nil); err != nil {
+		t.Fatal(err)
+	}
+	cap.wait(t, func() bool { return hasProp(cap.ops(t), "style") })
+
+	got := map[string]bool{}
+	for _, o := range cap.ops(t) {
+		set, ok := o["set"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if st, ok := set["style"].(map[string]any); ok {
+			for k := range st {
+				got[k] = true
+			}
+		}
+	}
+	var missing []string
+	for _, k := range SDKStyleKeys {
+		if !got[k] {
+			missing = append(missing, k)
+		}
+	}
+	if len(missing) > 0 {
+		t.Fatalf("这 %d 个样式键在 .d.ts 里声明了,却连一条 op 都发不出来(最小 DOM 的白名单漏了):\n    %s",
+			len(missing), strings.Join(missing, " "))
+	}
+}

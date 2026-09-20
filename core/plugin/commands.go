@@ -165,7 +165,7 @@ func RegisterCommands() {
 	reg("plugin.devList", func(ctx context.Context, a map[string]any) (any, error) { return h().DevList(), nil })
 	// 壳报能力(WebView / jar / py);壳做完宿主请求后回结果(见 rt/shell.go)
 	reg("plugin.setCapabilities", func(ctx context.Context, a map[string]any) (any, error) {
-		rt.SetShellCaps(rt.ShellCaps{WebView: b(a, "webview"), SpiderJar: b(a, "spider_jar"), SpiderPy: b(a, "spider_py")})
+		rt.SetShellCaps(rt.ShellCaps{WebView: b(a, "webview"), SpiderJar: b(a, "spider_jar"), SpiderPy: b(a, "spider_py"), Shell: b(a, "shell")})
 		return nil, nil
 	})
 	// 壳报环境(主题 token / 深浅色 / 减少动态效果):切一次主题报一次(SPEC 7.5 7.6,D89 D428)
@@ -204,6 +204,10 @@ func RegisterCommands() {
 		return nil, nil
 	})
 	registerUI()
+	registerAnchors()
+	registerEvents()
+	// 播放类应用事件由核心层自己的 player.status 推导(见 events.go 顶部)
+	bus.Tap(ObservePlayerStatus())
 }
 
 // Slot 一个接管位与候选(D15)。

@@ -380,6 +380,9 @@
 | [x] | `plugin.devUnload` | **新增** | `id` | `—` | ✅ |
 | [x] | `plugin.devList` | **新增** | `—` | `{id: dir}` | ✅ |
 | [x] | `plugin.setCapabilities` | **新增** | `webview, spider_jar, spider_py` | `—` | ✅ |
+| [x] | `plugin.appEvent` | **新增** | `name, data?` | `—` | — | <!-- 壳报的应用事件(导航 / 服务器切换 / 前后台,SPEC 9.1 的事件表);播放类由核心层自己推导 -->
+| [x] | `plugin.anchors` | **新增** | `anchor?` | `[{plugin_id,name,anchor,mode,block}]` | — | <!-- 官方页锚点上有哪些插件块(SPEC 6.1 6.2 D155 D159);只列启用中的 -->
+| [x] | `plugin.settingsSections` | **新增** | `anchor?` | `[{plugin_id,name,anchor,title,settings,block}]` | — | <!-- 官方设置页里的插件分节(D286 D289) -->
 | [x] | `sync.traktRequest` | **新增** | `method, path, body?` | `Json` | — | <!-- Trakt 代发(SPEC 17.3 18.2 D365):宿主带 token 发,插件拿不到 token -->
 | [x] | `sync.bangumiRequest` | **新增** | `method, path, body?` | `Json` | — | <!-- 同上,Bangumi -->
 | [x] | `player.getSubtitleText` | **新增** | `track_id?` | `{format,text}` | — | <!-- 字幕轨全文(SPEC 9.7 D487):宿主带 token 拉,插件拿不到地址 -->

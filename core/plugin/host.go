@@ -310,7 +310,16 @@ func (h *Host) load(id, ver, dir string, m *Manifest, dev bool, reason string) (
 		return bus.Invoke(context.Background(), "sync."+service+"Request",
 			map[string]any{"method": method, "path": path, "body": body})
 	}
-	r, err := rt.New(rt.Options{ID: id, Version: ver, Dev: dev, PkgDir: dir, DataDir: DataDir(id), LAN: m.LAN, Host: host})
+	// sourcemap 跟着入口文件走(SPEC 16.5 D81):有它报错栈才映射得回 TS 行号。
+	// 读不到不是错误 —— 手写 JS 的插件本来就没有 .map
+	var smap []byte
+	if dev {
+		smap = h.dev[id].smap
+	} else {
+		smap, _ = os.ReadFile(filepath.Join(dir, filepath.FromSlash(m.Main)) + ".map")
+	}
+	r, err := rt.New(rt.Options{ID: id, Version: ver, Dev: dev, PkgDir: dir, DataDir: DataDir(id),
+		LAN: m.LAN, Host: host, SourceMap: smap})
 	if err != nil {
 		return nil, err
 	}

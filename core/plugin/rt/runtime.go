@@ -44,6 +44,9 @@ type Options struct {
 	DataDir string // 插件私有根:data/ cache/ kv.json secrets
 	LAN     bool   // manifest 声明了 lan
 	Host    Host
+	// SourceMap 打包时产的 `main.js.map`(SPEC 16.5 D81)。
+	// 有它才能把报错栈里的 `main.js:1:2931` 换成作者写的 `src/panel.tsx:88:12`。
+	SourceMap []byte
 }
 
 // Runtime 一个插件的主运行时。
@@ -481,6 +484,15 @@ func (r *Runtime) SetCookies(jar, rawURL string, cookies map[string]string) erro
 func (r *Runtime) Storage() *kvStore { return r.kv }
 
 func (r *Runtime) reportError(e *Error) {
+	/* 报错也要进日志环(SPEC 16.5 的「日志」那一块)。
+	   ☠ 只走 OnError 的话,调试面板的日志里**一条错误都看不到** ——
+	     那一栏本来就是给「刚才到底出了什么事」用的,而错误恰恰不在里面。
+	     栈已经在 toError 里映射回 TS 行号了。 */
+	msg := e.Message
+	if e.Detail != "" {
+		msg += "\n" + e.Detail
+	}
+	r.logs.add(LogEntry{TS: nowMS(), Level: "error", Msg: msg})
 	if r.opt.Host.OnError != nil {
 		r.opt.Host.OnError(e)
 	}

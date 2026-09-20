@@ -84,7 +84,9 @@ func (r *Runtime) installUI(sdk *goja.Object) error {
 		st := UIState{Surface: c.Argument(0).String(), State: c.Argument(1).String()}
 		if o, ok := exportJSON(r, c.Argument(2)).(map[string]any); ok {
 			st.Message, _ = o["message"].(string)
-			st.Stack, _ = o["stack"].(string)
+			stack, _ := o["stack"].(string)
+			// 错误覆盖层上显示的位置要是作者写的那一行(D452 D81)
+			st.Stack = r.MapStack(stack)
 		}
 		r.uiSink.OnState(st)
 		return goja.Undefined()

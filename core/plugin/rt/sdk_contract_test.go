@@ -225,3 +225,101 @@ func TestSDKHooks主题变了要重渲染(t *testing.T) {
 		return mode && acc
 	})
 }
+
+/*
+反方向的判据:定义源里有的命名空间,运行时**要么全挂上,要么在这张表上**。
+
+☠ 上一版只有单向判据(挂上的必须在定义源里有),于是「定义源声明了、运行时
+  一个都没挂」是完全看不见的 —— `nav` 整个不存在、`ui` 只有 toast,
+  两者都活到了第三方审计才被发现。插件那边的表现是
+  `typeof sdk.ui === 'object'` 通过特性探测,然后 `ui.confirm(...)` 抛
+  「undefined is not a function」,**报在插件那边**,看起来像插件写错了。
+
+这张表是**账**,不是豁免:每一行要写清「为什么还没有」和「什么时候有」。
+实现完就把那一行删掉 —— 删不掉说明没实现完。
+*/
+var notYetImplemented = map[string]string{
+	// 账要记到**成员**这一级:记到命名空间那一级的话,`ui` 只挂了 toast
+	// 也能被「ui 在账上」放过 —— 那正是这条判据要抓的东西。
+	"debug.*": "debug 命名空间跟着开发者模式开关(D555);测试用的运行时没开,所以整个不在",
+
+
+	"ui.openWindow": "桌面子窗口(D220 D500)要壳做窗口管理,阶段 ⑤ 接",
+
+	"files.pick":      "文件选择器要壳弹系统对话框,阶段 ③ 和 nav 一起接",
+	"files.save":      "同上",
+	"files.saveImage": "同上",
+
+	"desktop.setTaskbarBadge":    "桌面任务栏集成(D502 托盘那一批)阶段 ⑤ 接",
+	"desktop.setTaskbarProgress": "同上",
+	"desktop.setWindowTitle":     "同上",
+
+	"tvChannels.publish": "Android TV 推荐行(D505)阶段 ④ 和直播一起接",
+	"widgets.update":     "桌面小组件(D506)阶段 ⑤ 接",
+
+	"canvas.renderToPng": "要离屏 GL 上下文,跟阶段 ⑤ 的主题预览一起做",
+	"cast.open":          "投屏设备选择在壳那边,阶段 ④ 接",
+	"download.enqueue":   "官方下载器的权限门在宿主,阶段 ③ 末尾接",
+	"emby.request":       "只读 GET 代发要先做响应脱敏(D472),阶段 ③ 接",
+	"ext.ensure":         "扩展组件下载(whisper / ffmpeg)跟字幕翻译一起做",
+	"ext.status":         "同上",
+	"oauth.authorize":    "自建中转的 OAuth(D365)跟同步插件一起接",
+	"oauth.refresh":      "同上",
+	"proxy.route":        "本地代理路由跟阶段 ④ 的直播一起接",
+	"proxy.url":          "同上",
+	"servers.list":       "服务器列表(只给 id 与名称,D92)阶段 ③ 接",
+	"servers.current":    "同上",
+	"system.clipboard":   "剪贴板 / 打开外部应用 / 分享要壳实现,阶段 ③ 接",
+	"system.openApp":     "同上",
+	"system.openUrl":     "同上",
+	"system.share":       "同上",
+	"wallpaper.set":      "壁纸是阶段 ⑤",
+
+	// media.*(D92 的「封装好的有限接口」):要先把图片地址脱 api_key、
+	// 把跨服观看记录合并那一套接过来,阶段 ③ 和同步插件一起做。
+	"media.search":      "媒体库查询封装(D92)阶段 ③ 接",
+	"media.getItem":     "同上",
+	"media.getChildren": "同上",
+	"media.getLatest":   "同上",
+	"media.history":     "同上",
+	"media.favorites":   "同上",
+	"media.setFavorite": "同上",
+	"media.setPlayed":   "同上",
+	"media.setProgress": "同上",
+}
+
+// bookedReason 这个成员在不在账上。`命名空间.*` 覆盖整个命名空间。
+func bookedReason(ns, member string) (string, bool) {
+	if why, ok := notYetImplemented[ns+"."+member]; ok {
+		return why, true
+	}
+	why, ok := notYetImplemented[ns+".*"]
+	return why, ok
+}
+
+func TestSDK定义源里的命名空间要么全挂要么在账上(t *testing.T) {
+	got := sdkShape(t)
+	var gaps []string
+	for ns, want := range SDKSpec {
+		have := got[ns]
+		var missing []string
+		for _, n := range want {
+			if !contains(have, n) {
+				missing = append(missing, n)
+			}
+		}
+		for _, n := range missing {
+			why, onBook := bookedReason(ns, n)
+			switch {
+			case !onBook:
+				gaps = append(gaps, ns+"."+n+" —— 定义源声明了、运行时没挂,而且不在 notYetImplemented 这张账上")
+			case strings.TrimSpace(why) == "":
+				gaps = append(gaps, ns+"."+n+" —— 在账上但没写理由;没理由的账等于把它藏起来")
+			}
+		}
+	}
+	sort.Strings(gaps)
+	if len(gaps) > 0 {
+		t.Fatalf("定义源声明了但运行时没挂,又没记在账上:\n  %s", strings.Join(gaps, "\n  "))
+	}
+}

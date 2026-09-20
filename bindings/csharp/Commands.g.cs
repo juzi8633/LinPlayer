@@ -311,6 +311,9 @@ public static class LinPlayerCommandNames
         "plugin.devUnload",
         "plugin.devList",
         "plugin.setCapabilities",
+        "plugin.appEvent",
+        "plugin.anchors",
+        "plugin.settingsSections",
         "sync.traktRequest",
         "sync.bangumiRequest",
         "player.getSubtitleText",
@@ -828,7 +831,7 @@ public static class LinPlayerCommandsExtensions
     public static Task<JsonElement> SyncCalendarDue(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("sync.calendarDue", args, ct);
 
-    // ---- 插件 · plugin.* (41 条) ----
+    // ---- 插件 · plugin.* (44 条) ----
     public static Task<JsonElement> PluginList(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("plugin.list", args, ct);
     public static Task<JsonElement> PluginPendingRestart(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -891,6 +894,12 @@ public static class LinPlayerCommandsExtensions
         => c.CallAsync("plugin.devList", args, ct);
     public static Task<JsonElement> PluginSetCapabilities(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("plugin.setCapabilities", args, ct);
+    public static Task<JsonElement> PluginAppEvent(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.appEvent", args, ct);
+    public static Task<JsonElement> PluginAnchors(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.anchors", args, ct);
+    public static Task<JsonElement> PluginSettingsSections(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.settingsSections", args, ct);
     public static Task<JsonElement> SyncTraktRequest(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("sync.traktRequest", args, ct);
     public static Task<JsonElement> SyncBangumiRequest(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)

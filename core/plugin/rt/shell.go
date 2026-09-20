@@ -22,6 +22,11 @@ type ShellCaps struct {
 	WebView   bool `json:"webview"`
 	SpiderJar bool `json:"spiderJar"`
 	SpiderPy  bool `json:"spiderPy"`
+	// Shell 这一版壳接了导航与对话框(nav.* / ui.confirm 那一组)没有。
+	//
+	// ☠ 没接时要**当场**抛 unsupported,不排一条注定超时的请求:
+	//   60 秒后才报「超时」的话,插件作者会以为是自己的参数写错了。
+	Shell bool `json:"shell"`
 }
 
 var (
@@ -189,6 +194,7 @@ func (r *Runtime) installShell(sdk *goja.Object) {
 		bus.Emit("plugin.toast", map[string]string{"plugin": id, "text": text}, "")
 	})
 	_ = sdk.Set("ui", ui)
+	r.installNavUI(sdk)
 }
 
 // spiderHandle spider.load 的返回:call 墙钟 30 秒(D355)。
