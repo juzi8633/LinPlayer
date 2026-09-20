@@ -83,8 +83,8 @@
 |---|---|
 | check-core / check-bindings / check-style / check-workflows | ✅ 全绿(2026-09-20 实跑) |
 | pack-win 出 exe、pack-android 出 APK | ✅ 105MB zip;arm64 + TV armv7 两个 APK,验签过 |
-| `.d.ts` ↔ Go 注册骨架比对(D514) | ❌ 没有任何脚本/测试;`plugin-sdk.d.ts` 只在 Go 注释里被提到 |
-| manifest schema ↔ `lp check` 一致 | ⚠️ 两边共用同一份 schema 且有 `TestSchemaCopiesInSync`,但没有门禁真的跑一次 `lp check` |
+| `.d.ts` ↔ Go 注册骨架比对(D514) | ✅ `tools/sdkgen/gen.mjs`(TS 编译器 API,pnpm)→ `rt/sdkspec_gen.go`;比对在 `rt/sdk_contract_test.go`(两条判据),产物最新性是 check-core 第 7 关。先红后绿:把 `storage.remove` 改名 `delete`,两条判据当场红 |
+| manifest schema ↔ `lp check` 一致 | ✅ check-core 第 6 关**真跑 CLI**(`lp check plugins/tvbox`)+ 一条必须红的坏 manifest。先红后绿:给 manifest 加一条没实现的 command,第 6 关红在「声明了但没实现」那句 |
 | 锚点 / 路由名清单 ↔ 代码登记 | ⏸ 阶段 ② 的接管位页才产生登记 |
 | mpv 脱敏清单测试(E3) | ⏸ `player` 命名空间阶段 ① 未实现(`rt/sdk.go:4`) |
 

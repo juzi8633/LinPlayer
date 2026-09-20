@@ -9,6 +9,8 @@
 #   3. FFI 契约                —— 生成的头文件与 SPEC §5.1 逐条一致
 #   4. 契约测试(C# 宿主侧)   —— 35 条判据,覆盖 §5.0/§5.2/§5.3/§5.4/§5.7/§5.10/§5.11
 #   5. 差分对账              —— Go 侧输出与黄金实现(Rust)逐字段一致
+#   6. lp check              —— 真跑一次 CLI(不是只比 schema),外加一条必须红的坏包
+#   7. SDK 注册骨架           —— .d.ts 重新生成一遍,产物必须和仓库里那份一样(D514)
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -44,6 +46,53 @@ rc=${PIPESTATUS[0]}
 
 step "5. 差分对账(vs 黄金实现)"
 ( cd "$ROOT/core" && go run ./cmd/diffcheck ) || fail=$((fail + 1))
+
+step "6. lp check(真跑一次 CLI)"
+# ★ 只比 schema 的测试(TestSchemaCopiesInSync)看不见 CLI 本身 —— 它还要打包、解压、
+#   起运行时、跑 activate、对贡献点。这一关跑的是**真的 lp check**,不是它的某个函数。
+( cd "$ROOT/core" && go run ./cmd/lp check "$ROOT/plugins/tvbox" ) || fail=$((fail + 1))
+
+# ☠ **反向用例不许省**:只跑「好包应该绿」的话,check 里任何一条判据被注释掉都照样全绿。
+#   这里故意给一个 id 不合规的 manifest,lp check 必须非零退出。
+BADDIR="$(mktemp -d)"
+cat > "$BADDIR/manifest.json" <<'BAD'
+{ "id": "NotAValid Id", "name": "坏包", "version": "1.0.0", "main": "index.js" }
+BAD
+if ( cd "$ROOT/core" && go run ./cmd/lp check "$BADDIR" >/dev/null 2>&1 ); then
+  echo "  ✗ 坏 manifest 竟然通过了 lp check —— 这一关等于没有"
+  fail=$((fail + 1))
+else
+  echo "  ✓ 坏 manifest 被挡下"
+fi
+rm -rf "$BADDIR"
+
+step "7. SDK 注册骨架是否最新(D514)"
+# 生成器用 TypeScript 编译器 API 读 api/plugin-sdk.d.ts,产物 core/plugin/rt/sdkspec_gen.go
+# 进仓库;逐名比对由 rt/sdk_contract_test.go 在第 1 关做。这里只管**产物有没有跟上定义源** ——
+# 改了 .d.ts 忘了重跑生成器的话,比对用的还是旧骨架,那一关就成了自欺。
+if command -v pnpm >/dev/null 2>&1; then
+  if [ ! -d "$ROOT/tools/sdkgen/node_modules" ]; then ( cd "$ROOT/tools/sdkgen" && pnpm install --silent ); fi
+  # ☠ **不要用 `git diff` 判**:产物第一次加进来时是未跟踪文件,git diff 对它一声不吭,
+  #   这一关就永远绿 —— 2026-09-20 写完当场踩到。生成到临时文件再 cmp,和 git 状态无关。
+  GEN_TMP="$(mktemp)"
+  # 直接 node 跑:pnpm 只负责装 typescript,多包一层 `pnpm gen --` 会把 `--` 也当成参数传进去
+  if node "$ROOT/tools/sdkgen/gen.mjs" --out "$GEN_TMP" >/dev/null; then
+    if cmp -s "$GEN_TMP" "$ROOT/core/plugin/rt/sdkspec_gen.go"; then
+      echo "  ✓ 与 plugin-sdk.d.ts 一致"
+    else
+      echo "  ✗ sdkspec_gen.go 落后于 plugin-sdk.d.ts —— 跑 \`pnpm --dir tools/sdkgen gen\` 再提交"
+      diff -u "$ROOT/core/plugin/rt/sdkspec_gen.go" "$GEN_TMP" | head -20
+      fail=$((fail + 1))
+    fi
+  else
+    echo "  ✗ 生成器跑不起来"
+    fail=$((fail + 1))
+  fi
+  rm -f "$GEN_TMP"
+else
+  # ☠ 不许静默跳过:跳过的门禁和不存在的门禁是一回事,至少要让人看见它没跑
+  echo "  ⚠ 没有 pnpm,这一关没跑(装:npm i -g pnpm)"
+fi
 
 echo
 if [ $fail -eq 0 ]; then echo "核心层门禁:全部通过。"; else echo "核心层门禁:$fail 关不通过。"; fi

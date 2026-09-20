@@ -1,0 +1,8 @@
+{
+  "name": "lp-sdkgen",
+  "private": true,
+  "type": "module",
+  "description": "读 api/plugin-sdk.d.ts 产出 Go 注册骨架(D514)。只在开发时跑。",
+  "scripts": { "gen": "node gen.mjs" },
+  "devDependencies": { "typescript": "5.9.3" }
+}
