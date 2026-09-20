@@ -259,10 +259,17 @@ internal fun fire(app: AppState, surface: String, fn: Int?, vararg values: Any?)
     }
 }
 
-private fun jsonOf(v: Any?): JsonElement = when (v) {
+/* ☠ Map / List 必须**递归转**,不能落到 toString()。
+   落到 toString 的表现是 JS 那边收到一个字符串 "{from=0, to=24}",
+   `r.from` 读出 undefined,`undefined|0` 悄悄变成 0 —— 于是虚拟列表的窗口
+   被设成 0..0,一千项全部消失,界面空白且**不报错**。2026-09-20 在 TV 上撞到。 */
+internal fun jsonOf(v: Any?): JsonElement = when (v) {
     null -> kotlinx.serialization.json.JsonNull
     is Boolean -> JsonPrimitive(v)
     is Number -> JsonPrimitive(v)
+    is String -> JsonPrimitive(v)
+    is Map<*, *> -> JsonObject(v.entries.associate { (k, x) -> k.toString() to jsonOf(x) })
+    is Iterable<*> -> JsonArray(v.map { jsonOf(it) })
     else -> JsonPrimitive(v.toString())
 }
 

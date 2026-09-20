@@ -122,12 +122,18 @@ class MainActivity : ComponentActivity() {
     object SelfCheck {
         @Volatile var login: String? = null
         @Volatile var page: String? = null
+
+        /* 热启动再送一次 `-e lp_page` 时 +1。
+           ☠ 没有它的话每次直达都得先 force-stop,于是**只量得到冷路径** ——
+           首帧预算里「第二次进同一页」那半截永远没有数。 */
+        val pageTick = androidx.compose.runtime.mutableIntStateOf(0)
         /** 开发版加载的本地插件目录(`-e lp_devplugin <路径>`)。 */
         @Volatile var devPlugin: String? = null
     }
 
     private fun handleIntent(i: Intent?) {
         if (i?.action == Intent.ACTION_VIEW) deepLink.value = i.dataString
+        i?.getStringExtra("lp_page")?.let { SelfCheck.page = it; SelfCheck.pageTick.intValue++ }
     }
 
     /**

@@ -166,6 +166,57 @@ class PluginUiFocusTest {
         }
     }
 
+    /*
+     * 纯展示的虚拟列表在 TV 上也必须能走。
+     *
+     * ☠ 2026-09-20 在模拟器上量一千项帧率时撞到:80 次下键只产生 10 帧 ——
+     * 项全是 Text,没有一个能吃焦点,焦点全程停在侧边栏,列表一行都没滚。
+     * 帧率数字当时「看起来只是量不准」,真因是这一页遥控器**根本进不去**。
+     */
+    @Test fun 纯文本的虚拟列表也能用遥控器滚() {
+        val core = FakeCore().loggedIn()
+        core.on("plugin.ui.mount") {
+            val ops = mutableListOf<JsonObject>()
+            ops += JsonObject(mapOf(
+                "op" to JsonPrimitive("create"), "id" to JsonPrimitive(1), "type" to JsonPrimitive("VirtualList")))
+            ops += JsonObject(mapOf(
+                "op" to JsonPrimitive("props"), "id" to JsonPrimitive(1),
+                "set" to JsonObject(mapOf(
+                    "itemCount" to JsonPrimitive(1000),
+                    "firstIndex" to JsonPrimitive(0),
+                    "itemHeight" to JsonPrimitive(56),
+                    "style" to JsonObject(mapOf("height" to JsonPrimitive(600))),
+                ))))
+            ops += JsonObject(mapOf(
+                "op" to JsonPrimitive("insert"), "parent" to JsonPrimitive(0), "id" to JsonPrimitive(1)))
+            repeat(24) { i ->
+                val id = 100 + i
+                ops += JsonObject(mapOf(
+                    "op" to JsonPrimitive("create"), "id" to JsonPrimitive(id), "type" to JsonPrimitive("Text")))
+                ops += JsonObject(mapOf(
+                    "op" to JsonPrimitive("text"), "id" to JsonPrimitive(id), "value" to JsonPrimitive("第 $i 项")))
+                ops += JsonObject(mapOf(
+                    "op" to JsonPrimitive("insert"), "parent" to JsonPrimitive(1), "id" to JsonPrimitive(id)))
+            }
+            JsonObject(mapOf(
+                "surface" to JsonPrimitive("s1"), "frame" to JsonPrimitive(1), "ops" to JsonArray(ops)))
+        }
+        core.ret("plugin.ui.unmount", JsonObject(emptyMap()))
+        core.ret("plugin.ui.event", JsonObject(emptyMap()))
+        core.ret("plugin.ui.viewport", JsonObject(emptyMap()))
+        val app = AppState(core, CoroutineScope(SupervisorJob() + Dispatchers.Main))
+        runBlocking { app.boot() }
+        val nav = TvNav().apply { push(TvRoute.PluginPage("alice/demo", "p", "插件页")) }
+        rule.mainClock.autoAdvance = false
+        rule.setContent { TvFrame(app) { TvShell(nav) } }
+        advance(rule, 1200)
+
+        rule.onNode(hasText("第 0 项")).assertExists()
+        rule.onNode(hasTestTag("plug.list.1.0")).assertIsFocused()
+        press(rule, Key.DirectionDown)
+        rule.onNode(hasTestTag("plug.list.1.1")).assertIsFocused()
+    }
+
     @Test fun 按下确认把回调号原样发回核心层() {
         val core = mountPluginPage()
         press(rule, Key.Enter)

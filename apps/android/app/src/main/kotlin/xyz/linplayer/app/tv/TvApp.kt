@@ -93,13 +93,29 @@ fun TvRoot(app: AppState) {
                 xyz.linplayer.app.MainActivity.SelfCheck.devPlugin = null
                 runCatching { app.call("plugin.devLoad", xyz.linplayer.app.ui.pages.args("dir" to dir)) }
             }
+            /* 自检登录:`-e lp_login "<地址>|<用户>|<密码>"`。
+               ☠ 这条原来只有手机闸口页(GatePage)接,而**电视设备永远走 TvRoot** ——
+               于是 TV 端根本没有自检登录入口,一跑就停在引导页,看起来像「TV 壳坏了」。
+               2026-09-20 想在 TV 上量一千项列表时撞到。 */
+            xyz.linplayer.app.MainActivity.SelfCheck.login?.let { sc ->
+                xyz.linplayer.app.MainActivity.SelfCheck.login = null
+                val p = sc.split("|")
+                runCatching {
+                    app.call("emby.login", xyz.linplayer.app.ui.pages.args(
+                        "server" to xyz.linplayer.app.ui.pages.withScheme(p.getOrElse(0) { "" }),
+                        "username" to p.getOrElse(1) { "" },
+                        "password" to p.getOrElse(2) { "" },
+                        "device_id" to app.deviceId(),
+                    ))
+                }.onFailure { xyz.linplayer.app.core.Logs.w("自检", "TV 登录失败: " + it.message) }
+            }
             app.boot()
         }
         // 手机遥控开机即起(§9.3 默认开)。手机形态从不调这条,所以手机上不监听
         LaunchedEffect(Unit) { runCatching { app.call("companion.start") } }
         CompanionBridge(nav)
         // 自检直达:`-e lp_page 'tv:pluginpage:<插件id>/<页面id>'`
-        LaunchedEffect(loggedIn) {
+        LaunchedEffect(loggedIn, xyz.linplayer.app.MainActivity.SelfCheck.pageTick.intValue) {
             val p = xyz.linplayer.app.MainActivity.SelfCheck.page ?: return@LaunchedEffect
             if (!p.startsWith("tv:")) return@LaunchedEffect
             xyz.linplayer.app.MainActivity.SelfCheck.page = null

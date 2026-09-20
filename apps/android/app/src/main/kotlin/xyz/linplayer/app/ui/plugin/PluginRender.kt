@@ -1,6 +1,8 @@
 package xyz.linplayer.app.ui.plugin
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -303,15 +306,43 @@ private fun VirtualList(n: UiNode, m: Modifier, surface: String, app: AppState) 
        Compose 是**当场抛异常**而不是画不出来。插件页宿主本身就是个 LazyColumn,
        所以这条一定会被踩到 —— 兜 360dp,插件想要别的自己写 style.height。 */
     val bounded = if (n.style().numOf("height") != null) m else m.height(360.dp)
+    val tv = LocalPluginTv.current
     androidx.compose.foundation.lazy.LazyColumn(bounded, state, verticalArrangement = Arrangement.spacedBy(gap)) {
         items(total, key = { it }) { i ->
             val k = i - first
             // 窗口外的项 JS 还没给:占位撑住高度,否则滚动条会在数据补上来时乱跳
-            if (k in n.children.indices) RenderNode(n.children[k], surface, app)
-            else Box(Modifier.fillMaxWidth().height(((n.num("itemHeight") ?: 56.0)).dp))
+            val c = n.children.getOrNull(k)
+            when {
+                c == null -> Box(Modifier.fillMaxWidth().height(((n.num("itemHeight") ?: 56.0)).dp))
+                tv && !hasInteractive(c) -> TvListRow(n.id, i) { RenderNode(c, surface, app) }
+                else -> RenderNode(c, surface, app)
+            }
         }
     }
 }
+
+/* ☠ 纯展示的项在 TV 上**等于不存在**:整页没有落点,遥控器连进都进不去,
+   一千项一行也滚不动 —— 而截图里列表画得整整齐齐。2026-09-20 量帧率时撞到:
+   80 次下键只产生 10 帧,焦点全程停在侧边栏。项里自带交互元素的交给它自己,
+   不要套两层焦点。 */
+@Composable
+private fun TvListRow(listId: Int, index: Int, content: @Composable () -> Unit) {
+    val src = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val on by src.collectIsFocusedAsState()
+    Box(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (on) Color.White.copy(alpha = 0.10f) else Color.Transparent)
+            .memo("plug.list.$listId.$index", index == 0 && claimsInitialFocus(listId))
+            .focusable(interactionSource = src)
+    ) { content() }
+}
+
+private val interactiveTypes = listOf("Button", "Chip", "Pressable", "Switch", "Checkbox", "TextInput")
+
+/** 子树里有没有能吃焦点的东西。 */
+private fun hasInteractive(n: UiNode): Boolean =
+    n.type in interactiveTypes || n.children.any { hasInteractive(it) }
 
 
 /**
@@ -322,7 +353,7 @@ private fun VirtualList(n: UiNode, m: Modifier, surface: String, app: AppState) 
 @Composable
 private fun renderTv(n: UiNode, m: Modifier, surface: String, app: AppState): Boolean {
     val key = "plug.${n.id}"
-    val interactive = n.type in listOf("Button", "Chip", "Pressable", "Switch", "Checkbox")
+    val interactive = n.type in interactiveTypes
     val initial = interactive && claimsInitialFocus(n.id)
     when (n.type) {
         "Button" -> xyz.linplayer.app.tv.kit.TvButton(
