@@ -453,6 +453,34 @@ UHD(<UHD 求片站>)**测试账号**(用户提供,服主已授权测试,可直�
 - 插件用的 WebView 全挂在 MainActivity 顶层一个 FrameLayout 里,平时 `translationX` 平移到屏幕外 ——
   alpha=0 会挡触摸,INVISIBLE 可能暂停渲染;要用户动手时挪回来,同一个 WebView,页面状态不丢。
 
+## goja 与最小 DOM 的三个坑(2026-09-21)
+
+- **`goja.Callable` 不能直接 `vm.ToValue` 交回 JS。** 它的签名是 `(this, ...args)`,
+  goja 会把 JS 那边的**第一个实参喂给 `this` 这一位** —— 回调收到的第一个参数永远是
+  undefined。表现是「回调被调到了、也没报错,就是拿不到按键名」。
+  要包一层 `func(c goja.FunctionCall) goja.Value`,里面用 `c.Arguments...` 转发。
+- **`uiruntime.js` 是拼接出来的不是打包出来的**(`tools/uibundle/build.mjs` 直接拼 UMD)。
+  往 `src/*.js` 里写 `import` 会让整份运行时**语法错**,而报出来的是
+  「装 UI 运行时失败: SyntaxError … Unexpected reserved word」,看起来像 goja 不支持某个语法。
+  要新增一份生成代码,就生成成普通脚本(`var X = ...`)并在 build.mjs 里多拼一块。
+- **组件属性表不能在渲染器里手写。** 手写的那份和 `.d.ts` 分叉时,
+  D319 的「未知属性」warn 会开始骂**正确**的属性,而插件作者只能选择忽略它 ——
+  这条 warn 从此等于不存在。现在由 `tools/sdkgen/gen.mjs` 从定义源生成
+  `tools/uibundle/src/props.gen.js`。
+
+## 偏好里带 omitempty 的键**清不掉**(2026-09-21,影响 9 个字段)
+
+`core/config/prefs.go` 的 `prefsTypedKeys` 原来是「marshal 一个零值 `Prefs{}` 再看有哪些键」
+建的,而带 `omitempty` 的字段零值时根本不出现在那份 JSON 里 ——
+于是它被当成「没接的键」收进 `rest`;之后把它**清空**时,结构体这边省略了,
+`rest` 那边又把旧值贴回来。
+
+表现:主题标记成加载失败之后,用户重选同一个主题仍然被当成失败的,**那个主题被永久拉黑**。
+反向注入回旧写法后一次点名 9 个字段,其中有 `calendar_unlock_order`(付费门)和 `dev_mode`。
+
+改成按 json tag 反射。判据**不针对某一个字段**:凡是 `omitempty` 的键都要在
+`prefsTypedKeys` 里,少一个就会犯同一个病。
+
 ## 跨域交叉引用
 
 - [分发通道 GitHub 优于 CF](build-release.md) — 插件包与市场索引走 GitHub,别挪 CF
