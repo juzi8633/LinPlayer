@@ -32,6 +32,8 @@ public static class AppJobs
     {
         JsonElement due;
         try { due = await core.SyncCalendarDue(); }
+        // 付费门没过(D551,核心层一处堵死):没解锁就没有提醒,每半小时记一条警告只是噪音。
+        catch (CoreException e) when (e.Code == "E_PERMISSION") { return; }
         catch (Exception e) { Log.W("calendar", "开播提醒查询失败: " + e.Message); return; }
         if (due.ValueKind != JsonValueKind.Array) return;
         foreach (var e in due.EnumerateArray().Take(3))

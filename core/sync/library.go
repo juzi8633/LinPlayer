@@ -231,7 +231,7 @@ func calendarDue(ctx context.Context) []CalendarEntry {
 
 func registerLibrary(version string) {
 	embyClient = emby.NewClient(version)
-	bus.Register("sync.calendarLibrary", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
+	registerGated("sync.calendarLibrary", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
 		var qs []libQuery
 		b, _ := json.Marshal(a["entries"])
 		if err := json.Unmarshal(b, &qs); err != nil {
@@ -239,7 +239,7 @@ func registerLibrary(version string) {
 		}
 		return calendarLibrary(ctx, qs)
 	})
-	bus.Register("sync.calendarDue", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
+	registerGated("sync.calendarDue", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
 		if !config.Current().PrefsOf().CalendarNotify {
 			return []CalendarEntry{}, nil
 		}

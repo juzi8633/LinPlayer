@@ -43,7 +43,7 @@ func RegisterCommands(version string) {
 	})
 
 
-	bus.Register("sync.traktCalendar", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
+	registerGated("sync.traktCalendar", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
 		acc := Load("trakt")
 		if acc == nil {
 			return nil, bus.NewErr(bus.EAuth, "还没有连接 Trakt")
@@ -97,7 +97,7 @@ func RegisterCommands(version string) {
 		return s, nil // nil = 这部没有简介,是常态
 	})
 
-	bus.Register("sync.bangumiCalendar", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
+	registerGated("sync.bangumiCalendar", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
 		onlyMine := boolArg(a, "only_mine")
 		// ★ 不登录也能看**全量**放送表 —— 这是产品决定:日历对没连账号的人也有用。
 		//   只有「只看我追的」才要求登录。

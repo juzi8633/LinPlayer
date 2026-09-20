@@ -26,6 +26,8 @@ class CalendarWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
     override suspend fun doWork(): Result {
         val core = (applicationContext as LinPlayerApp).core
         val due = runCatching { core.callJson("sync.calendarDue") }.getOrElse {
+            // 付费门没过(D551,核心层一处堵死):没解锁就没有提醒,这不是失败,别排重试。
+            if ((it as? xyz.linplayer.app.core.CoreException)?.code == "E_PERMISSION") return Result.success()
             Logs.w("calendar", "开播提醒查询失败:" + it.message)
             return Result.retry()
         }.arr().mapNotNull { it.obj() }

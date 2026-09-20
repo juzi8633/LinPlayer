@@ -73,11 +73,9 @@ public sealed class CalendarPage : PageBase
         _bar.Children.Add(_onlyMine);
         _bar.Children.Add(sources);
 
-        Content = Scrolled(new StackPanel
-        {
-            Spacing = 18,
-            Children = { H1("追剧日历"), _bar, _days, _status, _wall },
-        });
+        // 先铺骨架而不是日历版式:门和日历是二选一,谁都不知道选哪个之前
+        // 直接铺日历会让未解锁的用户闪一帧空日历,再被换成解锁面板。
+        Content = Scrolled(new StackPanel { Spacing = 18, Children = { H1("追剧日历"), Skeleton.Grid(false, 8, 168) } });
         // 空的状态行不占位:Spacing 会把它算成一行,海报墙上方平白多一道空隙
         _status.PropertyChanged += (_, e) =>
         {
@@ -98,7 +96,7 @@ public sealed class CalendarPage : PageBase
         string order = "";
         try { order = Str(await _core.PrefsGetPrefs(), "calendar_unlock_order"); }
         catch (Exception e) { Log.W("calendar", "读解锁状态失败: " + e.Message); }
-        if (!string.IsNullOrEmpty(order)) { _ = Load(); return; }
+        if (!string.IsNullOrEmpty(order)) { Dispatcher.UIThread.Post(ShowCalendar); return; }
 
         string sponsor = "";
         try { sponsor = Str(await _core.SystemAfdianSponsorUrl(), "url"); }
@@ -135,12 +133,7 @@ public sealed class CalendarPage : PageBase
                 if (r.TryGetProperty("valid", out var v) && v.ValueKind == JsonValueKind.True)
                 {
                     Toast.Show($"已解锁:{Str(r, "plan_title")} {Str(r, "amount")}".TrimEnd());
-                    Content = Scrolled(new StackPanel
-                    {
-                        Spacing = 18,
-                        Children = { H1("追剧日历"), _bar, _days, _status, _wall },
-                    });
-                    _ = Load();
+                    ShowCalendar();
                     return;
                 }
                 hint.Text = Str(r, "reason") is { Length: > 0 } why ? why : "订单号无效";
@@ -160,6 +153,16 @@ public sealed class CalendarPage : PageBase
                 Dim("赞助后在爱发电订单详情里复制订单号,填到上面解锁本机。"),
             },
         });
+    }
+
+    private void ShowCalendar()
+    {
+        Content = Scrolled(new StackPanel
+        {
+            Spacing = 18,
+            Children = { H1("追剧日历"), _bar, _days, _status, _wall },
+        });
+        _ = Load();
     }
 
     private bool OnlyMine => _onlyMine.Classes.Contains("on");
