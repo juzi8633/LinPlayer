@@ -12,6 +12,7 @@ import (
 func RegisterCommands(version string) {
 	registerLibrary(version)
 	registerAfdian()
+	registerProxyRequests()
 
 	// ---- Trakt ----
 	bus.Register("sync.traktAccount", func(ctx context.Context, seq int64, a map[string]any) (any, error) {

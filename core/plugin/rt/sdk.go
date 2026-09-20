@@ -229,6 +229,8 @@ func (r *Runtime) installSDK() error {
 	r.installCrypt(ns("crypt"))
 	r.installShell(sdk)
 	r.installDebug(sdk)
+	r.installPlayer(sdk)
+	r.installSync(sdk)
 	if err := r.installUI(sdk); err != nil {
 		return err
 	}
@@ -419,4 +421,27 @@ func (r *Runtime) writableStream(fh *os.File) goja.Value {
 	_ = w.Set("getWriter", func() goja.Value { return w })
 	r.disposes = append(r.disposes, func() { _ = fh.Close() })
 	return w
+}
+
+// installSync trakt / bangumi 代发(SPEC 17.3 18.2,D365)。
+//
+// 宿主带 token 发,插件拿不到 token —— 这是 D11 在第三方账号上的同一条底线。
+func (r *Runtime) installSync(sdk *goja.Object) {
+	h := r.opt.Host
+	for _, svc := range []string{"trakt", "bangumi"} {
+		service := svc
+		o := r.vm.NewObject()
+		_ = sdk.Set(service, o)
+		_ = o.Set("request", func(c goja.FunctionCall) goja.Value {
+			method := c.Argument(0).String()
+			path := c.Argument(1).String()
+			body := exportJSON(r, c.Argument(2))
+			return r.async(func() (any, error) {
+				if h.SyncRequest == nil {
+					return nil, &Error{Kind: KindUnsupported, Message: "这一版宿主没有提供 " + service + ".request"}
+				}
+				return h.SyncRequest(service, method, path, body)
+			})
+		})
+	}
 }

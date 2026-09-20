@@ -301,6 +301,9 @@ object LinPlayerCommandNames {
         "plugin.devUnload",
         "plugin.devList",
         "plugin.setCapabilities",
+        "sync.traktRequest",
+        "sync.bangumiRequest",
+        "player.getSubtitleText",
         "plugin.setEnv",
         "plugin.shellResult",
         "plugin.setCookies",
@@ -813,7 +816,7 @@ suspend fun LinPlayerCommands.syncCalendarLibrary(args: Map<String, Any?>? = nul
 suspend fun LinPlayerCommands.syncCalendarDue(args: Map<String, Any?>? = null): JsonElement =
     call("sync.calendarDue", args)
 
-// ---- 插件 · plugin.* (38 条) ----
+// ---- 插件 · plugin.* (41 条) ----
 suspend fun LinPlayerCommands.pluginList(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.list", args)
 suspend fun LinPlayerCommands.pluginPendingRestart(args: Map<String, Any?>? = null): JsonElement =
@@ -876,6 +879,12 @@ suspend fun LinPlayerCommands.pluginDevList(args: Map<String, Any?>? = null): Js
     call("plugin.devList", args)
 suspend fun LinPlayerCommands.pluginSetCapabilities(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.setCapabilities", args)
+suspend fun LinPlayerCommands.syncTraktRequest(args: Map<String, Any?>? = null): JsonElement =
+    call("sync.traktRequest", args)
+suspend fun LinPlayerCommands.syncBangumiRequest(args: Map<String, Any?>? = null): JsonElement =
+    call("sync.bangumiRequest", args)
+suspend fun LinPlayerCommands.playerGetSubtitleText(args: Map<String, Any?>? = null): JsonElement =
+    call("player.getSubtitleText", args)
 suspend fun LinPlayerCommands.pluginSetEnv(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.setEnv", args)
 suspend fun LinPlayerCommands.pluginShellResult(args: Map<String, Any?>? = null): JsonElement =

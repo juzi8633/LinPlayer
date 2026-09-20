@@ -311,6 +311,9 @@ public static class LinPlayerCommandNames
         "plugin.devUnload",
         "plugin.devList",
         "plugin.setCapabilities",
+        "sync.traktRequest",
+        "sync.bangumiRequest",
+        "player.getSubtitleText",
         "plugin.setEnv",
         "plugin.shellResult",
         "plugin.setCookies",
@@ -825,7 +828,7 @@ public static class LinPlayerCommandsExtensions
     public static Task<JsonElement> SyncCalendarDue(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("sync.calendarDue", args, ct);
 
-    // ---- 插件 · plugin.* (38 条) ----
+    // ---- 插件 · plugin.* (41 条) ----
     public static Task<JsonElement> PluginList(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("plugin.list", args, ct);
     public static Task<JsonElement> PluginPendingRestart(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -888,6 +891,12 @@ public static class LinPlayerCommandsExtensions
         => c.CallAsync("plugin.devList", args, ct);
     public static Task<JsonElement> PluginSetCapabilities(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("plugin.setCapabilities", args, ct);
+    public static Task<JsonElement> SyncTraktRequest(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("sync.traktRequest", args, ct);
+    public static Task<JsonElement> SyncBangumiRequest(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("sync.bangumiRequest", args, ct);
+    public static Task<JsonElement> PlayerGetSubtitleText(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("player.getSubtitleText", args, ct);
     public static Task<JsonElement> PluginSetEnv(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("plugin.setEnv", args, ct);
     public static Task<JsonElement> PluginShellResult(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)

@@ -305,6 +305,11 @@ func (h *Host) load(id, ver, dir string, m *Manifest, dev bool, reason string) (
 	host.AppSettingSet = appSettingSet
 	host.App = rt.AppInfo{Version: h.version, Platform: h.platform, FormFactor: formFactor(h.platform), Locale: "zh-CN", DevMode: DevModeOn()}
 	host.Debug = h.debugHooks()
+	host.Player = playerHooks()
+	host.SyncRequest = func(service, method, path string, body any) (any, error) {
+		return bus.Invoke(context.Background(), "sync."+service+"Request",
+			map[string]any{"method": method, "path": path, "body": body})
+	}
 	r, err := rt.New(rt.Options{ID: id, Version: ver, Dev: dev, PkgDir: dir, DataDir: DataDir(id), LAN: m.LAN, Host: host})
 	if err != nil {
 		return nil, err

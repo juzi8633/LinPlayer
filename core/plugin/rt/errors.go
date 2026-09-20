@@ -126,6 +126,10 @@ type Host struct {
 	App AppInfo
 	// Debug 实现 debug 命名空间(SPEC 16.5,D80 D81)。只在开发者模式下非 nil。
 	Debug *DebugHooks
+	// Player 实现 player 命名空间(SPEC 9)。
+	Player *PlayerHooks
+	// SyncRequest 实现 trakt / bangumi 代发(SPEC 17.3 18.2):宿主带 token 发。
+	SyncRequest func(service, method, path string, body any) (any, error)
 }
 
 // DebugHooks 调试面板要的四块数据。整块为 nil = 这一版不挂 debug 命名空间。

@@ -380,6 +380,9 @@
 | [x] | `plugin.devUnload` | **新增** | `id` | `—` | ✅ |
 | [x] | `plugin.devList` | **新增** | `—` | `{id: dir}` | ✅ |
 | [x] | `plugin.setCapabilities` | **新增** | `webview, spider_jar, spider_py` | `—` | ✅ |
+| [x] | `sync.traktRequest` | **新增** | `method, path, body?` | `Json` | — | <!-- Trakt 代发(SPEC 17.3 18.2 D365):宿主带 token 发,插件拿不到 token -->
+| [x] | `sync.bangumiRequest` | **新增** | `method, path, body?` | `Json` | — | <!-- 同上,Bangumi -->
+| [x] | `player.getSubtitleText` | **新增** | `track_id?` | `{format,text}` | — | <!-- 字幕轨全文(SPEC 9.7 D487):宿主带 token 拉,插件拿不到地址 -->
 | [x] | `plugin.setEnv` | **新增** | `theme_mode, theme_tokens, reduced_motion` | `—` | ✅ |
 | [x] | `plugin.shellResult` | **新增** | `id, ok, data?, error?` | `—` | ✅ |
 | [x] | `plugin.setCookies` | **新增** | `plugin_id, jar, url, cookies` | `—` | ✅ |

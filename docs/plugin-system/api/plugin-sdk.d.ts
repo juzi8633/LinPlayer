@@ -984,6 +984,21 @@ export declare namespace emby {
   function request(path: string, params?: Record<string, string | number | boolean>, opts?: { server?: string }): Promise<Json>
 }
 
+/**
+ * Trakt / Bangumi 代发(SPEC 17.3 18.2,D365)。
+ *
+ * 账号连接与 token 刷新在宿主,用户只登一次;插件借宿主的 token 发请求,
+ * **拿不到 token 本身**。没连账号时抛 `auth`,不是回空 —— 回空的话插件会把
+ * 「没登录」和「这个条目没有记录」当成同一件事。
+ */
+export declare namespace trakt {
+  function request(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: Json): Promise<Json>
+}
+
+export declare namespace bangumi {
+  function request(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: Json): Promise<Json>
+}
+
 export declare namespace download {
   /** 让官方下载器下 Emby 片;与官方下载同一道权限门,无权限抛 permission。@see D309 D190 */
   function enqueue(itemId: string, opts?: { server?: string }): Promise<void>

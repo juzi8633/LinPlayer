@@ -81,6 +81,9 @@ type Runtime struct {
 	// 不然设置页改完插件页还是旧值,用户得退出重进。
 	stats   statBox
 
+	// props 这个插件改过的 mpv 属性(SPEC 9.2):停用时按它还原。
+	props propLedger
+
 	setMu   sync.Mutex
 	setSubs map[string]map[int64]func()
 	setSeq  int64
@@ -424,6 +427,9 @@ func (r *Runtime) Close() {
 		return
 	}
 	envUnsubscribe(r)
+	// 还原它改过的 mpv 属性(SPEC 9.2 D302)。要赶在关循环之前 ——
+	// 关了之后宿主回调还能调,但插件那边已经没人能收结果了
+	r.RestoreProps()
 	close(r.quit)
 	// 循环可能正卡在插件的死循环里:不打断它,停用/卸载这个插件会把调用方一起挂住。
 	r.vm.Interrupt("closed")

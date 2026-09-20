@@ -8,6 +8,7 @@ package rt
 var SDKSpec = map[string][]string{
 	"app": {"capabilities", "devMode", "formFactor", "getSetting", "locale", "platform", "reducedMotion", "setSetting", "version"},
 	"assets": {"readBytes", "readText", "url"},
+	"bangumi": {"request"},
 	"canvas": {"renderToPng"},
 	"cast": {"open"},
 	"cookies": {"clear", "get", "set"},
@@ -34,6 +35,7 @@ var SDKSpec = map[string][]string{
 	"spider": {"compatProxyPort", "load", "supported"},
 	"storage": {"get", "keys", "remove", "set"},
 	"system": {"clipboard", "openApp", "openUrl", "share"},
+	"trakt": {"request"},
 	"tvChannels": {"publish"},
 	"ui": {"confirm", "notify", "openWindow", "prompt", "select", "toast"},
 	"wallpaper": {"set"},
