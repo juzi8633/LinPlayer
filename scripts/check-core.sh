@@ -3,7 +3,7 @@
 #
 #   bash scripts/check-core.sh
 #
-# 五关,任意一关红就退非零:
+# 十关,任意一关红就退非零:
 #   1. go vet + go test        —— 核心层单测
 #   2. 出库                    —— c-shared 编得出来
 #   3. FFI 契约                —— 生成的头文件与 SPEC §5.1 逐条一致
@@ -12,6 +12,8 @@
 #   6. lp check              —— 真跑一次 CLI(不是只比 schema),外加一条必须红的坏包
 #   7. SDK 注册骨架           —— .d.ts 重新生成一遍,产物必须和仓库里那份一样(D514)
 #   8. UI 运行时              —— Preact + 最小 DOM 的打包产物同样要跟上源文件(D23)
+#   9. 决定落点              —— 每条 Dnnn 在 SPEC 里有落点(COVERAGE.md 跟得上)
+#  10. 插件 UI 三端一致      —— SDK 声明的组件 / 动效 / hooks,两个壳都不许静默降级
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -91,8 +93,10 @@ if command -v pnpm >/dev/null 2>&1; then
   fi
   rm -f "$GEN_TMP"
 else
-  # ☠ 不许静默跳过:跳过的门禁和不存在的门禁是一回事,至少要让人看见它没跑
-  echo "  ⚠ 没有 pnpm,这一关没跑(装:npm i -g pnpm)"
+  # ☠ 跳过的门禁和不存在的门禁是一回事。上一版只 echo 一行警告、不计 fail ——
+  #   换台没装 pnpm 的机器这两关当场变绿,而没人会发现。
+  echo "  ✗ 没有 pnpm,这一关跑不了(装:npm i -g pnpm)"
+  fail=$((fail + 1))
 fi
 
 step "8. UI 运行时产物是否最新(D23)"
@@ -115,8 +119,21 @@ if command -v pnpm >/dev/null 2>&1; then
   fi
   rm -f "$UI_TMP"
 else
-  echo "  ⚠ 没有 pnpm,这一关没跑(装:npm i -g pnpm)"
+  # ☠ 跳过的门禁和不存在的门禁是一回事。上一版只 echo 一行警告、不计 fail ——
+  #   换台没装 pnpm 的机器这两关当场变绿,而没人会发现。
+  echo "  ✗ 没有 pnpm,这一关跑不了(装:npm i -g pnpm)"
+  fail=$((fail + 1))
 fi
+
+step "9. 决定落点(COVERAGE.md)"
+# 加了新决定却没写进 SPEC 的话,规格正本和决定原文会悄悄分叉 ——
+# 上一轮 D550~D554 就这么在 COVERAGE.md 上停在 549 整整一轮没人发现。
+python "$ROOT/docs/plugin-system/tools/coverage.py" || fail=$((fail + 1))
+
+step "10. 插件 UI 三端一致(SPEC 7.4 7.6)"
+# SDK 放行的组件与样式属性,壳不许静默忽略:认不得就画成「需要更新 LinPlayer」占位,
+# 而占位和「老宿主遇到新组件」长得一模一样(D319),截图上分不出来。
+python "$ROOT/scripts/check-plugin-ui.py" || fail=$((fail + 1))
 
 echo
 if [ $fail -eq 0 ]; then echo "核心层门禁:全部通过。"; else echo "核心层门禁:$fail 关不通过。"; fi

@@ -87,9 +87,10 @@ else
   fi
   "$ROOT/build/fakeemby.exe" "${ARGS[@]}" > "$ROOT/build/fakeemby.log" 2>&1 &
   FAKE_PID=$!
-  sleep 2
-  curl -s -m 10 "http://127.0.0.1:$FAKE_PORT/System/Info/Public" >/dev/null \
-    && ok "起在 $FAKE_PORT" || bad "假 Emby 没起来"
+  # ☠ 起手那几次响应能到几秒,sleep 2 之后只探一次会把「在跑」判成「没起来」——
+  #   而后面每一页照样跑得通,于是 fail 里多出一条谁也不会去查的噪音。用 alive() 轮询。
+  for _ in $(seq 1 15); do alive && break; sleep 1; done
+  alive && ok "起在 $FAKE_PORT" || bad "假 Emby 没起来"
 fi
 trap '[ -n "$FAKE_PID" ] && kill "$FAKE_PID" 2>/dev/null' EXIT
 
@@ -130,8 +131,26 @@ for p in "${PAGES[@]}"; do
     "$ADB" shell "am start -n $ACT -e lp_page '$p'${LP_DEVPLUGIN:+ -e lp_devplugin '$LP_DEVPLUGIN'}" >/dev/null
   fi
   sleep 6
-  shoot "${p//:/-}"
+  # ☠ 页面名里的 `/`(插件页是 `pluginpage:作者/名字/页`)不换掉的话,
+  #   截图会写进一个不存在的子目录,结果是 0 字节文件 —— 看起来像「画了一片纯色」
+  shoot "$(printf '%s' "$p" | tr ':/' '--')"
 done
+
+# ☠ 插件 UI 的日志要**在这里**抓走:后面的形变压力那一段会 `logcat -c`,
+#   等到第 10 关再读,刚才这几页的打点已经被清掉了。
+# 热路径:**不 force-stop**,在同一个进程里再进一次插件页。
+# ☠ 上面那个循环每页都先 force-stop,量到的永远是冷路径(带装运行时 + 现编 TS)——
+#   而 SPEC 7.12 的 300ms 写的是「插件已加载的前提下」。
+if [ -n "${LP_DEVPLUGIN:-}" ]; then
+  for p in "${PAGES[@]}"; do
+    case "$p" in *pluginpage*)
+      "$ADB" shell "am start -n $ACT -e lp_page '$p' -e lp_devplugin '$LP_DEVPLUGIN'" >/dev/null
+      sleep 4 ;;
+    esac
+  done
+fi
+
+"$ADB" logcat -d 2>/dev/null > "$ROOT/build/android-plugin.log"
 
 # ---- 7. 崩溃与异常 -------------------------------------------------------
 step "查 logcat"
@@ -177,6 +196,64 @@ else
 fi
 C2="$("$ADB" logcat -d -b crash 2>/dev/null | grep -c "FATAL EXCEPTION")"
 [ "$C2" = 0 ] && ok "压力测试期间没有 FATAL" || bad "压力测试期间 $C2 次 FATAL"
+
+# ---- 10. 插件 UI 的数字验收(D543)----------------------------------------
+#
+# ☠ 这一段**会改退出码**。只 echo 不判的检查躺在日志里没人看 ——
+#   「有组件被降级成占位」上一轮就是这么在日志里躺了一整轮。
+FIRSTFRAME_MS="${LP_FIRSTFRAME_MS:-300}"
+JANK_PCT="${LP_TV_JANK_PCT:-5}"
+
+step "插件 UI:未知组件与首帧(D543)"
+LOG="$ROOT/build/android-plugin.log"
+[ -f "$LOG" ] || "$ADB" logcat -d 2>/dev/null > "$LOG"
+UNK="$(grep -c "未知组件" "$LOG" || true)"
+if [ "${UNK:-0}" = 0 ]; then ok "没有组件被降级成占位"; else
+  grep "未知组件" "$LOG" | tail -5 | sed 's/^/      /'
+  bad "$UNK 次组件被降级成占位(D319 的占位是给「老宿主遇到新组件」的,不是给我们自己没做的)"
+fi
+# SPEC 7.12 的 300ms 写明「插件已加载的前提下」,所以只判**热路径**那一档;
+# 冷的那一次还要装运行时 + 现编 TS,拿它签字等于把门槛放宽到冷路径,热路径就没门槛了。
+COLD="$(grep -o "首帧上屏(冷) [0-9]* ms" "$LOG" | grep -o "[0-9]*" | sort -n | tail -1)"
+WORST="$(grep -o "首帧上屏(热) [0-9]* ms" "$LOG" | grep -o "[0-9]*" | sort -n | tail -1)"
+[ -n "$COLD" ] && echo "    (冷启动那一次 ${COLD} ms,不计入门槛)"
+if [ -n "$WORST" ]; then
+  if [ "$WORST" -le "$FIRSTFRAME_MS" ]; then ok "插件页首帧(热)最慢 ${WORST} ms(预算 ${FIRSTFRAME_MS} ms)"
+  else bad "插件页首帧(热)最慢 ${WORST} ms,超过 ${FIRSTFRAME_MS} ms(SPEC 7.12 D543)"; fi
+elif [ -n "${LP_DEVPLUGIN:-}" ]; then
+  bad "加载了开发插件却没量到热路径首帧 —— 日志里一条「首帧上屏(热)」都没有,要么打点断了,要么每一页都是冷启动"
+fi
+
+# ---- 11. TV 1000 项 VirtualList 帧率(D543)--------------------------------
+#
+# 判据是 dumpsys gfxinfo 的 janky 比例,不是手敲一次 adb 看一眼的数:
+# 手敲的数退化时不会有任何东西变红。≥50fps 等价于一帧 ≤20ms,而 gfxinfo 的
+# janky 门槛是 16.7ms —— 比它严,所以「janky 比例低」足以推出 ≥50fps。
+if [ -n "${LP_TVJANK:-}" ]; then
+  step "TV 1000 项 VirtualList 帧率(D543)"
+  "$ADB" shell am force-stop "$PKG" >/dev/null
+  "$ADB" shell "am start -n $ACT -e lp_page 'tv:pluginpage:linplayer/devtools/list'${LP_DEVPLUGIN:+ -e lp_devplugin '$LP_DEVPLUGIN'}" >/dev/null
+  sleep 8
+  "$ADB" shell dumpsys gfxinfo "$PKG" reset >/dev/null 2>&1
+  for _ in $(seq 1 "${LP_TVJANK_KEYS:-120}"); do
+    "$ADB" shell input keyevent KEYCODE_DPAD_DOWN >/dev/null
+  done
+  sleep 2
+  GFX="$ROOT/build/android-gfxinfo.txt"
+  "$ADB" shell dumpsys gfxinfo "$PKG" 2>/dev/null > "$GFX"
+  TOTAL="$(grep -o "Total frames rendered: [0-9]*" "$GFX" | grep -o "[0-9]*" | head -1)"
+  JANKY="$(grep -o "Janky frames: [0-9]*" "$GFX" | grep -o "[0-9]*" | head -1)"
+  if [ -z "$TOTAL" ] || [ "${TOTAL:-0}" -lt 100 ]; then
+    # ☠ 帧数太少 = 列表根本没滚起来(整页没有焦点落点时就是这样),
+    #   而那种情况下「一帧都没掉」也是真的 —— 不设下限这一关永远绿
+    bad "只渲染了 ${TOTAL:-0} 帧,列表没真滚起来 —— 这个数字不算数"
+  else
+    PCT=$(( JANKY * 100 / TOTAL ))
+    if [ "$PCT" -le "$JANK_PCT" ]; then ok "$TOTAL 帧,掉帧 $JANKY 帧($PCT%,门槛 $JANK_PCT%)"
+    else bad "$TOTAL 帧里掉了 $JANKY 帧($PCT%,超过 $JANK_PCT%)—— 达不到 ≥50fps"; fi
+  fi
+fi
+
 
 printf '\n'
 [ "$fail" = 0 ] && { echo "全部通过。截图在 $OUT/"; exit 0; }

@@ -1,20 +1,20 @@
 {
   "$schema": "../../docs/plugin-system/api/manifest.schema.json",
-  "id": "linplayer/debug-panel",
-  "name": "调试面板",
+  "id": "linplayer/devtools",
+  "name": "开发者工具",
   "version": "0.1.0",
-  "description": "官方调试面板:插件运行时状态、最近日志与网络请求、UI 渲染器的示例页。它同时是 UI 渲染器的第一个真实用户 —— 渲染器坏了这一页先坏。",
+  "description": "官方开发者工具:日志、网络请求、UI 树、性能与存储四块调试面板,外加渲染器的组件示例页与一千项大列表。",
   "minAppVersion": "1.1.0",
   "license": "AGPL-3.0",
   "activation": { "load": "lazy", "lifetime": "idle" },
   "contributes": {
     "pages": [
-      { "id": "panel", "title": "调试面板" },
+      { "id": "panel", "title": "开发者工具" },
       { "id": "gallery", "title": "组件示例页" },
       { "id": "list", "title": "一千项大列表" }
     ],
     "sidebar": [
-      { "id": "debug", "title": "调试面板", "page": "panel" }
+      { "id": "debug", "title": "开发者工具", "page": "panel" }
     ]
   },
   "main": "dist/main.js"

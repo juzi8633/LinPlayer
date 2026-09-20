@@ -22,7 +22,7 @@
 #                                                              媒体库:已选筛选片 + 点 ✕ 去掉
 #   LP_VIEW=1  bash scripts/selfcheck-win.sh view grid:lib-1
 #                                                              媒体库版式开关:海报网格 ⇄ 列表
-#   LP_DEVPLUGIN="$(cd plugins/debug-panel && pwd -W)" bash scripts/selfcheck-win.sh plugui pluginpage:linplayer/debug-panel/panel
+#   LP_DEVPLUGIN="$(cd plugins/devtools && pwd -W)" bash scripts/selfcheck-win.sh plugui pluginpage:linplayer/devtools/panel
 #                                                              插件 UI 渲染器:把调试面板真渲染出来
 #   LP_HOME=1 bash scripts/selfcheck-win.sh home                首页合集栏(有合集)
 #   LP_HOME=1 LP_NOBOXSET=1 bash scripts/selfcheck-win.sh home-nobox
@@ -58,6 +58,9 @@ BIN="$APP/bin/$CONF/$(grep -oP "(?<=<TargetFramework>)[^<]+" "$APP/LinPlayer.Des
 PORT=18096
 
 source "$ROOT/scripts/env.sh"
+
+# 判据累计。☠ 脚本末尾按它退出 —— 只 echo 不改退出码的检查,CI 与人都不会看见。
+SELF_FAIL=0
 
 # ☠☠ 把 -clip 那个文件的**真实时长**告诉假服务器。
 #   不告诉的话它报的是写死的假片长(电影 7200 秒),而真正放出来的是 1800 秒 ——
@@ -298,7 +301,9 @@ echo "== 5/5 起 exe 截图 =="
 # 图标库的聚合源(假服务器兼职图床)。
 # ★ 真实构建里这个是 -ldflags 注入的,源码里没有 —— 自检走环境变量那条覆盖。
 export LP_ICON_LIBRARY_SOURCES="http://127.0.0.1:$PORT/icons.json"
-LP_CORELOG="${LP_CORELOG:-}" LP_SELFCHECK=1 LP_SELFCHECK_MENU="${LP_MENU:-}" LP_SELFCHECK_COUNT="${LP_COUNT:-}" LP_SELFCHECK_BOOM="${LP_BOOM:-}" LP_SELFCHECK_VERSION="${LP_VER:-}" LP_SELFCHECK_REPAINT="${LP_REPAINT:-}" LP_SELFCHECK_HERO="${LP_HERO:-}" LP_SELFCHECK_NAVHOVER="${LP_NAVHOVER:-}" LP_SELFCHECK_GLYPH="${LP_GLYPH:-}" LP_SELFCHECK_COLLAPSE="${LP_COLLAPSE:-}" LP_SELFCHECK_FILL="${LP_FILL:-}" LP_SELFCHECK_SIDEBAR="${LP_SIDEBAR:-}" LP_SELFCHECK_SRVMENU="${LP_SRVMENU:-}" LP_SELFCHECK_RAIL="${LP_RAIL:-}" LP_SELFCHECK_RAILSTRESS="${LP_RAILSTRESS:-}" LP_SELFCHECK_EPVIEW="${LP_EPVIEW:-}" LP_SELFCHECK_HEROBAND="${LP_BAND:-}" LP_SELFCHECK_FILTERCHIPS="${LP_CHIPS:-}" LP_SELFCHECK_VIEW="${LP_VIEW:-}" LP_SELFCHECK_CHROME="${LP_CHROME:-}" LP_SELFCHECK_OSDFADE="${LP_OSDFADE:-}" LP_SELFCHECK_RESUME="${LP_RESUME:-}" LP_SELFCHECK_RECLICK="${LP_RECLICK:-}" LP_SELFCHECK_SRVICON="${LP_SRVICON:-}" LP_SELFCHECK_THUMB="${LP_THUMB:-}" LP_SELFCHECK_AVSYNC="${LP_AVSYNC:-}" LP_SELFCHECK_STUTTER="${LP_STUTTER:-}" LP_SELFCHECK_PICK="${LP_PICK:-}" LP_SELFCHECK_HOVERLAYOUT="${LP_HOVERLAYOUT:-}" LP_SELFCHECK_PAUSE="${LP_PAUSEAT:-}" LP_SELFCHECK_PANEL="${LP_PANEL:-}" LP_SELFCHECK_DOWNLOAD="${LP_DL:-}" LP_SELFCHECK_TOAST="${LP_TOAST:-}" LP_SELFCHECK_KEYS="${LP_KEYS:-}" LP_SELFCHECK_HOME="${LP_HOME:-}" LP_SELFCHECK_HOMESET="${LP_HOMESET:-}" LP_SELFCHECK_WATCHED="${LP_WATCHED:-}" LP_SELFCHECK_PAGE="$PAGE" LP_SELFCHECK_DEVPLUGIN="${LP_DEVPLUGIN:-}" LP_SELFCHECK_MAXIMIZE="${LP_MAX:-}" LP_SELFCHECK_PLAYER_DRILL="${LP_DRILL:-}" LP_SELFCHECK_SCROLL="${LP_SCROLL:-}" LP_SELFCHECK_SOURCE="${LP_SRCKIND:-}" LP_SELFCHECK_SHADER="${LP_SHADER:-}" LP_SELFCHECK_INTERP="${LP_INTERP:-}" LP_SELFCHECK_INTERP_TRT="${LP_INTERP_TRT:-}" LP_SELFCHECK_REORDER="${LP_REORDER:-}" LP_SELFCHECK_PLAYERUI="${LP_PLAYERUI:-}" "$BIN/LinPlayer.exe" > "$ROOT/build/app.log" 2>&1 &
+# ☠ 默认档位是 Warn,而插件首帧那条打点是 Info —— 不抬档的话这条数字永远量不到,
+#   而「量不到」和「很快」在日志里长得一样(上一轮就是这么以为自己量过的)。
+LP_LOG="${LP_LOG:-Info}" LP_CORELOG="${LP_CORELOG:-}" LP_SELFCHECK=1 LP_SELFCHECK_MENU="${LP_MENU:-}" LP_SELFCHECK_COUNT="${LP_COUNT:-}" LP_SELFCHECK_BOOM="${LP_BOOM:-}" LP_SELFCHECK_VERSION="${LP_VER:-}" LP_SELFCHECK_REPAINT="${LP_REPAINT:-}" LP_SELFCHECK_HERO="${LP_HERO:-}" LP_SELFCHECK_NAVHOVER="${LP_NAVHOVER:-}" LP_SELFCHECK_GLYPH="${LP_GLYPH:-}" LP_SELFCHECK_COLLAPSE="${LP_COLLAPSE:-}" LP_SELFCHECK_FILL="${LP_FILL:-}" LP_SELFCHECK_SIDEBAR="${LP_SIDEBAR:-}" LP_SELFCHECK_SRVMENU="${LP_SRVMENU:-}" LP_SELFCHECK_RAIL="${LP_RAIL:-}" LP_SELFCHECK_RAILSTRESS="${LP_RAILSTRESS:-}" LP_SELFCHECK_EPVIEW="${LP_EPVIEW:-}" LP_SELFCHECK_HEROBAND="${LP_BAND:-}" LP_SELFCHECK_FILTERCHIPS="${LP_CHIPS:-}" LP_SELFCHECK_VIEW="${LP_VIEW:-}" LP_SELFCHECK_CHROME="${LP_CHROME:-}" LP_SELFCHECK_OSDFADE="${LP_OSDFADE:-}" LP_SELFCHECK_RESUME="${LP_RESUME:-}" LP_SELFCHECK_RECLICK="${LP_RECLICK:-}" LP_SELFCHECK_SRVICON="${LP_SRVICON:-}" LP_SELFCHECK_THUMB="${LP_THUMB:-}" LP_SELFCHECK_AVSYNC="${LP_AVSYNC:-}" LP_SELFCHECK_STUTTER="${LP_STUTTER:-}" LP_SELFCHECK_PICK="${LP_PICK:-}" LP_SELFCHECK_HOVERLAYOUT="${LP_HOVERLAYOUT:-}" LP_SELFCHECK_PAUSE="${LP_PAUSEAT:-}" LP_SELFCHECK_PANEL="${LP_PANEL:-}" LP_SELFCHECK_DOWNLOAD="${LP_DL:-}" LP_SELFCHECK_TOAST="${LP_TOAST:-}" LP_SELFCHECK_KEYS="${LP_KEYS:-}" LP_SELFCHECK_HOME="${LP_HOME:-}" LP_SELFCHECK_HOMESET="${LP_HOMESET:-}" LP_SELFCHECK_WATCHED="${LP_WATCHED:-}" LP_SELFCHECK_PAGE="$PAGE" LP_SELFCHECK_DEVPLUGIN="${LP_DEVPLUGIN:-}" LP_SELFCHECK_MAXIMIZE="${LP_MAX:-}" LP_SELFCHECK_PLAYER_DRILL="${LP_DRILL:-}" LP_SELFCHECK_SCROLL="${LP_SCROLL:-}" LP_SELFCHECK_SOURCE="${LP_SRCKIND:-}" LP_SELFCHECK_SHADER="${LP_SHADER:-}" LP_SELFCHECK_INTERP="${LP_INTERP:-}" LP_SELFCHECK_INTERP_TRT="${LP_INTERP_TRT:-}" LP_SELFCHECK_REORDER="${LP_REORDER:-}" LP_SELFCHECK_PLAYERUI="${LP_PLAYERUI:-}" "$BIN/LinPlayer.exe" > "$ROOT/build/app.log" 2>&1 &
 # 播放页要等起播 + 解码,别的页 6 秒够
 # LP_SHADER=all 要把 28 档挨个挂一遍(每档要等真渲染一帧才编译),得多给点时间
 # LP_WAIT=秒 覆盖等待时长(滚动扫描这类要跑几秒的自检用)
@@ -313,12 +318,31 @@ if [ -n "${LP_BURST:-}" ]; then
 fi
 powershell -NoProfile -ExecutionPolicy Bypass -File "$ROOT/scripts/shot-window.ps1" \
   -ProcName LinPlayer -Out "$ROOT/build/$SHOT.png"
-# 插件 UI:哪个组件被降级成占位了要当场说出来。
-# ☠ 占位块小得不容易在截图上发现,而「三端示例页长得一样」这句话正是被它破掉的。
+# ---------------------------------------------------------------- 插件 UI 的数字验收(D543)
+#
+# ☠ 这一段**会改退出码**。上一版只 echo 一行,于是「有组件被降级成占位」写在日志里
+#   躺了一整轮没人管 —— 只报不判的检查等于没有检查。
 DESKLOG="$BIN/userdata/logs/desktop.log"
 if [ -f "$DESKLOG" ] && grep -q "未知组件" "$DESKLOG"; then
-  echo "  ✗ 有组件被降级成占位:"
+  echo "  ✗ 有组件被降级成占位(D319 的占位是给「老宿主遇到新组件」的,不是给我们自己没做的):"
   grep "未知组件" "$DESKLOG" | tail -5 | sed 's/^/      /'
+  SELF_FAIL=$((SELF_FAIL + 1))
+fi
+# 首帧 < 300ms(SPEC 7.12:nav.push → 真正上屏,**插件已加载的前提下**)。
+# 冷的那一次还要装运行时 + 现编 TS,拿它签字等于把门槛放宽到冷路径,热路径就没门槛了。
+cold="$(grep -o "首帧上屏(冷) [0-9]* ms" "$DESKLOG" 2>/dev/null | grep -o "[0-9]*" | sort -n | tail -1)"
+worst="$(grep -o "首帧上屏(热) [0-9]* ms" "$DESKLOG" 2>/dev/null | grep -o "[0-9]*" | sort -n | tail -1)"
+[ -n "$cold" ] && echo "    (冷启动那一次 ${cold} ms,不计入门槛)"
+if [ -n "$worst" ]; then
+  if [ "$worst" -le "${LP_FIRSTFRAME_MS:-300}" ]; then
+    echo "[插件首帧] ✓ 热路径最慢 ${worst} ms(预算 ${LP_FIRSTFRAME_MS:-300} ms)"
+  else
+    echo "[插件首帧] ✗ 热路径最慢 ${worst} ms,超过 ${LP_FIRSTFRAME_MS:-300} ms(SPEC 7.12 D543)"
+    SELF_FAIL=$((SELF_FAIL + 1))
+  fi
+elif [ -n "${LP_DEVPLUGIN:-}" ]; then
+  echo "[插件首帧] ✗ 加载了开发插件却没量到热路径首帧 —— 要么打点断了,要么这一趟只进过一次插件页"
+  SELF_FAIL=$((SELF_FAIL + 1))
 fi
 # ★ **优雅关闭**,不是 Stop-Process。
 #   Kill 掉的话退出路径(lp_shutdown:停 mpv + 上报进度 + 写历史)根本不会跑,
@@ -354,3 +378,8 @@ echo "假 Emby 收到的请求:"
 grep '  <-' "$ROOT/build/fakeemby.log" | sort | uniq -c | sort -rn
 echo
 echo "截图:build/$SHOT.png"
+
+if [ "$SELF_FAIL" -gt 0 ]; then
+  echo "自检:$SELF_FAIL 条判据不通过。"
+  exit 1
+fi
