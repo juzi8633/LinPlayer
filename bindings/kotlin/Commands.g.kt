@@ -311,6 +311,8 @@ object LinPlayerCommandNames {
         "player.getSubtitleText",
         "plugin.setEnv",
         "plugin.shellResult",
+        "plugin.playerSurfaces",
+        "plugin.sidebar",
         "plugin.backRequest",
         "plugin.playerKey",
         "plugin.setCookies",
@@ -827,7 +829,7 @@ suspend fun LinPlayerCommands.syncCalendarLibrary(args: Map<String, Any?>? = nul
 suspend fun LinPlayerCommands.syncCalendarDue(args: Map<String, Any?>? = null): JsonElement =
     call("sync.calendarDue", args)
 
-// ---- 插件 · plugin.* (46 条) ----
+// ---- 插件 · plugin.* (48 条) ----
 suspend fun LinPlayerCommands.pluginList(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.list", args)
 suspend fun LinPlayerCommands.pluginPendingRestart(args: Map<String, Any?>? = null): JsonElement =
@@ -906,6 +908,10 @@ suspend fun LinPlayerCommands.pluginSetEnv(args: Map<String, Any?>? = null): Jso
     call("plugin.setEnv", args)
 suspend fun LinPlayerCommands.pluginShellResult(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.shellResult", args)
+suspend fun LinPlayerCommands.pluginPlayerSurfaces(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.playerSurfaces", args)
+suspend fun LinPlayerCommands.pluginSidebar(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.sidebar", args)
 suspend fun LinPlayerCommands.pluginBackRequest(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.backRequest", args)
 suspend fun LinPlayerCommands.pluginPlayerKey(args: Map<String, Any?>? = null): JsonElement =

@@ -390,6 +390,8 @@
 | [x] | `player.getSubtitleText` | **新增** | `track_id?` | `{format,text}` | — | <!-- 字幕轨全文(SPEC 9.7 D487):宿主带 token 拉,插件拿不到地址 -->
 | [x] | `plugin.setEnv` | **新增** | `theme_mode, theme_tokens, reduced_motion` | `—` | ✅ |
 | [x] | `plugin.shellResult` | **新增** | `id, ok, data?, error?` | `—` | ✅ |
+| [x] | `plugin.playerSurfaces` | **新增** | `kind: Option<String>` | `Vec<PlayerSurface>` | ✅ | <!-- 播放页上要挂的插件覆盖层与侧栏页。没有这张表的话壳根本不知道该挂谁 -->
+| [x] | `plugin.sidebar` | **新增** | `—` | `Vec<SidebarEntry>` | ✅ | <!-- 侧栏入口(D158 D305);id 是「插件id:入口id」 -->
 | [x] | `plugin.backRequest` | **新增** | `plugin: Option<String>` | `{handled: bool}` | ✅ | <!-- 壳按下返回键时问一次:有插件用 nav.onBack 接走就回 true(D85) -->
 | [x] | `plugin.playerKey` | **新增** | `key: String, repeat: Option<bool>, plugin: Option<String>` | `{consumed: bool}` | ✅ | <!-- 播放器按键问一次:插件的 player.onKey 接走就回 true(D563)。TV 直播换台/数字键靠它 -->
 | [x] | `plugin.setCookies` | **新增** | `plugin_id, jar, url, cookies` | `—` | ✅ |

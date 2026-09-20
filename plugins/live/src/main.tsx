@@ -185,6 +185,12 @@ function LivePage() {
           )
         }}
       />
+      {picked ? (
+        <EpgList
+          c={group.channels.find((x) => x.name === picked) || group.channels[0]}
+          programs={data.programs} nowSec={nowSec} onNote={setNote}
+        />
+      ) : null}
       {data.errors.length > 0 ? (
         <Text style={{ color: 'token:color.warn', fontSize: 'token:font.size.small' }}>
           {data.errors.length} 个源没拉到:{data.errors.join(';')}
@@ -194,6 +200,51 @@ function LivePage() {
       <SourceEditor onChanged={reload} />
     </Column>
   )
+}
+
+/**
+ * 节目单一栏(SPEC 17.2 的「回看/时移入口」,D111)。
+ *
+ * 已播的那几档带「回看」标,点了从头播。没有回看模板的频道**不画那个标** ——
+ * 画一个点了会跳直播的按钮比没有更糟。
+ */
+function EpgList(p: { c: Channel; programs: Program[]; nowSec: number; onNote: (s: string) => void }) {
+  const list = programsOf(p.programs, p.c)
+  if (list.length === 0) {
+    return <Text style={{ color: 'token:color.ink3' }}>{p.c.name}:没有节目单</Text>
+  }
+  const canCatchup = !!p.c.catchup
+  const window = catchupWindowSec(p.c.catchup)
+  return (
+    <Column style={{ gap: 6 }}>
+      <Text style={{ fontWeight: 'bold' }}>{p.c.name} 节目单</Text>
+      {list.map((g) => {
+        const past = g.end <= p.nowSec
+        const live = g.start <= p.nowSec && p.nowSec < g.end
+        const replayable = canCatchup && past && p.nowSec - g.start <= window
+        return (
+          <Pressable
+            key={String(g.start)}
+            focusable={replayable}
+            onPress={() => { if (replayable) void playCatchup(p.c, g, p.onNote) }}
+            style={{ padding: 6, radius: 6 }}
+          >
+            <Row style={{ gap: 10, align: 'center' }}>
+              <Text style={{ color: 'token:color.ink3', width: 60 }}>{hhmmOf(g.start)}</Text>
+              <Text style={{ color: live ? 'token:color.accent' : undefined }}>{g.title}</Text>
+              {replayable ? <Chip label="回看" /> : null}
+            </Row>
+          </Pressable>
+        )
+      })}
+    </Column>
+  )
+}
+
+function hhmmOf(sec: number): string {
+  const d = new Date(sec * 1000)
+  const p2 = (n: number) => String(n).padStart(2, '0')
+  return p2(d.getHours()) + ':' + p2(d.getMinutes())
 }
 
 /** 源管理:贴地址、删源。 */

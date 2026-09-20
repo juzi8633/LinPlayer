@@ -117,6 +117,31 @@ type Contributes struct {
 		ID    string `json:"id"`
 		Title string `json:"title"`
 	} `json:"pages"`
+	// PlayerOverlays 盖在画面上的层;PlayerPanels 播放页侧栏里的一页(SPEC 9.5,D65 D279 D300)。
+	PlayerOverlays []PlayerOverlay `json:"playerOverlays"`
+	PlayerPanels   []PlayerPanel   `json:"playerPanels"`
+	Sidebar        []SidebarEntry  `json:"sidebar"`
+}
+
+// PlayerOverlay 盖在播放画面上的一层。默认点击穿透,声明 interactive 才拦截。
+type PlayerOverlay struct {
+	ID          string `json:"id"`
+	Interactive bool   `json:"interactive,omitempty"`
+}
+
+// PlayerPanel 播放页侧栏里的一页(评论、剧情说明、节目单、解析)。
+type PlayerPanel struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Icon  string `json:"icon,omitempty"`
+}
+
+// SidebarEntry 侧栏入口(D158 D305)。
+type SidebarEntry struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Icon  string `json:"icon,omitempty"`
+	Page  string `json:"page"`
 }
 
 // Anchor 一条锚点贡献。mode:before / after(注入,全生效)· replace / hide(接管,只生效一个)。
