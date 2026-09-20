@@ -4,6 +4,8 @@
 
 改数字时本表与出处章节同改。
 
+⚠ 预算那几行(1 秒 / 30 秒 / 300ms)读作「**这一步跑完就停**」,不是硬上限:单次原生大操作中途不查中断标志(D553,详见 2.3.1)。
+
 | 数字 | 用途 | 出处 |
 |---|---|---|
 | 1 秒 | UI 渲染/事件回调预算(JS 连续执行时间) | D53 |
@@ -115,11 +117,30 @@
 
 `mode`:`before` / `after`(注入,多个按安装顺序)、`replace` / `hide`(接管位,冲突用户选)。
 
-## 20.4 官方列表名(列表变换钩子用)
+## 20.4 主题 token 名清单(D556)
+
+**这是公开契约**:样式里写 `'token:名字'`(7.5 D89)、`useTheme().token('名字')`、
+手机/TV 主题 JSON 的 `tokens`(11.4)用的都是这一张表。改名算破坏性变更。
+
+两端各自把自己那套原生 token 映射到这些名字上报给核心层(`plugin.setEnv`),
+核心层只转发、不解释 —— 解释权在壳那边,因为「Accent 在浅色主题下是哪个色号」只有它知道。
+
+| 组 | 名字 |
+|---|---|
+| 颜色 | `color.bg` `color.surface` `color.surfaceAlt` `color.ink` `color.ink2` `color.ink3` `color.line` `color.lineStrong` `color.accent` `color.accentInk` `color.accentSoft` `color.ok` `color.warn` `color.danger` |
+| 圆角 | `radius.small`(6)`radius.card`(10)`radius.pill`(999) |
+| 间距 | `space.xs`(2)`space.sm`(6)`space.md`(10)`space.lg`(14)`space.xl`(18) |
+| 字号 | `font.size.body` `font.size.title` `font.size.h1` |
+| 动效 | `motion.duration.fast` `motion.duration.normal`(毫秒) |
+
+颜色值一律 `#rrggbbaa`;其余是数字(设备无关像素 / 毫秒)。
+取不到的名字 `token()` 返回 `undefined` —— 插件该自己兜底,而不是拿到一个猜出来的色号。
+
+## 20.5 官方列表名(列表变换钩子用)
 
 `home.continue` `home.latest` `home.section.<栏目id>` `library.items` `search.results` `search.aggregate.<源>` `detail.similar` `history.items` `favorites.items` `ranking.<榜id>` `source.home` `source.category`。
 
-## 20.5 名词对照(TVBox → 本系统)
+## 20.6 名词对照(TVBox → 本系统)
 
 | TVBox | 本系统 |
 |---|---|

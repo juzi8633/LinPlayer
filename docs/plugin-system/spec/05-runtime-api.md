@@ -103,7 +103,8 @@ import { player, nav, storage, media, registry } from '@linplayer/plugin-sdk'
 - 选项:自定义 UA 与请求头、按规则拦截/屏蔽请求(广告域名、图片)、document-start 注入脚本、读写 Cookie 与 localStorage。
 - **可见验证**:嗅探超时(默认 15 秒,可由插件改)后,需要用户手动过验证时跳一个**整页** WebView,返回后继续;TV 上可见 WebView 开虚拟鼠标(方向键移光标、确认键点击)。
 - 隐藏 WebView **全局最多 3 个**,超出排队,排队时间计入调用超时。
-- 各平台内核:Windows 用系统 WebView2(不自带运行时)、Linux 用 WebKitGTK(没装就提示用包管理器安装)、Android 用系统 WebView,缺失或过旧时可下载 GeckoView 扩展组件(需先 spike)。不可用时 `app.capabilities.webview === false`,调用抛 `unsupported`,插件自行降级。
+- 各平台内核:Windows 用系统 WebView2(不自带运行时)、Linux 用 WebKitGTK(没装就提示用包管理器安装)、Android 用系统 WebView,**缺失或过旧时不做内核兜底**(D560:GeckoView 动态加载已评估,不做)——
+界面说清「这台设备没有可用的系统 WebView」并指路去装 / 更新它。不可用时 `app.capabilities.webview === false`,调用抛 `unsupported`,插件自行降级。
 - 插件页里要嵌网页用 `<WebView>` 组件(第 7 章)。
 
 ## 5.9 代理路由(D37 D246 D498 D499)

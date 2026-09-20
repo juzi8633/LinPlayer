@@ -49,11 +49,29 @@
 |---|---|---|---|
 | ~~goja `Interrupt` 打断死循环的实际延迟;Android 同组基准~~ **已做**,结论见下 | ① 开始时 | 超时机制够用 + 补 regexp2 超时 | `09-goja-interrupt-spike.md` |
 | 桌面 JVM 跑安卓 jar:用公开配置的 jar 源跑 home/search,报告跑通率与组件体积 | ① 之后 | 桌面 jar 支持 / 改「仅安卓」 | D351 |
-| Android 动态加载 GeckoView:能否加载、各盒子兼容性 | ② 前 | WebView 兜底方案 | D375 |
-| `<Player>` 视频层区域跟随(桌面视频是独立子窗口) | ② | `<Player>` 组件桌面实现 | D268 |
+| ~~Android 动态加载 GeckoView~~ **已做,结论:不做**,见下 | ② 前 | 改成「缺 WebView 就明说不可用 + 指路装系统 WebView」(D560) | `11-geckoview-spike.md` |
+| ~~`<Player>` 视频层区域跟随~~ **已做**,见下 | ② | 桌面视频不是子窗口,`<Player>` 可做;约束是 render context 单例(D561) | `10-player-region-spike.md` |
 | 视频壁纸实现方式(第二个轻量 libmpv 实例 / 平台原生播放器) | ⑤ | 视频壁纸 | D443 |
 
 spike 结论写进 `docs/research/plugins-v2/`,并回填本文与 DECISIONS.md。
+
+### 已完成:`<Player>` 区域跟随(2026-09-21,`10-player-region-spike.md`)
+
+D268 的前提**不成立了**:桌面视频不是独立子窗口,而是视觉树里的 `OpenGlControlBase`
+(通道 B,`PlayerPage.cs:31`)。区域跟随靠布局系统本来就有,不需要追窗口。
+真正的约束是 **mpv render context 全局单例**(`core/player/player.go:530`):
+同一时刻只能有一个视频宿主,而且 `lp_gl_uninit` 现在无条件销毁它 ——
+插件页的 `<Player>` 卸载会把主播放页的画面一起弄没。实现时要加引用计数 + 一条「谁在前台谁持有」的仲裁,
+并用**先红后绿**的测试钉住「插件页的 `<Player>` 卸载后主播放页还有画面」(D561)。
+
+### 已完成:GeckoView(2026-09-21,`11-geckoview-spike.md`)
+
+结论 **不做**(D560)。dex 动态加载这条路仓库里已经在走(jar spider),但 GeckoView 的主体是
+原生 `libxul.so` + 一整套 assets,它的加载器按「构建期依赖」写死,要从私有目录加载等于
+自己维护一份加载器补丁并跟着它每次升版重做;而这条 spike 的价值全在「各盒子兼容性」那半 ——
+手上没有盒子,模拟器上的结论对定制盒子没有签字效力。
+改成:缺 WebView 时 `app.capabilities.webview === false`(已实现)+ 界面说人话并指路装系统 WebView。
+TVBox 侧只有嗅探(D59)依赖它,jar / drpy / 苹果CMS / type4 四类源都不经过。
 
 ### 已完成:goja `Interrupt`(2026-09-20,`09-goja-interrupt-spike.md`)
 

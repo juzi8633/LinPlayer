@@ -9,6 +9,7 @@ TS 类型定义包 `@linplayer/plugin-sdk` + `lp` CLI + 应用内开发者模式
 - 发布到公共 JS 包仓库;生态**统一用 pnpm**(`lp create` 生成的项目、文档、示例全用 pnpm;文档与界面文案里不出现 npm 命令与「npm 库」说法)。
 - 内容:`index.d.ts`(宿主 API 与组件类型)、`manifest.schema.json`(编辑器补全与校验)、JSX 运行时、Preact 渲染器、最小 DOM。
 - **单一定义源**:宿主 API 手写在主仓库的 `.d.ts`,注释直接成文档;生成器用 TypeScript 编译器 API 读类型(pnpm 装,只在开发时跑;esbuild 会丢类型,不能用)产出 Go 注册骨架,门禁比对 `.d.ts` 与 Go 两边;随应用发版同步进插件仓库 `packages/sdk`。草稿在本仓库 `docs/plugin-system/api/plugin-sdk.d.ts`。
+- 比对的范围是**命名空间成员 + 组件名 + hooks**(D514 D555)。hooks 一度在门禁外,结果 `.d.ts` 声明了五个、运行时一个没挂,插件拿到 `undefined` —— 而那个错误报在插件那边。
 - **版本号 = 应用版本号**;不承诺兼容,API 改动直接改,写 SDK CHANGELOG。
 
 ## 16.3 `lp` CLI(D13 D42 D82 D145 D291 D293 D308 D453 D484)
@@ -37,7 +38,7 @@ Go 单文件,复用宿主同一份 esbuild + goja,作者不装 Node 也能用,�
 
 ## 16.5 调试面板插件(D80 D81 D367)
 
-官方插件 `linplayer/devtools`,**只有桌面**。四块:
+官方插件 `linplayer/devtools` 的 `panel` 页,**只有桌面**(同一个插件还带两页渲染器样本,见 17.5)。四块:
 1. **日志**:按 debug / info / warn / error 筛选;报错栈经 sourcemap 映射回 TS 行号。
 2. **网络**:URL / 头 / 状态码 / 耗时 / 响应体。
 3. **UI 树**:任一 surface 的组件树与属性,选中高亮。
@@ -51,5 +52,5 @@ Go 单文件,复用宿主同一份 esbuild + goja,作者不装 Node 也能用,�
 - **快速开始**:10 分钟从 `lp create` 到手机上看到插件;
 - **扩展点指南**:每个扩展点一页 —— 能做什么、manifest 写法、最小示例(每页一个示例插件,带「在 LinPlayer 中安装」按钮);
 - **API 参考**:从 `.d.ts` 生成;
-- **踩坑与限制**:goja 不支持的语法与 API、依赖 Node 内置模块或 DOM 的库跑不了、性能预算(1 秒 / 30 秒 / 300ms)、凭据页不可接管、局域网要声明、主题分端、Canvas 的帧率上限……
+- **踩坑与限制**:goja 不支持的语法与 API、依赖 Node 内置模块或 DOM 的库跑不了、性能预算(1 秒 / 30 秒 / 300ms,**不是硬上限**,单次原生大操作会跑完才停,D553)、凭据页不可接管、局域网要声明、主题分端、Canvas 的帧率上限……
 - 官方插件本身作为完整示例。
