@@ -91,12 +91,13 @@ object PluginShell {
 
     private val dialogOps = setOf("ui.confirm", "ui.prompt", "ui.select")
 
-    /** 导航、页面选项、角标、通知、system.* —— 走这里,和上面那几条一样回 `plugin.shellResult`。 */
+    /** 导航、页面选项、角标、通知、system.*、播放器面板/OSD —— 走这里,一样回 `plugin.shellResult`。 */
     private suspend fun dispatch(activity: Activity, app: AppState, op: String, args: JsonObject): JsonElement =
         when (op) {
             "nav.push", "nav.replace", "nav.back", "nav.setPageOptions", "nav.setBadge" -> PluginNav.handle(op, args)
             in dialogOps -> PluginDialogs.ask(op, args)
             in PluginSystem.ops -> PluginSystem.handle(activity, op, args)
+            in PluginPlayer.ops -> PluginPlayer.handle(op, args)
             "ui.notify" -> PluginNotify.show(activity, app, args)
             else -> throw UnsupportedOperationException("安卓端不支持 $op")
         }

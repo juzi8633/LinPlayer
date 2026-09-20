@@ -144,6 +144,14 @@ fun PluginSurface(
     var state by remember(plugin, target) { mutableStateOf("loading") }
     var error by remember(plugin, target) { mutableStateOf("") }
 
+    /* 盖在画面上的那几种 surface 要登记自己:播放页据此决定这一下按键要不要先问插件(D563)。
+       判可见只能在壳这边 —— 「哪一层在最上面」核心层看不到。 */
+    DisposableEffect(plugin, kind) {
+        val onPlayer = kind in PluginKeys.playerKinds
+        if (onPlayer) PluginKeys.playerOverlays.add(plugin)
+        onDispose { if (onPlayer) PluginKeys.playerOverlays.remove(plugin) }
+    }
+
     val view = androidx.compose.ui.platform.LocalView.current
     DisposableEffect(plugin, target) {
         /* 首帧预算的口径是 SPEC 7.12:**起点 nav.push,终点真正上屏**。

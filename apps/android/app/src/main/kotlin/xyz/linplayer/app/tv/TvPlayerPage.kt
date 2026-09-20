@@ -51,6 +51,7 @@ import xyz.linplayer.app.data.dbl
 import xyz.linplayer.app.data.long
 import xyz.linplayer.app.data.obj
 import xyz.linplayer.app.data.str
+import xyz.linplayer.app.plugin.PluginPlayer
 import xyz.linplayer.app.ui.pages.Version
 import xyz.linplayer.app.ui.pages.args
 import xyz.linplayer.app.ui.player.DanmakuLayer
@@ -67,6 +68,8 @@ import xyz.linplayer.app.ui.player.loadExternalAss
 import xyz.linplayer.app.ui.player.rememberExoPlayer
 import xyz.linplayer.app.ui.player.sampleNetSpeed
 import xyz.linplayer.app.ui.player.startDanmakuFor
+import xyz.linplayer.app.ui.plugin.PluginKeys
+import xyz.linplayer.app.ui.plugin.rememberPluginKeyTaken
 
 /** OSD 自动收起。= Media3 默认值,别自己发明【继承 PC A-23】。 */
 private const val OsdHideMs = 5000L
@@ -425,10 +428,24 @@ fun TvPlayerPage(r: TvRoute.Player) {
         }
     }
 
+    /* 插件的 `player.openPanel` / `setOsdVisible`(D67 D162)。和手机端同一个 host 口子,
+       翻的是 TV 自己那套面板名 —— 两端面板不是一套,合成一套只会两边都错。 */
+    DisposableEffect(exo, target.itemId) {
+        PluginPlayer.host = object : PluginPlayer.Host {
+            override fun openPanel(which: String) {
+                val kind = PluginPlayer.tvKind(which)
+                ui.osd = true
+                openPanel(kind, app, nav, scope, overlay, ui, target, engine, exo, ctl)
+            }
+            override fun setOsdVisible(visible: Boolean) { ui.osd = visible }
+        }
+        onDispose { PluginPlayer.host = null }
+    }
+
     // ---------------------------------------------------------------- 按键
     var okDownAt by remember { mutableStateOf(0L) }
     var holdJob by remember { mutableStateOf<Job?>(null) }
-    fun onKey(e: KeyEvent): Boolean {
+    fun defaultKey(e: KeyEvent): Boolean {
         poke++
         val down = e.type == KeyEventType.KeyDown
         when (e.key) {
@@ -477,6 +494,11 @@ fun TvPlayerPage(r: TvRoute.Player) {
         if (dir && !ui.osd) { if (down) ui.osd = true; return true }
         return false
     }
+
+    /* 插件覆盖层开着时这一下键先归插件(D563)。没开着就一句都不问 —— 判断在
+       PluginKeys.gate 里,遥控器上每按一下都要过它。 */
+    val taken = rememberPluginKeyTaken()
+    fun onKey(e: KeyEvent): Boolean = PluginKeys.gate(app, scope, taken, e, ::defaultKey)
 
     Box(Modifier.fillMaxSize().onPreviewKeyEvent(::onKey).testTag("player.root").focusRequester(root).focusable()) {
         if (exo != null) ExoSurface(exo, subOff = subOffPref, fit = ui.fit, m = Modifier.fillMaxSize())

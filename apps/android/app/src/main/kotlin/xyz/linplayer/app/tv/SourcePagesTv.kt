@@ -501,6 +501,8 @@ fun PluginHostPageTv(r: TvRoute.PluginPage) {
     // 插件 UI 在 TV 上必须走可聚焦的那一套,否则遥控器进不去这一页
     androidx.compose.runtime.CompositionLocalProvider(xyz.linplayer.app.ui.plugin.LocalPluginTv provides true) {
         val opts = xyz.linplayer.app.ui.plugin.pluginPageOptions(r.title)
+        // 返回键先问插件(D85)。这一个组合得比 TvShell 的深,返回键先落到它这儿
+        xyz.linplayer.app.ui.plugin.PluginBackGate(r.id)
         LazyColumn(Modifier.contentArea(), contentPadding = PaddingValues(bottom = TvSp.x20)) {
             if (!opts.immersive) item { PageHead(opts.title) }
             item { xyz.linplayer.app.ui.plugin.PluginSurface(r.id, r.page, "page", modifier = Modifier.fillMaxWidth()) }

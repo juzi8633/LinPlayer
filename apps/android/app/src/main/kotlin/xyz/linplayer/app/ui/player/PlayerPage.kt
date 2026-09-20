@@ -67,6 +67,7 @@ import xyz.linplayer.app.data.dbl
 import xyz.linplayer.app.data.long
 import xyz.linplayer.app.data.obj
 import xyz.linplayer.app.data.str
+import xyz.linplayer.app.plugin.PluginPlayer
 import xyz.linplayer.app.ui.Route
 import xyz.linplayer.app.ui.components.Dim3
 import xyz.linplayer.app.ui.components.GlassIcon
@@ -491,6 +492,21 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
         else scope.launch {
             runCatching { app.call("player.setVolume", args("volume" to (v * 100).toInt())) }
         }
+    }
+
+    /* 插件的 `player.openPanel` / `setOsdVisible`(D67 D162):面板名和 OSD 都是这一页的
+       局部状态,所以由页面登记自己,离页摘掉 —— 和 PluginNav 同一个做法。
+       ☠ 挂在 exo 上重登记:内核换了之后旧的那个 host 手里还是上一个 exo,
+       「画面增强」该不该挡就判反了。 */
+    DisposableEffect(exo) {
+        PluginPlayer.host = object : PluginPlayer.Host {
+            override fun openPanel(which: String) {
+                panel = PluginPlayer.phoneKind(which, exo != null)
+                osd = true
+            }
+            override fun setOsdVisible(visible: Boolean) { osd = visible }
+        }
+        onDispose { PluginPlayer.host = null }
     }
 
     // 返回键四级:小浮层 → 面板 → OSD → 才退出播放
