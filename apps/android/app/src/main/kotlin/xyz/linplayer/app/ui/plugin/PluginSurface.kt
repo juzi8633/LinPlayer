@@ -205,11 +205,16 @@ fun PluginSurface(
     // density 只是让上面那段在缩放变化时也重算一次
     @Suppress("UNUSED_EXPRESSION") density
 
+    // 这一块里第一个可交互元素吃初始焦点(TV);0 = 还没人认领
+    val firstFocus = remember(plugin, target) { mutableStateOf(0) }
+
     Box(modifier) {
+        androidx.compose.runtime.CompositionLocalProvider(LocalPluginFirstFocus provides firstFocus) {
         when {
             state == "error" -> PluginError(error)
             state == "loading" && tree.root.children.isEmpty() -> PluginSkeleton()
             else -> RenderNode(tree.root, surfaceId ?: "", app)
+        }
         }
     }
 }

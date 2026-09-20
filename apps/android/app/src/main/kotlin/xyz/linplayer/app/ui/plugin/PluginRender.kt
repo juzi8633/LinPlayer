@@ -55,6 +55,24 @@ import xyz.linplayer.app.ui.theme.Lp
  */
 val LocalPluginTv = androidx.compose.runtime.staticCompositionLocalOf { false }
 
+/**
+ * 这一块 UI 里**第一个**可交互元素的节点 id。
+ *
+ * ☠ 进插件页时焦点必须有落点,否则遥控器整页失灵 —— 而这件事在静态截图上
+ * 完全看不出来(按钮画得好好的,只是按不到)。谁先渲染谁认领,认领过就不再变:
+ * 重渲染时焦点不许被抢回第一个元素上(用户可能已经挪走了)。
+ */
+internal val LocalPluginFirstFocus =
+    androidx.compose.runtime.staticCompositionLocalOf<androidx.compose.runtime.MutableState<Int>?> { null }
+
+/** 这个节点要不要吃初始焦点。 */
+@Composable
+private fun claimsInitialFocus(id: Int): Boolean {
+    val slot = LocalPluginFirstFocus.current ?: return false
+    if (slot.value == 0) slot.value = id
+    return slot.value == id
+}
+
 @Composable
 internal fun RenderNode(n: UiNode, surface: String, app: AppState) {
     val m = styleOf(n)
@@ -291,16 +309,18 @@ private fun VirtualList(n: UiNode, m: Modifier, surface: String, app: AppState) 
 @Composable
 private fun renderTv(n: UiNode, m: Modifier, surface: String, app: AppState): Boolean {
     val key = "plug.${n.id}"
+    val interactive = n.type in listOf("Button", "Chip", "Pressable", "Switch", "Checkbox")
+    val initial = interactive && claimsInitialFocus(n.id)
     when (n.type) {
         "Button" -> xyz.linplayer.app.tv.kit.TvButton(
             n.str("title") ?: n.str("label") ?: textOfNode(n),
-            modifier = m.memo(key),
+            modifier = m.memo(key, initial),
         ) { fire(app, surface, n.fn("onPress")) }
         "Chip" -> xyz.linplayer.app.tv.kit.TvButton(
             n.str("label") ?: textOfNode(n),
-            modifier = m.memo(key),
+            modifier = m.memo(key, initial),
         ) { fire(app, surface, n.fn("onPress")) }
-        "Pressable" -> xyz.linplayer.app.tv.kit.TvButton("", modifier = m.memo(key)) {
+        "Pressable" -> xyz.linplayer.app.tv.kit.TvButton("", modifier = m.memo(key, initial)) {
             fire(app, surface, n.fn("onPress"))
         }
         "Switch", "Checkbox" -> {
@@ -309,7 +329,7 @@ private fun renderTv(n: UiNode, m: Modifier, surface: String, app: AppState): Bo
             val on = n.bool("value") || n.bool("checked")
             xyz.linplayer.app.tv.kit.TvButton(
                 listOfNotNull(n.str("label"), if (on) "开" else "关").joinToString(" "),
-                modifier = m.memo(key),
+                modifier = m.memo(key, initial),
             ) { fire(app, surface, n.fn("onChange") ?: n.fn("onToggle"), !on) }
         }
         else -> return false
