@@ -7,7 +7,7 @@
  */
 import {
   definePlugin, h, Fragment, useState, useEffect, app, ui,
-  View, Column, Text, Button, TextInput, Switch, Divider, Chip, ChipGroup,
+  View, Column, Text, Button, TextInput, Switch, Divider, Chip, ChipGroup, VirtualList,
 } from '@linplayer/plugin-sdk'
 
 /** 一行「标签 : 值」。示例页与面板共用,顺便测**组件复用**下的 key 语义。 */
@@ -111,6 +111,29 @@ function Gallery() {
   )
 }
 
+/**
+ * 大列表页(D134 / D543 的「TV 1000 项 ≥50fps」那条)。
+ * 一千项交给 VirtualList,JS 只渲染窗口内那几十条,壳只画可见范围。
+ */
+function BigList() {
+  return (
+    <Column style={{ gap: 10 }}>
+      <Text style={{ fontSize: 18, fontWeight: 'bold' }}>一千项</Text>
+      <VirtualList
+        style={{ height: 620 }}
+        itemCount={1000}
+        itemHeight={56}
+        renderItem={(i) => (
+          <View style={{ direction: 'row', justify: 'between', align: 'center', paddingTop: 10, paddingBottom: 10 }}>
+            <Text>第 {i + 1} 项</Text>
+            <Text style={{ color: 'token:Ink2' }}>{i % 3 === 0 ? '三的倍数' : ''}</Text>
+          </View>
+        )}
+      />
+    </Column>
+  )
+}
+
 definePlugin({
-  pages: { panel: Panel, gallery: Gallery },
+  pages: { panel: Panel, gallery: Gallery, list: BigList },
 })

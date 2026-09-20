@@ -391,9 +391,58 @@ function makeRenderer(makeScope, host) {
     // 换一份就全断了(而且断得没有报错,只是 useState 永远拿不到更新)
     preact,
     hooks,
+    // 这两个是**真组件**不是字符串:窗口内的项由 JS 渲染,壳只报可见范围(D134)
+    VirtualList: makeVirtualList(preact, hooks, 'VirtualList'),
+    VirtualGrid: makeVirtualList(preact, hooks, 'VirtualGrid'),
     surfaceIds: () => Array.from(surfaces.keys()),
     /** 给测试与基准用:当前挂着多少个回调号。泄漏了这个数会一路涨。 */
     fnCount: () => fns.size,
+  }
+}
+
+/**
+ * VirtualList / VirtualGrid(D134):插件给 itemCount + renderItem(i),
+ * 原生端只向 JS 要**可见范围**的那些项。
+ *
+ * ★ 不另造一条通道:可见范围就是一次普通的回调(`onRange`),走已有的 {$fn} 机制。
+ *   新开一条 `plugin.ui.range` 命令的话,回调号作废、surface 卸载这些规矩全要再写一遍。
+ * ☠ 首屏那一窗**必须由 JS 先给一批**:等原生端报范围再渲染的话,
+ *   第一帧是空的,壳那边量到的「首帧」就成了一个空列表。
+ */
+function makeVirtualList(preact, hooks, type) {
+  return function VirtualList(props) {
+    const count = props.itemCount | 0
+    const initial = Math.min(count, props.initialWindow || 24)
+    const [win, setWin] = hooks.useState({ from: 0, to: initial })
+    const from = Math.max(0, Math.min(win.from, Math.max(0, count - 1)))
+    const to = Math.min(count, Math.max(win.to, from))
+
+    const kids = []
+    for (let i = from; i < to; i++) {
+      const child = props.renderItem(i)
+      // key 必须是**真实下标**:窗口一滑,同一个位置换成了另一条数据,
+      // 用相对下标当 key 会让 Preact 认成「同一项改了内容」,状态串到别的项上
+      kids.push(preact.h(preact.Fragment, { key: 'v' + i }, child))
+    }
+    return preact.h(
+      type,
+      {
+        style: props.style,
+        itemCount: count,
+        itemHeight: props.itemHeight,
+        columns: props.columns,
+        horizontal: props.horizontal,
+        firstIndex: from,
+        onRange: (r) => {
+          if (!r) return
+          const f = r.from | 0
+          const t = r.to | 0
+          if (f !== win.from || t !== win.to) setWin({ from: f, to: t })
+        },
+        onEndReached: props.onEndReached,
+      },
+      kids,
+    )
   }
 }
 

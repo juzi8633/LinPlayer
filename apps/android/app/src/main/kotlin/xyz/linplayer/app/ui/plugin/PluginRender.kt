@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -83,6 +84,7 @@ internal fun RenderNode(n: UiNode, surface: String, app: AppState) {
         "Badge" -> Box(m.clip(RoundedCornerShape(999.dp)).background(Lp.colors.acc).padding(horizontal = 6.dp, vertical = 2.dp)) {
             Text(n.str("label") ?: textOf(n), color = Lp.colors.accFg, fontSize = 11.sp)
         }
+        "VirtualList", "VirtualGrid" -> VirtualList(n, m, surface, app)
         "ProgressBar" -> androidx.compose.material3.LinearProgressIndicator(
             progress = { (n.num("value") ?: 0.0).toFloat() }, modifier = m.fillMaxWidth(),
         )
@@ -227,4 +229,43 @@ private fun crossAlignCol(s: JsonObject?): Alignment.Horizontal = when (s.strOf(
     "center" -> Alignment.CenterHorizontally
     "end" -> Alignment.End
     else -> Alignment.Start
+}
+
+
+/**
+ * 大列表(D134):壳只画**可见范围**,并把范围回报给 JS,JS 只渲染那一窗。
+ *
+ * ★ `firstIndex` 是 JS 那一窗的起点:children 的第 k 个对应第 `firstIndex + k` 项。
+ *   壳照着它把 LazyColumn 的 item 下标对上 —— 对不上就是「滑着滑着内容错位」。
+ * ☠ 回报范围要**多给一屏的余量**:正好按可见范围要的话,用户一滑就看见空白,
+ *   因为 JS 渲染 + 帧合批 + 事件回传这一圈是有延迟的。
+ */
+@Composable
+private fun VirtualList(n: UiNode, m: Modifier, surface: String, app: AppState) {
+    val total = (n.num("itemCount") ?: 0.0).toInt()
+    val first = (n.num("firstIndex") ?: 0.0).toInt()
+    val state = androidx.compose.foundation.lazy.rememberLazyListState()
+    val gap = (n.style().numOf("gap") ?: 0.0).dp
+
+    // 可见范围变了就回报一次(带余量)。节流到「范围真的变了」那一刻,不是每帧
+    val window = 12
+    androidx.compose.runtime.LaunchedEffect(state, total) {
+        androidx.compose.runtime.snapshotFlow {
+            val info = state.layoutInfo.visibleItemsInfo
+            if (info.isEmpty()) 0 to minOf(total, 24)
+            else (info.first().index - window).coerceAtLeast(0) to (info.last().index + window + 1).coerceAtMost(total)
+        }.collect { (from, to) ->
+            fire(app, surface, n.fn("onRange"), mapOf("from" to from, "to" to to))
+            if (to >= total && total > 0) fire(app, surface, n.fn("onEndReached"))
+        }
+    }
+
+    androidx.compose.foundation.lazy.LazyColumn(m, state, verticalArrangement = Arrangement.spacedBy(gap)) {
+        items(total, key = { it }) { i ->
+            val k = i - first
+            // 窗口外的项 JS 还没给:占位撑住高度,否则滚动条会在数据补上来时乱跳
+            if (k in n.children.indices) RenderNode(n.children[k], surface, app)
+            else Box(Modifier.fillMaxWidth().height(((n.num("itemHeight") ?: 56.0)).dp))
+        }
+    }
 }

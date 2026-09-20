@@ -10,7 +10,8 @@
   "contributes": {
     "pages": [
       { "id": "panel", "title": "调试面板" },
-      { "id": "gallery", "title": "组件示例页" }
+      { "id": "gallery", "title": "组件示例页" },
+      { "id": "list", "title": "一千项大列表" }
     ],
     "sidebar": [
       { "id": "debug", "title": "调试面板", "page": "panel" }

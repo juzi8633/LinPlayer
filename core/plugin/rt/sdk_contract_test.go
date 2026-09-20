@@ -81,6 +81,9 @@ func TestSDK注册名必须在定义源里有(t *testing.T) {
 	}
 }
 
+// realComponents 这几个是**真组件**不是字符串:窗口内的项要由 JS 渲染(D134)。
+var realComponents = []string{"VirtualList", "VirtualGrid"}
+
 // JSX 里 <View> 编译成标识符,SDK 上少一个名字就是 `View is not defined` ——
 // 报在插件那边,看起来像插件写错了。
 func TestSDK组件名全部挂上(t *testing.T) {
@@ -90,12 +93,19 @@ func TestSDK组件名全部挂上(t *testing.T) {
 	r := newRT(t, ``)
 	for _, name := range SDKComponents {
 		v, err := r.Eval(context.Background(), BudgetData, "x.js",
-			"JSON.stringify("+SDKGlobal+"["+strconv.Quote(name)+"] || null)")
+			"typeof "+SDKGlobal+"["+strconv.Quote(name)+"] === 'function' ? '#fn' : JSON.stringify("+SDKGlobal+"["+strconv.Quote(name)+"] || null)")
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 		var raw string
 		_ = json.Unmarshal(v, &raw)
+		if contains(realComponents, name) {
+			if raw != "#fn" {
+				t.Errorf("组件 %s 应该是真组件(函数),拿到 %s", name, raw)
+			}
+			continue
+		}
+		// 其余的挂的就是自己的名字:Preact 见到字符串类型就建宿主元素
 		if raw != strconv.Quote(name) {
 			t.Errorf("组件 %s 没挂上(拿到 %s)", name, raw)
 		}

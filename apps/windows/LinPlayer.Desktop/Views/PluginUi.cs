@@ -135,6 +135,8 @@ public sealed class PluginSurface : UserControl
                 // canvas 在阶段 ② 的 Canvas 组件里接,这里先不认
             }
         }
+        // 一帧里可能增删了窗口内的项,占位要跟着重算
+        foreach (var n in _nodes.Values) if (n is ScrollViewer sv) VirtualInfo.Respace(sv);
     }
 
     private static int Id(JsonElement o, string k) =>
@@ -311,6 +313,15 @@ public sealed class PluginSurface : UserControl
         "ChipGroup" => new WrapPanel { ItemSpacing = 6, LineSpacing = 6 },
         "SettingsGroup" or "PosterRow" => new FlexPanel { Gap = 10 },
         "PosterGrid" or "EpisodeGrid" => new WrapPanel { ItemSpacing = 14, LineSpacing = 14 },
+        /* 大列表(D134):壳只画可见范围,并把范围回报给 JS。
+           桌面这一版用 ScrollViewer + FlexPanel:JS 那边已经只给一窗的节点,
+           所以这里画的本来就只有几十个 —— 真正的虚拟化收益在 JS 那一侧。
+           滚动时按像素估算可见范围回报;itemHeight 没给就按 56 估。 */
+        "VirtualList" or "VirtualGrid" => new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Content = new FlexPanel(),
+        },
         "Badge" => new Border { Padding = new Thickness(6, 2), CornerRadius = new CornerRadius(999), Background = Tok.Of("Accent") },
         // ★ 未知组件不是错误,是**版本差**(D319):画一块说明,别让整页空掉
         _ => Unknown(type),
@@ -396,6 +407,14 @@ public sealed class PluginSurface : UserControl
             case "disabled":
                 c.IsEnabled = unset || v.ValueKind != JsonValueKind.True;
                 break;
+            case "itemCount" or "itemHeight" or "firstIndex":
+                // 大列表的三件套记在控件上:滚动回调要算可见范围,占位要算上下留白
+                if (c is ScrollViewer sv2 && !unset && v.ValueKind == JsonValueKind.Number)
+                {
+                    VirtualInfo.Set(sv2, name, v.GetDouble());
+                    VirtualInfo.Respace(sv2);
+                }
+                break;
             case "a11yLabel":
                 Avalonia.Automation.AutomationProperties.SetName(c, unset ? "" : v.ToString());
                 break;
@@ -429,6 +448,14 @@ public sealed class PluginSurface : UserControl
                     if (fn >= 0) btn.Click += OnClick;
                 }
                 break;
+            case "onRange":
+                if (c is ScrollViewer sv3)
+                {
+                    VirtualInfo.SetRangeFn(sv3, fn);
+                    sv3.ScrollChanged -= OnVirtualScroll;
+                    if (fn >= 0) sv3.ScrollChanged += OnVirtualScroll;
+                }
+                break;
             case "onChangeText":
                 if (c is TextBox tb)
                 {
@@ -457,6 +484,19 @@ public sealed class PluginSurface : UserControl
     {
         if (sender is Control c && c.Tag is int fn && fn >= 0)
             _ = _core.PluginUiEvent(new { surface = _surface, fn, args = Array.Empty<object>() });
+    }
+
+    /// <summary>滚动时把可见范围回报给 JS(带一屏余量,否则一滑就看见空白)。</summary>
+    private void OnVirtualScroll(object? sender, ScrollChangedEventArgs e)
+    {
+        if (sender is not ScrollViewer sv) return;
+        var (fn, count, itemH) = VirtualInfo.Get(sv);
+        if (fn < 0 || count <= 0 || itemH <= 0) return;
+        const int Slack = 12;
+        var first = Math.Max(0, (int)(sv.Offset.Y / itemH) - Slack);
+        var last = Math.Min(count, (int)((sv.Offset.Y + sv.Viewport.Height) / itemH) + Slack + 1);
+        if (!VirtualInfo.RangeChanged(sv, first, last)) return;
+        _ = _core.PluginUiEvent(new { surface = _surface, fn, args = new object[] { new { from = first, to = last } } });
     }
 
     private void OnTextCommit(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -572,5 +612,57 @@ public sealed class PluginPageHost : PageBase
                 new PluginSurface(core, plugin, pageId, "page"),
             },
         });
+    }
+}
+
+
+/// <summary>大列表在控件上记的那几件事(itemCount / itemHeight / 回调号 / 上次报过的范围)。</summary>
+internal static class VirtualInfo
+{
+    private static readonly AttachedProperty<double> CountP =
+        AvaloniaProperty.RegisterAttached<Control, Control, double>("VCount");
+    private static readonly AttachedProperty<double> HeightP =
+        AvaloniaProperty.RegisterAttached<Control, Control, double>("VHeight");
+    private static readonly AttachedProperty<int> FnP =
+        AvaloniaProperty.RegisterAttached<Control, Control, int>("VFn", -1);
+    private static readonly AttachedProperty<double> FirstP =
+        AvaloniaProperty.RegisterAttached<Control, Control, double>("VFirst");
+    private static readonly AttachedProperty<string> LastP =
+        AvaloniaProperty.RegisterAttached<Control, Control, string>("VLast", "");
+
+    internal static void Set(Control c, string name, double v)
+    {
+        if (name == "itemCount") c.SetValue(CountP, v);
+        else if (name == "itemHeight") c.SetValue(HeightP, v);
+        else if (name == "firstIndex") c.SetValue(FirstP, v);
+    }
+
+    internal static void SetRangeFn(Control c, int fn) => c.SetValue(FnP, fn);
+
+    /* 上下各垫一块空白:上面 firstIndex 项、下面剩下的那些。
+       ☠ 不垫的话窗口一滑,壳画的那几十条永远贴在顶上,而滚动位置还停在别处 ——
+       表现是「滑着滑着内容跳回去了」,而且不报错。滚动条长度也靠这两块撑出来。 */
+    internal static void Respace(ScrollViewer sv)
+    {
+        if (sv.Content is not FlexPanel fp) return;
+        var count = (int)sv.GetValue(CountP);
+        if (count <= 0) return;
+        var itemH = sv.GetValue(HeightP) is > 0 and var h ? h : 56;
+        var first = (int)sv.GetValue(FirstP);
+        var tail = Math.Max(0, count - first - fp.Children.Count);
+        var want = new Thickness(0, first * itemH, 0, tail * itemH);
+        if (fp.Pad != want) { fp.Pad = want; fp.InvalidateMeasure(); }
+    }
+
+    internal static (int Fn, int Count, double ItemH) Get(Control c) =>
+        (c.GetValue(FnP), (int)c.GetValue(CountP), c.GetValue(HeightP) is > 0 and var h ? h : 56);
+
+    /// <summary>范围没变就不发:滚动事件一秒几十条,每条都发等于自己做 DDoS。</summary>
+    internal static bool RangeChanged(Control c, int from, int to)
+    {
+        var key = from + ":" + to;
+        if (c.GetValue(LastP) == key) return false;
+        c.SetValue(LastP, key);
+        return true;
     }
 }

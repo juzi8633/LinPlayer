@@ -90,3 +90,54 @@ func TestUI局部更新的ops不随总量增长(t *testing.T) {
 		t.Errorf("列表从 20 涨到 1000,一次局部更新的 op 从 %d 涨到 %d —— 这是在整棵重画", small, big)
 	}
 }
+
+/*
+VirtualList(D134):插件给 itemCount + renderItem(i),JS 只渲染**窗口内**那些项。
+
+☠ 这条挡的是「虚拟列表名字叫虚拟、其实把一千项全画了」——
+在 20 项的示例里完全看不出来,到 TV 上滑 1000 项才表现为掉帧,
+而那会儿已经没人记得是哪一笔改的。判据是 op 数量,不是帧率:
+帧率是壳的事,核心层这边能保证的是「不给壳一千个节点」。
+*/
+func TestUI虚拟列表只渲染窗口内的项(t *testing.T) {
+	r, cap := newUI(t, `
+		const { h, VirtualList } = __linplayer_sdk;
+		definePlugin({ pages: { p: () => h(VirtualList, {
+			itemCount: 1000,
+			itemHeight: 56,
+			renderItem: (i) => h('Text', null, '第 ' + i + ' 项'),
+		}) } })
+	`)
+	if err := r.UIMount("s1", "page", "p", nil); err != nil {
+		t.Fatal(err)
+	}
+	cap.wait(t, func() bool { return len(cap.ops(t)) > 10 })
+	time.Sleep(60 * time.Millisecond)
+
+	ops := cap.ops(t)
+	texts := 0
+	for _, o := range ops {
+		if o["op"] == "create" && o["type"] == "Text" {
+			texts++
+		}
+	}
+	t.Logf("1000 项的首帧建了 %d 个 Text、%d 条 op", texts, len(ops))
+	if texts == 0 {
+		t.Fatal("一项都没渲染 —— 首屏那一窗必须由 JS 先给一批,不能等原生端报范围")
+	}
+	if texts > 60 {
+		t.Errorf("首帧渲染了 %d 项 —— 虚拟列表没生效,壳会收到上千个节点", texts)
+	}
+	// 列表本体要带上 itemCount,壳靠它算滚动条与可见范围
+	var listed bool
+	for _, o := range ops {
+		if set, ok := o["set"].(map[string]any); ok {
+			if v, ok := set["itemCount"].(float64); ok && int(v) == 1000 {
+				listed = true
+			}
+		}
+	}
+	if !listed {
+		t.Error("没把 itemCount 发给壳 —— 壳不知道总共有多少项")
+	}
+}
