@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -47,6 +47,11 @@ public static class AppJobs
         string S(string k) => data.ValueKind == JsonValueKind.Object && data.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
         switch (name)
         {
+            // 插件 UI 的帧与状态转给对应的 surface(SPEC 7.3)
+            case "plugin.ui":
+            case "plugin.ui.surface":
+                PluginSurface.OnUiEvent(name, data);
+                break;
             case "plugin.toast":
                 Toast.Show(S("text"));
                 break;

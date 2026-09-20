@@ -3,12 +3,16 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"linplayer/core/bus"
+	"linplayer/core/paths"
 )
 
 /*
@@ -312,4 +316,111 @@ func findFn(t *testing.T, ops []map[string]any, name string) int {
 	}
 	t.Fatalf("没找到 %s 的回调号", name)
 	return 0
+}
+
+/*
+官方调试面板是渲染器的**第一个真实用户**(D543):它用到组件、样式、事件、
+条件分支、列表 key、hooks 副作用。这条测试拿仓库里那份真插件渲染一遍 ——
+比再写一个「渲染器自测页」有用,自测页只会用到写它时想得起来的那几条路径。
+*/
+func TestUI调试面板能渲染出来(t *testing.T) {
+	root := repoRoot(t)
+	dir := filepath.Join(root, "plugins", "debug-panel")
+	if _, err := os.Stat(dir); err != nil {
+		t.Skip("仓库里没有 plugins/debug-panel")
+	}
+	paths.SetRoot(t.TempDir())
+	h := ResetForTest()
+	h.Start("windows", "2.0.0")
+	t.Cleanup(h.Shutdown)
+	// 用 dev 目录加载:不必先打包再装,改插件源码这条测试立刻跟着变
+	if _, err := h.DevLoad(dir); err != nil {
+		t.Fatalf("加载调试面板失败: %v", err)
+	}
+	registerUI()
+	c := captureUI(t)
+
+	sid := call(t, "plugin.ui.mount", map[string]any{
+		"plugin": "linplayer/debug-panel", "target": "panel", "kind": "page",
+	})["surface"].(string)
+	c.wait(t, "首帧", func() bool { return len(c.ops()) > 20 })
+
+	ops := c.ops()
+	seen := map[string]bool{}
+	for _, o := range ops {
+		if o["op"] == "create" {
+			seen[o["type"].(string)] = true
+		}
+	}
+	for _, want := range []string{"Column", "Text", "Chip", "ChipGroup", "Button", "View"} {
+		if !seen[want] {
+			t.Errorf("调试面板没渲染出 %s;建出来的是 %v", want, keysOf(seen))
+		}
+	}
+	// 样式要作为 style 属性整体传下去,不是拆成一堆散属性
+	if !hasStyleProp(ops) {
+		t.Error("一条 style 属性都没有 —— 样式没传到壳那边,界面会是裸的")
+	}
+	// 切到**另一个**标签页,内容要换。
+	// ☠ 点第一个标签是点不出变化的 —— 那是当前选中的那个,状态没变就不该重渲染。
+	fns := allFns(ops, "onPress")
+	if len(fns) < 2 {
+		t.Fatalf("只找到 %d 个 onPress,标签页没渲染出来", len(fns))
+	}
+	before := len(ops)
+	call(t, "plugin.ui.event", map[string]any{"surface": sid, "fn": fns[1], "args": []any{}})
+	c.wait(t, "切标签后的更新帧", func() bool { return len(c.ops()) > before })
+}
+
+func allFns(ops []map[string]any, name string) []int {
+	var out []int
+	for _, o := range ops {
+		set, ok := o["set"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if v, ok := set[name].(map[string]any); ok {
+			if n, ok := v["$fn"].(float64); ok {
+				out = append(out, int(n))
+			}
+		}
+	}
+	return out
+}
+
+func hasStyleProp(ops []map[string]any) bool {
+	for _, o := range ops {
+		if set, ok := o["set"].(map[string]any); ok {
+			if _, ok := set["style"]; ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func keysOf(m map[string]bool) []string {
+	var out []string
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// repoRoot 从测试所在包往上找到仓库根(有 go.mod 的那一层的父目录)。
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	d, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 6; i++ {
+		if _, err := os.Stat(filepath.Join(d, "go.mod")); err == nil {
+			return filepath.Dir(d)
+		}
+		d = filepath.Dir(d)
+	}
+	t.Skip("找不到仓库根")
+	return ""
 }

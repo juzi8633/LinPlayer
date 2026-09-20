@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -76,6 +77,27 @@ func TestSDK注册名必须在定义源里有(t *testing.T) {
 			if !contains(want, n) {
 				t.Errorf("%s.%s 挂上了,但定义源里没有这个名字(定义源里有:%s)", ns, n, strings.Join(want, " "))
 			}
+		}
+	}
+}
+
+// JSX 里 <View> 编译成标识符,SDK 上少一个名字就是 `View is not defined` ——
+// 报在插件那边,看起来像插件写错了。
+func TestSDK组件名全部挂上(t *testing.T) {
+	if len(SDKComponents) < 20 {
+		t.Fatal("SDKComponents 太少 —— 生成器八成没抽到组件")
+	}
+	r := newRT(t, ``)
+	for _, name := range SDKComponents {
+		v, err := r.Eval(context.Background(), BudgetData, "x.js",
+			"JSON.stringify("+SDKGlobal+"["+strconv.Quote(name)+"] || null)")
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		var raw string
+		_ = json.Unmarshal(v, &raw)
+		if raw != strconv.Quote(name) {
+			t.Errorf("组件 %s 没挂上(拿到 %s)", name, raw)
 		}
 	}
 }

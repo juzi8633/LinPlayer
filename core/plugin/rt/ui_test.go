@@ -332,3 +332,41 @@ func fnRefOf(t *testing.T, ops []map[string]any, name string) int {
 	t.Fatalf("属性 %s 没有序列化成 {$fn:n}", name)
 	return 0
 }
+
+// D53:UI 回调预算 1 秒。
+//
+// ☠ 这条挡的是一个真漏洞:回调原来是裸 post 进循环的,**一点预算都没有** ——
+// 插件在 onPress 里写个死循环就能把整个事件循环占住,看门狗看不见,
+// 表现是「点了那个按钮之后整个插件再也没反应」,而且不报错。
+func TestUI回调死循环会被预算打断(t *testing.T) {
+	r, cap := newUI(t, `
+		const { h } = __linplayer_sdk;
+		definePlugin({ pages: { p: () => h('Button', {onPress: () => { for(;;){} }}) } })
+	`)
+	if err := r.UIMount("s1", "page", "p", nil); err != nil {
+		t.Fatal(err)
+	}
+	cap.wait(t, func() bool { return hasProp(cap.ops(t), "onPress") })
+	fn := fnRefOf(t, cap.ops(t), "onPress")
+
+	start := time.Now()
+	_ = r.UIEvent("s1", fn, nil)
+	took := time.Since(start)
+	if took > 5*time.Second {
+		t.Fatalf("死循环的回调跑了 %v 还没被打断", took.Round(time.Millisecond))
+	}
+	// 打断之后运行时还能用:被占住的话这一句会一直等下去
+	done := make(chan error, 1)
+	go func() {
+		_, err := r.Eval(t.Context(), BudgetData, "x.js", `1 + 1`)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("打断之后运行时不能用了: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("回调被打断了,但事件循环还被占着")
+	}
+}

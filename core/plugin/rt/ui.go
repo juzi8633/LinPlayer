@@ -7,6 +7,7 @@ package rt
 // 「一帧一条」的合批在 core/plugin/ui 那边做 —— 那里才知道壳的节奏。
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -108,51 +109,55 @@ func (r *Runtime) installUI(sdk *goja.Object) error {
 	for _, n := range []string{"useState", "useEffect", "useMemo", "useCallback", "useRef", "useContext", "useReducer", "useErrorBoundary"} {
 		_ = sdk.Set(n, hk.Get(n))
 	}
+	// 组件名挂的就是它自己:JSX 的 <View> 编译成标识符 View,
+	// 而 Preact 见到字符串类型就建宿主元素 —— 那个字符串正好是 ops 里的 type
+	for _, n := range SDKComponents {
+		_ = sdk.Set(n, n)
+	}
 	return nil
 }
 
-// uiCall 在事件线程上调渲染器的一个方法。
-func (r *Runtime) uiCall(method string, args ...any) error {
-	done := make(chan error, 1)
-	r.post(func() {
+/*
+uiCall 调渲染器的一个方法。
+
+☠ **走 r.run 而不是裸 post + 墙钟等待**:预算与打断都在 run 里。
+裸等的版本有两个毛病,2026-09-20 当场撞上:
+  · 给 mount 配 300ms 墙钟 —— 1000 项的首渲染本来就更久,机器一忙就报「挂载超时」,
+    而 JS 那边其实还在好好地渲染;
+  · 回调里写死循环时**一点预算都没有**,它会把整个事件循环占住,看门狗看不见。
+*/
+func (r *Runtime) uiCall(budget time.Duration, method string, args ...any) error {
+	_, err := r.run(context.Background(), budget, func(vm *goja.Runtime, _ *call) (goja.Value, error) {
 		if r.ui == nil {
-			done <- fmt.Errorf("UI 渲染器没装起来")
-			return
+			return nil, fmt.Errorf("UI 渲染器没装起来")
 		}
 		fn, ok := goja.AssertFunction(r.ui.Get(method))
 		if !ok {
-			done <- fmt.Errorf("渲染器没有 %s", method)
-			return
+			return nil, fmt.Errorf("渲染器没有 %s", method)
 		}
 		vs := make([]goja.Value, 0, len(args))
 		for _, a := range args {
 			vs = append(vs, r.jsValue(a))
 		}
-		_, err := fn(r.ui, vs...)
-		done <- err
+		return fn(r.ui, vs...)
 	})
-	select {
-	case err := <-done:
-		return err
-	case <-time.After(BudgetHook):
-		return fmt.Errorf("渲染器 %s 超时", method)
-	}
+	return err
 }
 
 // UIMount 把 definePlugin 里 kind/target 对应的组件挂到 surfaceID 上。
+//
+// 预算按数据源那一档给(BudgetData):首渲染是插件自己的一次完整执行,
+// 一千项的页面比 300ms 长是正常的。「首帧 < 300ms」是**指标**,由基准测试盯着,
+// 不是砍掉它的闸刀 —— 慢设备上砍掉的话用户看到的是报错而不是稍慢的页面。
 func (r *Runtime) UIMount(surfaceID, kind, target string, props map[string]any) error {
-	done := make(chan error, 1)
-	r.post(func() {
+	_, err := r.run(context.Background(), BudgetData, func(vm *goja.Runtime, _ *call) (goja.Value, error) {
 		if r.ui == nil {
-			done <- fmt.Errorf("UI 渲染器没装起来")
-			return
+			return nil, fmt.Errorf("UI 渲染器没装起来")
 		}
 		comp, err := r.uiComponent(kind, target)
 		if err != nil {
-			done <- err
-			return
+			return nil, err
 		}
-		vm := r.vm
 		// render 是个无参闭包:每次重渲染都拿同一份 props 调同一个组件
 		render := vm.ToValue(func() goja.Value {
 			h, _ := goja.AssertFunction(r.ui.Get("preact").ToObject(vm).Get("h"))
@@ -163,15 +168,9 @@ func (r *Runtime) UIMount(surfaceID, kind, target string, props map[string]any) 
 			return v
 		})
 		fn, _ := goja.AssertFunction(r.ui.Get("mount"))
-		_, err = fn(r.ui, vm.ToValue(surfaceID), render)
-		done <- err
+		return fn(r.ui, vm.ToValue(surfaceID), render)
 	})
-	select {
-	case err := <-done:
-		return err
-	case <-time.After(BudgetHook):
-		return fmt.Errorf("挂载 %s 超时", target)
-	}
+	return err
 }
 
 // uiComponent 找 definePlugin 里的页面 / 区块。
@@ -196,10 +195,13 @@ func (r *Runtime) uiComponent(kind, target string) (goja.Value, error) {
 
 // UIUnmount 卸载并丢掉这个 surface 的整份 id 与回调号空间。
 func (r *Runtime) UIUnmount(surfaceID string) error {
-	return r.uiCall("unmount", surfaceID)
+	return r.uiCall(BudgetHook, "unmount", surfaceID)
 }
 
-// UIEvent 壳回传的一次交互(D53:回调预算在 JS 侧由 loop 的调用预算管)。
+// BudgetEvent UI 回调的预算(D53):一次点击不该跑一秒以上,超了就打断。
+const BudgetEvent = time.Second
+
+// UIEvent 壳回传的一次交互。
 func (r *Runtime) UIEvent(surfaceID string, fn int, args []any) error {
-	return r.uiCall("event", surfaceID, fn, args)
+	return r.uiCall(BudgetEvent, "event", surfaceID, fn, args)
 }

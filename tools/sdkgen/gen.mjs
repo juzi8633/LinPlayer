@@ -32,7 +32,20 @@ function membersOf(body) {
   return names
 }
 
+/** 顶层 UI 组件:`export declare function View(p): LpElement`。
+ *  JSX 里 <View> 编译成**标识符** View,所以 SDK 上必须有同名的值。 */
+const components = []
+
 for (const st of src.statements) {
+  if (
+    ts.isFunctionDeclaration(st) && st.name &&
+    st.type && ts.isTypeReferenceNode(st.type) &&
+    ts.isIdentifier(st.type.typeName) && st.type.typeName.text === 'LpElement' &&
+    // h / Fragment 也返回 LpElement,但它们是 JSX 工厂不是组件 —— 由渲染器那份 Preact 提供
+    st.name.text !== 'h' && st.name.text !== 'Fragment'
+  ) {
+    components.push(st.name.text)
+  }
   if (!ts.isModuleDeclaration(st) || !st.name || !ts.isIdentifier(st.name)) continue
   if (!st.body || !ts.isModuleBlock(st.body)) continue
   const names = membersOf(st.body)
@@ -42,6 +55,10 @@ for (const st of src.statements) {
 
 if (spec.size < 10) {
   console.error(`只解析出 ${spec.size} 个命名空间 —— 定义源的写法八成变了,先看清楚再改这个脚本`)
+  process.exit(1)
+}
+if (components.length < 20) {
+  console.error(`只解析出 ${components.length} 个组件 —— 定义源里组件的写法八成变了`)
   process.exit(1)
 }
 
@@ -58,5 +75,11 @@ for (const k of [...spec.keys()].sort()) {
   lines.push(`\t${JSON.stringify(k)}: {${spec.get(k).map((n) => JSON.stringify(n)).join(', ')}},`)
 }
 lines.push('}')
+lines.push('')
+lines.push('// SDKComponents 定义源里声明的 UI 组件名。SDK 上每个名字挂的就是它自己(字符串),')
+lines.push('// 因为 JSX 的 <View> 编译成标识符 View,而 Preact 见到字符串类型就建宿主元素。')
+lines.push('var SDKComponents = []string{')
+for (const c of components.slice().sort()) lines.push(`\t${JSON.stringify(c)},`)
+lines.push('}')
 writeFileSync(out, lines.join('\n') + '\n')
-console.log(`✓ ${spec.size} 个命名空间 → ${out}`)
+console.log(`✓ ${spec.size} 个命名空间、${components.length} 个组件 → ${out}`)
