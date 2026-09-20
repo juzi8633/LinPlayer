@@ -1,0 +1,466 @@
+{
+  "schema": 1,
+  "name": "LinPlayer 官方插件市场(示例数据)",
+  "updated": "2026-09-21T08:00:00Z",
+  "plugins": [
+    {
+      "id": "linplayer/tvbox",
+      "name": "TVBox 兼容",
+      "description": "导入 TVBox 配置订阅或 drpy 规则,把里面的站点变成可以浏览、搜索、播放的数据源。插件本身不带任何源,内容由用户自行订阅。",
+      "i18n": {
+        "en": {
+          "name": "TVBox compatibility",
+          "description": "Import TVBox subscriptions or drpy rules as data sources."
+        }
+      },
+      "author": "linplayer",
+      "paid": false,
+      "lan": true,
+      "requires": {
+        "components": [
+          "jar-runtime",
+          "python"
+        ]
+      },
+      "contributes": [
+        "dataSource",
+        "menus:server",
+        "commands",
+        "registry:live.channels",
+        "m3u8Filters",
+        "settings"
+      ],
+      "categories": [
+        "dataSource",
+        "live"
+      ],
+      "stars": 412,
+      "downloads": 18640,
+      "official": true,
+      "addedAt": "2026-08-02T10:00:00Z",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "url": "/packages/linplayer-tvbox-0.1.0.lpplugin",
+          "size": 2411520,
+          "minAppVersion": "1.1.0",
+          "platforms": [
+            "windows",
+            "linux",
+            "android",
+            "android_tv"
+          ],
+          "released": "2026-09-12T09:00:00Z",
+          "changelog": "订阅解析支持多仓地址;嗅探超时后改为打开可见网页让你手动过验证。",
+          "contributesDiff": [
+            "m3u8Filters"
+          ]
+        },
+        {
+          "version": "0.0.9",
+          "url": "/packages/linplayer-tvbox-0.0.9.lpplugin",
+          "size": 2383104,
+          "minAppVersion": "1.1.0",
+          "platforms": [
+            "windows",
+            "linux",
+            "android",
+            "android_tv"
+          ],
+          "released": "2026-08-28T09:00:00Z",
+          "changelog": "加密配置(;pk;密钥)可以直接贴地址了。"
+        },
+        {
+          "version": "0.0.8",
+          "url": "/packages/linplayer-tvbox-0.0.8.lpplugin",
+          "size": 2340864,
+          "minAppVersion": "1.1.0",
+          "platforms": [
+            "windows",
+            "linux",
+            "android",
+            "android_tv"
+          ],
+          "released": "2026-08-02T09:00:00Z",
+          "changelog": "首个上架版本。"
+        }
+      ]
+    },
+    {
+      "id": "linplayer/live",
+      "name": "直播",
+      "description": "看直播:贴一条 m3u / txt 地址就能用,装了 TVBox 插件的话它配置里的直播源也会自动出现。同名频道合并成「源 1/2/3」,播不动自动换下一条并记住能用的那条;XMLTV 节目单、回看/时移、收藏与自定义频道号;TV 上按 TVBox 的习惯操作(上下换台、数字键输号、确认呼出列表)。",
+      "i18n": {
+        "en": {
+          "name": "Live TV",
+          "description": "Paste an m3u or txt playlist and watch. Merges duplicate channels, falls over to the next source, XMLTV guide, timeshift."
+        }
+      },
+      "author": "linplayer",
+      "paid": false,
+      "lan": true,
+      "contributes": [
+        "pages:live",
+        "sidebar",
+        "playerOverlays:osd",
+        "commands",
+        "settings"
+      ],
+      "categories": [
+        "live"
+      ],
+      "stars": 356,
+      "downloads": 15220,
+      "official": true,
+      "addedAt": "2026-08-05T10:00:00Z",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "url": "/packages/linplayer-live-0.1.0.lpplugin",
+          "size": 1063936,
+          "minAppVersion": "1.1.0",
+          "platforms": [
+            "windows",
+            "linux",
+            "android",
+            "android_tv"
+          ],
+          "released": "2026-09-18T09:00:00Z",
+          "changelog": "换源记住上次能用的那条;TV 上数字键输号。",
+          "contributesDiff": [
+            "playerOverlays:osd"
+          ]
+        },
+        {
+          "version": "0.0.7",
+          "url": "/packages/linplayer-live-0.0.7.lpplugin",
+          "size": 1021952,
+          "minAppVersion": "1.1.0",
+          "platforms": [
+            "windows",
+            "linux",
+            "android",
+            "android_tv"
+          ],
+          "released": "2026-08-05T09:00:00Z",
+          "changelog": "首个上架版本。"
+        }
+      ]
+    },
+    {
+      "id": "linplayer/sync",
+      "name": "Trakt / Bangumi 同步",
+      "description": "把看过的进度同步到 Trakt 与 Bangumi:播放时 scrobble、看完标记、详情页显示同步状态、收藏与集数进度管理。账号在宿主里连,插件只借用不接触 token。",
+      "i18n": {
+        "en": {
+          "name": "Trakt / Bangumi sync",
+          "description": "Scrobble your progress to Trakt and Bangumi. Accounts are linked in the host; the plugin never touches your token."
+        }
+      },
+      "author": "linplayer",
+      "paid": false,
+      "contributes": [
+        "pages:manage",
+        "anchors:detail.ratings",
+        "settingsSections:settings.playback.general",
+        "settings"
+      ],
+      "categories": [
+        "metadata"
+      ],
+      "stars": 198,
+      "downloads": 7430,
+      "official": true,
+      "addedAt": "2026-08-14T10:00:00Z",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "url": "/packages/linplayer-sync-0.1.0.lpplugin",
+          "size": 389120,
+          "minAppVersion": "1.1.0",
+          "platforms": [
+            "windows",
+            "linux",
+            "android",
+            "android_tv"
+          ],
+          "released": "2026-09-09T09:00:00Z",
+          "changelog": "详情页显示同步状态;可以只同步指定的几台服务器。",
+          "contributesDiff": [
+            "anchors:detail.ratings"
+          ]
+        },
+        {
+          "version": "0.0.5",
+          "url": "/packages/linplayer-sync-0.0.5.lpplugin",
+          "size": 364544,
+          "minAppVersion": "1.1.0",
+          "platforms": [
+            "windows",
+            "linux",
+            "android",
+            "android_tv"
+          ],
+          "released": "2026-08-14T09:00:00Z",
+          "changelog": "首个上架版本。"
+        }
+      ]
+    },
+    {
+      "id": "linplayer/subtitle-translate",
+      "name": "字幕翻译",
+      "description": "把当前字幕翻成你看得懂的语言:支持 OpenAI 兼容接口、Anthropic、百度翻译(用你自己的 key)。没有字幕时可以先用 Whisper 转写。结果按「源字幕 + 引擎 + 语言 + 排版」缓存,同一集看第二遍不再花额度。",
+      "i18n": {
+        "en": {
+          "name": "Subtitle translation",
+          "description": "Translate the current subtitle track with your own API key. Whisper transcribes when there is no subtitle. Results are cached per track."
+        }
+      },
+      "author": "linplayer",
+      "paid": false,
+      "requires": {
+        "components": [
+          "whisper",
+          "ffmpeg"
+        ]
+      },
+      "contributes": [
+        "playerPanels:panel",
+        "playerOverlays:live",
+        "commands",
+        "settings"
+      ],
+      "categories": [
+        "danmakuSubtitle"
+      ],
+      "stars": 287,
+      "downloads": 11980,
+      "official": true,
+      "addedAt": "2026-08-20T10:00:00Z",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "url": "/packages/linplayer-subtitle-translate-0.1.0.lpplugin",
+          "size": 733184,
+          "minAppVersion": "1.1.0",
+          "platforms": [
+            "windows",
+            "linux",
+            "android",
+            "android_tv"
+          ],
+          "released": "2026-09-16T09:00:00Z",
+          "changelog": "实时翻译一句一句上屏;缓存键加入排版,换双语不再重翻。",
+          "contributesDiff": [
+            "playerOverlays:live"
+          ]
+        },
+        {
+          "version": "0.0.6",
+          "url": "/packages/linplayer-subtitle-translate-0.0.6.lpplugin",
+          "size": 701440,
+          "minAppVersion": "1.1.0",
+          "platforms": [
+            "windows",
+            "linux",
+            "android",
+            "android_tv"
+          ],
+          "released": "2026-08-20T09:00:00Z",
+          "changelog": "首个上架版本。"
+        }
+      ]
+    },
+    {
+      "id": "linplayer/rule-editor",
+      "name": "drpy 规则编辑器",
+      "description": "写 drpy 规则的人用:贴进规则,点「测试」在隔离的子运行时里跑一遍 首页 / 分类 / 详情 / 播放,结果或报错栈当场看;满意了「保存为数据源」。drpy 引擎与依赖库打包在本插件里,不依赖 TVBox 插件。",
+      "i18n": {
+        "en": {
+          "name": "drpy rule editor",
+          "description": "Paste a drpy rule, run home / category / detail / play in an isolated sub-runtime and read the stack trace on the spot."
+        }
+      },
+      "author": "linplayer",
+      "paid": false,
+      "contributes": [
+        "pages:editor",
+        "sidebar"
+      ],
+      "categories": [
+        "tool"
+      ],
+      "stars": 96,
+      "downloads": 2310,
+      "official": true,
+      "addedAt": "2026-09-01T10:00:00Z",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "url": "/packages/linplayer-rule-editor-0.1.0.lpplugin",
+          "size": 1884160,
+          "minAppVersion": "1.1.0",
+          "platforms": [
+            "windows",
+            "linux",
+            "android",
+            "android_tv"
+          ],
+          "released": "2026-09-01T09:00:00Z",
+          "changelog": "首个上架版本。"
+        }
+      ]
+    },
+    {
+      "id": "linplayer/devtools",
+      "name": "开发者工具",
+      "description": "官方开发者工具:日志、网络请求、UI 树、性能与存储四块调试面板,外加渲染器的组件示例页与一千项大列表。",
+      "i18n": {
+        "en": {
+          "name": "Developer tools",
+          "description": "Logs, network, UI tree, performance and storage panels, plus a renderer component gallery and a thousand-row list."
+        }
+      },
+      "author": "linplayer",
+      "paid": false,
+      "contributes": [
+        "pages:panel",
+        "pages:gallery",
+        "pages:list",
+        "sidebar"
+      ],
+      "categories": [
+        "tool"
+      ],
+      "stars": 143,
+      "downloads": 3980,
+      "official": true,
+      "addedAt": "2026-09-03T10:00:00Z",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "url": "/packages/linplayer-devtools-0.1.0.lpplugin",
+          "size": 512000,
+          "minAppVersion": "1.1.0",
+          "platforms": [
+            "windows",
+            "linux",
+            "android",
+            "android_tv"
+          ],
+          "released": "2026-09-19T09:00:00Z",
+          "changelog": "首个上架版本。"
+        }
+      ]
+    },
+    {
+      "id": "linplayer/theme-midnight",
+      "name": "午夜蓝(桌面)",
+      "description": "官方示范主题:更深的蓝底、更亮的强调色。示范一个主题包能改什么 —— 设计 token 与组件状态样式,结构和行为不变。",
+      "i18n": {
+        "en": {
+          "name": "Midnight Blue (Desktop)",
+          "description": "A reference theme: deeper blue surfaces, a brighter accent. Shows what a theme package may change — design tokens and component states, never structure."
+        }
+      },
+      "author": "linplayer",
+      "paid": false,
+      "contributes": [
+        "theme:desktop"
+      ],
+      "categories": [
+        "theme"
+      ],
+      "stars": 74,
+      "downloads": 5120,
+      "official": true,
+      "addedAt": "2026-09-05T10:00:00Z",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "url": "/packages/linplayer-theme-midnight-0.1.0.lpplugin",
+          "size": 24576,
+          "minAppVersion": "1.1.0",
+          "platforms": [
+            "windows",
+            "linux"
+          ],
+          "released": "2026-09-05T09:00:00Z",
+          "changelog": "首个上架版本。"
+        }
+      ]
+    },
+    {
+      "id": "linplayer/theme-midnight-phone",
+      "name": "午夜蓝(手机)",
+      "description": "官方示范主题:更深的蓝底、更亮的强调色。示范一个主题包能改什么 —— 设计 token 与组件状态样式,结构和行为不变。",
+      "i18n": {
+        "en": {
+          "name": "Midnight Blue (Phone)",
+          "description": "A reference theme: deeper blue surfaces, a brighter accent. Shows what a theme package may change — design tokens and component states, never structure."
+        }
+      },
+      "author": "linplayer",
+      "paid": false,
+      "contributes": [
+        "theme:android"
+      ],
+      "categories": [
+        "theme"
+      ],
+      "stars": 74,
+      "downloads": 4360,
+      "official": true,
+      "addedAt": "2026-09-05T10:00:00Z",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "url": "/packages/linplayer-theme-midnight-phone-0.1.0.lpplugin",
+          "size": 20480,
+          "minAppVersion": "1.1.0",
+          "platforms": [
+            "android"
+          ],
+          "released": "2026-09-05T09:00:00Z",
+          "changelog": "首个上架版本。"
+        }
+      ]
+    },
+    {
+      "id": "linplayer/theme-midnight-tv",
+      "name": "午夜蓝(TV)",
+      "description": "官方示范主题:更深的蓝底、更亮的强调色。示范一个主题包能改什么 —— 设计 token 与组件状态样式,结构和行为不变。",
+      "i18n": {
+        "en": {
+          "name": "Midnight Blue (TV)",
+          "description": "A reference theme: deeper blue surfaces, a brighter accent. Shows what a theme package may change — design tokens and component states, never structure."
+        }
+      },
+      "author": "linplayer",
+      "paid": false,
+      "contributes": [
+        "theme:android_tv"
+      ],
+      "categories": [
+        "theme"
+      ],
+      "stars": 74,
+      "downloads": 2870,
+      "official": true,
+      "addedAt": "2026-09-05T10:00:00Z",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "url": "/packages/linplayer-theme-midnight-tv-0.1.0.lpplugin",
+          "size": 20480,
+          "minAppVersion": "1.1.0",
+          "platforms": [
+            "android_tv"
+          ],
+          "released": "2026-09-05T09:00:00Z",
+          "changelog": "首个上架版本。"
+        }
+      ]
+    }
+  ]
+}

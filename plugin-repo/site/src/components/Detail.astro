@@ -1,0 +1,152 @@
+---
+import QRCode from 'qrcode';
+import { getCollection, render } from 'astro:content';
+import Layout from './Layout.astro';
+import { plugins, slugOf, tr, latest, platformsOf, type Entry, type Lang } from '../lib/registry';
+import { t, catName, platName, fmtNum, fmtSize, fmtDate, href } from '../lib/i18n';
+
+interface Props { entry: Entry; lang: Lang }
+const { entry: e, lang } = Astro.props;
+const L = t(lang);
+const { name, description } = tr(e, lang);
+const slug = slugOf(e.id);
+const v = latest(e);
+const path = `/plugins/${slug}`;
+const pageUrl = new URL(href(lang, path), Astro.site).href;
+// 深链要的是包的绝对地址(D154)。SITE_URL 由 CI 注入,仓库里不写域名。
+const pkgUrl = new URL(v.url, Astro.site).href;
+const deepLink = `linplayer://plugin/install?url=${encodeURIComponent(pkgUrl)}`;
+const qr = await QRCode.toString(pageUrl, { type: 'svg', margin: 0, errorCorrectionLevel: 'M' });
+
+// getEntry 找不到会往构建日志里刷警告,而「没有 README」是常态 —— 改成自己查集合
+const doc = (await getCollection('readme')).find((d) => d.id === `${lang}/${slug}`);
+const Readme = doc ? (await render(doc)).Content : null;
+const caps = [...((e.requires as any)?.capabilities ?? []), ...(e.lan ? [L.lanCap] : [])];
+const comps = (e.requires as any)?.components ?? [];
+const siblings = plugins.filter((p) => p.author && p.author === e.author && p.id !== e.id).slice(0, 5);
+---
+<Layout lang={lang} nav="plugins" altPath={path} title={`${name} · ${L.brand}`}
+        description={description} ogImage={`/og/${slug}.png`}>
+<div class="wrap">
+  <p class="crumb"><a href={href(lang, '/')}>← {L.back}</a></p>
+
+  <div class="detail">
+    <div>
+      <div class="head">
+        <span class="glyph" style={`view-transition-name:p-${slug}`}>{name.slice(0, 1)}</span>
+        <div>
+          <h1>{name}</h1>
+          <p class="sub">{e.author ?? '—'} · <code>{e.id}</code></p>
+          <div class="flags">
+            {e.official && <span class="tag accent">{L.official}</span>}
+            {e.paid && <span class="tag warn">{L.paid}</span>}
+            {(e.categories ?? []).map((c) => <span class="tag">{catName(lang, c)}</span>)}
+          </div>
+        </div>
+      </div>
+
+      {(e.screenshots?.length ?? 0) > 0 && (
+        <div class="shots" style="margin-top:var(--s26)">
+          {e.screenshots!.map((s) => <img src={s} alt="" loading="lazy" />)}
+        </div>
+      )}
+
+      <div class="panel rise" style="margin-top:var(--s26)">
+        <h2>{Readme ? L.readme : L.overview}</h2>
+        <div class="prose">{Readme ? <Readme /> : <p>{description}</p>}</div>
+      </div>
+
+      <div class="panel rise">
+        <h2>{L.contributes}</h2>
+        <div class="chiplist">
+          {(e.contributes ?? []).map((c) => <code>{c}</code>)}
+        </div>
+      </div>
+
+      <div class="panel rise">
+        <h2>{L.versions}</h2>
+        <ul class="vlist">
+          {e.versions.map((x) => (
+            <li>
+              <code>v{x.version}</code>
+              <a class="icon-btn" href={x.url} download>.lpplugin · {fmtSize(x.size)}</a>
+              <span class="when">{fmtDate(x.released, lang)}</span>
+              {x.changelog && <p>{x.changelog}</p>}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+
+    <aside>
+      <div class="panel">
+        <button class="btn" id="install" type="button" data-deep={deepLink}>{L.install}</button>
+        <div class="fallback" id="fallback" hidden>
+          <strong>{L.noResponse}</strong>
+          <div class="row">
+            <a class="btn ghost" href={href(lang, '/download')}>{L.getApp}</a>
+            <a class="btn ghost" href={v.url} download>{L.manual}</a>
+          </div>
+        </div>
+        <div class="qr">
+          <Fragment set:html={qr} />
+          <span>{L.scan}</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="stats">
+          <div><b>{fmtNum(e.downloads ?? 0)}</b><span>{L.downloads}</span></div>
+          {e.stars !== undefined && <div><b>{fmtNum(e.stars)}</b><span>{L.stars}</span></div>}
+        </div>
+      </div>
+
+      <div class="panel">
+        <dl class="kv">
+          <dt>{L.platformsTitle}</dt>
+          <dd>{platformsOf(e).map((p) => platName(lang, p)).join(' / ') || '—'}</dd>
+          <dt>{L.minApp}</dt><dd>{v.minAppVersion}</dd>
+          {caps.length > 0 && <Fragment><dt>{L.caps}</dt><dd>{caps.join(' / ')}</dd></Fragment>}
+          {comps.length > 0 && <Fragment><dt>{L.requires}</dt><dd>{comps.join(' / ')}</dd></Fragment>}
+          <dt>{L.size}</dt><dd>{fmtSize(v.size)}</dd>
+          <dt>{L.released}</dt><dd>{fmtDate(v.released, lang)}</dd>
+          {e.repository && <Fragment><dt>{L.repo}</dt><dd><a href={e.repository}>↗</a></dd></Fragment>}
+        </dl>
+      </div>
+
+      {siblings.length > 0 && (
+        <div class="panel">
+          <h2>{L.sameAuthor}</h2>
+          <ul class="vlist">
+            {siblings.map((s) => (
+              <li><a href={href(lang, `/plugins/${slugOf(s.id)}`)}>{tr(s, lang).name}</a>
+                <span class="when">{fmtNum(s.downloads ?? 0)}</span></li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </aside>
+  </div>
+</div>
+
+<script>
+  // 深链没装应用时浏览器不报错也不跳转 —— 只能等 2 秒还在本页就认为没反应(SPEC 15.6)
+  function boot() {
+    const btn = document.getElementById('install') as HTMLButtonElement | null;
+    const fb = document.getElementById('fallback');
+    if (!btn || !fb) return;
+    btn.addEventListener('click', () => {
+      fb.setAttribute('hidden', '');
+      location.href = btn.dataset.deep!;
+      const timer = setTimeout(() => fb.removeAttribute('hidden'), 2000);
+      // 应用抢走焦点 = 唤起成功,别再提示
+      addEventListener('blur', () => clearTimeout(timer), { once: true });
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) clearTimeout(timer);
+      }, { once: true });
+    });
+  }
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>
+</Layout>

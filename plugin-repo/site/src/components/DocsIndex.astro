@@ -1,0 +1,29 @@
+---
+import { getCollection } from 'astro:content';
+import Layout from './Layout.astro';
+import { t, href } from '../lib/i18n';
+import type { Lang } from '../lib/registry';
+
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const L = t(lang);
+const docs = (await getCollection('docs', (d) => d.id.startsWith(`${lang}/`)))
+  .sort((a, b) => a.data.order - b.data.order);
+---
+<Layout lang={lang} nav="docs" title={`${L.navDocs} · ${L.brand}`} altPath="/docs">
+  <div class="wrap" style="max-width:820px">
+    <div style="padding:var(--s34) 0 var(--s42)">
+      <h1 style="margin:0 0 var(--s18);letter-spacing:-.02em">{L.navDocs}</h1>
+      <ul class="vlist">
+        {docs.map((d, i) => (
+          <li class="rise" data-i={i} style="display:block">
+            <a href={href(lang, `/docs/${d.id.slice(lang.length + 1)}`)}>
+              <strong>{d.data.title}</strong>
+            </a>
+            {d.data.description && <p>{d.data.description}</p>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  </div>
+</Layout>

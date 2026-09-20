@@ -11,6 +11,7 @@
   真的那两条 —— 门禁就变成了「每次都红,于是每次都无视」。
 """
 
+import hashlib
 import io
 import os
 import re
@@ -66,9 +67,13 @@ URL_HOST = re.compile(r"https?://([a-zA-Z0-9.\-]+)")
 
 # 不带协议头的主机只查**廉价个人域名后缀**:真实基础设施地址基本都带协议头
 # (URL_HOST 管)或者是 IP(IPV4 管),而这些后缀是个人自建站的主力。
+# 裸主机只查廉价个人域名后缀,而且**要求域名里带数字或连字符**。
+# 不要求的话 Kotlin 的 `nav.top` / `Gravity.TOP` / `2.dp.toPx` / `source.link`
+# 全是命中 —— 这些后缀同时是一大堆属性名。带数字/连字符是这类站点的常态
+# (902541.xyz 这种),而属性名极少这么写。
+# 代价:纯字母的个人域名(如 `mysite.top`)漏报 —— 它们多半以 URL 形式出现,URL_HOST 管得到。
 BARE_HOST = re.compile(
-    r"([a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:xyz|top|vip|club|site|online|shop|link|tk|lol|icu|buzz|cyou))",
-    re.I,
+    r"([a-z0-9]*[\d-][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:xyz|top|vip|club|site|online|shop|link|tk|lol|icu|buzz|cyou))",
 )
 
 IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
@@ -86,12 +91,18 @@ CRED = re.compile(
 VERSIONISH = re.compile(r"version|assembly|semver|\bv\d", re.I)
 
 BASE_HEADER = "\n".join([
-    "# 红线欠账清单(门禁做出来之前就在仓库里的)。",
-    "# 格式:文件<TAB>值。这些**不是被赦免了**,是等项目负责人裁决 ——",
-    "# 见 docs/lessons/red-line-audit.md「C. 自有公开资产(需要负责人裁决)」。",
-    "# 裁决之后:留的进 secrets-allow.txt(写理由),不留的改掉并从这里删。",
+    "# 红线欠账清单（门禁做出来之前就在仓库里的）。",
+    "# 格式：文件<TAB>值的短哈希。**不写值本身** ——",
+    "# 把散在各处的泄漏汇总到一个文件里等于再泄一次，而且更好找",
+    "#（docs/lessons/red-line-audit.md 开头就是这么写的，第一版清单正好犯了它）。",
+    "# 要看是哪一处：bash scripts/check-secrets.sh 会打出文件与行号。",
+    "# 这些**不是被赦免了**，是等项目负责人裁决。",
     "",
 ])
+
+
+def digest(v):
+    return hashlib.sha1(v.lower().encode("utf-8")).hexdigest()[:12]
 
 
 def ip_is_versionish(ip, line):
@@ -152,6 +163,8 @@ def scan(files, allow):
     for f in files:
         if SKIP_EXT.search(f) or not os.path.exists(f):
             continue
+        if f.replace("\\", "/").endswith("scripts/secrets-baseline.txt"):
+            continue  # 清单本身不扫(它只存哈希,但扫它没有意义)
         try:
             text = io.open(f, encoding="utf-8", errors="ignore").read()
         except OSError:
@@ -187,7 +200,7 @@ def main():
     hits = scan(files, allow)
 
     if write_base:
-        rows = sorted({(f, v) for f, _, v in hits})
+        rows = sorted({(f, digest(v)) for f, _, v in hits})
         with io.open(base_path, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(BASE_HEADER)
             for f, v in rows:
@@ -196,7 +209,7 @@ def main():
         return 0
 
     baseline = load_baseline(base_path)
-    fresh = [(f, i, v) for f, i, v in hits if (f, v.lower()) not in baseline]
+    fresh = [(f, i, v) for f, i, v in hits if (f, digest(v)) not in baseline]
     old = len(hits) - len(fresh)
 
     if not fresh:

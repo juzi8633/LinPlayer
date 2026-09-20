@@ -1,0 +1,50 @@
+---
+import { slugOf, tr, latest, platformsOf, type Entry, type Lang } from '../lib/registry';
+import { t, catName, fmtNum, href } from '../lib/i18n';
+
+interface Props { entry: Entry; lang: Lang; i: number }
+const { entry: e, lang, i } = Astro.props;
+const L = t(lang);
+const { name, description } = tr(e, lang);
+const slug = slugOf(e.id);
+const shots = e.screenshots ?? [];
+const cats = (e.categories ?? []).map((c) => catName(lang, c)).join(' · ');
+const vt = `p-${slug}`;
+---
+<a class="card rise" data-i={i} data-slug={slug}
+   href={href(lang, `/plugins/${slug}`)}
+   data-cats={(e.categories ?? []).join(',')}
+   data-plats={platformsOf(e).join(',')}>
+  {shots.length > 0 ? (
+    <div class="shot" style={`view-transition-name:${vt}`} data-n={shots.length}>
+      {shots.map((s, k) => <img src={s} alt="" loading="lazy" class={k === 0 ? 'on' : ''} />)}
+      <div class="flags">
+        {e.official && <span class="tag accent">{L.official}</span>}
+        {e.paid && <span class="tag warn">{L.paid}</span>}
+      </div>
+      {shots.length > 1 && (
+        <div class="dots">{shots.map((_, k) => <i class={k === 0 ? 'on' : ''}></i>)}</div>
+      )}
+    </div>
+  ) : (
+    <!-- 没截图:同一个字当模糊底 + 清晰图标压在上面。不凑假截图 -->
+    <div class="shot mono" style={`view-transition-name:${vt}`}>
+      <span class="blur" aria-hidden="true">{name.slice(0, 1)}</span>
+      <span class="glyph">{name.slice(0, 1)}</span>
+      <div class="flags">
+        {e.official && <span class="tag accent">{L.official}</span>}
+        {e.paid && <span class="tag warn">{L.paid}</span>}
+      </div>
+    </div>
+  )}
+  <div class="body">
+    <h3>{name}</h3>
+    <p class="desc">{description}</p>
+    <div class="meta">
+      <span>{e.author ?? '—'}</span>
+      {cats && <span>{cats}</span>}
+      <span class="sep">{fmtNum(e.downloads ?? 0)} {L.downloads}</span>
+      <span>v{latest(e).version}</span>
+    </div>
+  </div>
+</a>

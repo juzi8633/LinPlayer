@@ -1,0 +1,100 @@
+name: 校验上架 PR
+
+# 作者改 registry/index.json 提 PR 时跑(SPEC 15.3)。
+# 全过 + 满足自动合并条件 → 自动合并;任一不满足 → 留给维护者人工看。
+on:
+  pull_request_target:
+    paths:
+      - 'registry/index.json'
+
+# ☠ pull_request_target 拿的是**基分支**的工作流与密钥,而 checkout 默认也是基分支。
+#   要校验 PR 的内容就必须显式 checkout PR 的 ref —— 但**绝不能**在那之后跑
+#   PR 带来的任何脚本(那等于把仓库写权限交给任意提交者)。
+#   下面只跑基分支的 tools/ 与官方 lp 二进制,PR 的内容一律当数据看。
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      automerge: ${{ steps.judge.outputs.automerge }}
+      reason: ${{ steps.judge.outputs.reason }}
+    steps:
+      - name: 取基分支(工具与校验脚本用这一份)
+        uses: actions/checkout@v4
+
+      - name: 取 PR 的 index.json(只当数据,不执行)
+        run: |
+          gh pr view "$PR" --json files --jq '.files[].path' > /tmp/changed.txt
+          gh api "repos/$REPO/contents/registry/index.json?ref=$HEAD_SHA" \
+            --jq '.content' | base64 -d > /tmp/pr-index.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+      - name: 只许改 index.json
+        run: |
+          if grep -vqx 'registry/index.json' /tmp/changed.txt; then
+            echo "这个 PR 还改了别的文件,留给维护者:"
+            cat /tmp/changed.txt
+            echo "automerge=no" >> "$GITHUB_ENV"
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: 取官方 lp
+        run: bash tools/fetch-lp.sh
+
+      - name: 逐条校验
+        id: judge
+        run: |
+          node tools/validate-index.mjs \
+            --base registry/index.json \
+            --head /tmp/pr-index.json \
+            --author "${{ github.event.pull_request.user.login }}" \
+            --out /tmp/verdict.json
+          cat /tmp/verdict.json
+          echo "automerge=$(jq -r .automerge /tmp/verdict.json)" >> "$GITHUB_OUTPUT"
+          echo "reason=$(jq -r .reason /tmp/verdict.json)" >> "$GITHUB_OUTPUT"
+
+  merge:
+    needs: validate
+    if: needs.validate.outputs.automerge == 'yes'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: 自动合并
+        run: gh pr merge "$PR" --squash --repo "$REPO"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+
+  hold:
+    needs: validate
+    if: needs.validate.outputs.automerge != 'yes'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 说明为什么留给维护者
+        run: |
+          gh pr comment "$PR" --repo "$REPO" --body \
+            "校验跑完了,但这条 PR 不满足自动合并的条件,已留给维护者人工看一眼。
+          原因:${{ needs.validate.outputs.reason }}
+
+          自动合并要同时满足:只改自己 id 的那一条、提交者就是该作者、
+          包能下载且能装起来、版本递增、manifest 合法。"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}

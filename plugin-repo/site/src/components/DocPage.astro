@@ -1,0 +1,21 @@
+---
+import { render } from 'astro:content';
+import Layout from './Layout.astro';
+import { t, href } from '../lib/i18n';
+import type { Lang } from '../lib/registry';
+
+const { doc, lang } = Astro.props as { doc: any; lang: Lang };
+const L = t(lang);
+const slug = doc.id.slice(lang.length + 1);
+const { Content } = await render(doc);
+---
+<Layout lang={lang} nav="docs" title={`${doc.data.title} · ${L.brand}`}
+        description={doc.data.description ?? ''} altPath={`/docs/${slug}`}>
+  <div class="wrap" style="max-width:820px">
+    <p class="crumb"><a href={href(lang, '/docs')}>← {L.navDocs}</a></p>
+    <article class="prose rise" style="padding:var(--s18) 0 var(--s42)">
+      <h1 style="letter-spacing:-.02em;margin:0 0 var(--s18)">{doc.data.title}</h1>
+      <Content />
+    </article>
+  </div>
+</Layout>

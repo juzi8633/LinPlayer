@@ -1,0 +1,26 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "id": "alice/mini-live",
+  "name": "迷你直播",
+  "version": "0.1.0",
+  "description": "读注册表里的频道源,左列表右播放;带直播 OSD、遥控按钮与开播提醒后台任务。",
+  "minAppVersion": "2.0.0",
+  "platforms": ["windows", "linux", "android", "android_tv"],
+  "activation": { "load": "lazy", "lifetime": "idle" },
+  "contributes": {
+    "pages": [ { "id": "live", "title": "直播" } ],
+    "sidebar": [ { "id": "live", "title": "直播", "page": "live", "icon": "tv" } ],
+    "osd": [ { "id": "live-osd", "scope": "live" } ],
+    "launchTargets": [ { "id": "last", "title": "直播:上次频道", "page": "live", "params": { "resume": true } } ],
+    "commands": [
+      { "id": "next", "title": "下一个频道" },
+      { "id": "prev", "title": "上一个频道" },
+      { "id": "tune", "title": "切到频道", "external": true, "params": [ { "name": "channel", "title": "频道", "complete": true } ] }
+    ],
+    "keybindings": [ { "command": "next", "key": "PageDown", "when": "player" } ],
+    "remoteButtons": [ { "title": "下一频道", "command": "next" } ],
+    "android": { "mediaActions": [ { "title": "下一频道", "command": "next" } ] },
+    "registry": { "channels": [ { "name": "alice/mini-live/favorites" } ] },
+    "background": { "tasks": [ { "id": "remind", "intervalMinutes": 30, "purpose": "notifications" } ] }
+  }
+}

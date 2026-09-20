@@ -1,0 +1,6 @@
+{
+  "$schema": "../packages/sdk/schema/index.schema.json",
+  "schema": 1,
+  "updated": "2026-09-21",
+  "plugins": []
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@linplayer/cli",
+  "version": "2.0.0",
+  "description": "LinPlayer 插件开发命令行:lp new / build / pack / check / dev / submit。",
+  "license": "MIT",
+  "bin": { "lp": "bin/lp.js" },
+  "files": ["bin/", "README.md"],
+  "scripts": { "postinstall": "node bin/fetch.js" },
+  "keywords": ["linplayer", "plugin", "cli"],
+  "publishConfig": { "access": "public" }
+}

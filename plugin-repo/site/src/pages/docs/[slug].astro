@@ -1,0 +1,11 @@
+---
+import { getCollection } from 'astro:content';
+import DocPage from '../../components/DocPage.astro';
+
+export async function getStaticPaths() {
+  const docs = await getCollection('docs', (d) => d.id.startsWith('zh/'));
+  return docs.map((d) => ({ params: { slug: d.id.slice(3) }, props: { doc: d } }));
+}
+const { doc } = Astro.props;
+---
+<DocPage doc={doc} lang="zh" />

@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "linplayer-plugin-manifest",
+  "title": "LinPlayer 插件 manifest.json(草稿 2026-09-20)",
+  "description": "SPEC 第 4、6 章;决定编号见 DECISIONS.md。@see D34 D264",
+  "type": "object",
+  "required": ["id", "name", "version", "description", "minAppVersion"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "id": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*/[a-z0-9]+(-[a-z0-9]+)*$", "description": "作者/名字 @see D47 D265 D266" },
+    "name": { "type": "string", "minLength": 1, "description": "@see D39 D400" },
+    "version": { "$ref": "#/$defs/semver", "description": "@see D180" },
+    "description": { "type": "string", "minLength": 1 },
+    "i18n": { "type": "object", "properties": { "en": { "type": "object", "properties": { "name": { "type": "string" }, "description": { "type": "string" } }, "additionalProperties": false } }, "additionalProperties": false, "description": "只用于市场与 Pages @see D400" },
+    "main": { "type": "string", "default": "main.js", "description": "@see D206" },
+    "icon": { "type": "string", "description": "商店图标 PNG/WebP/SVG @see D183" },
+    "iconMono": { "type": "string", "pattern": "\\.svg$", "description": "入口小图标,单色 SVG @see D549" },
+    "screenshots": { "type": "array", "items": { "type": "string" }, "description": "@see D373" },
+    "minAppVersion": { "$ref": "#/$defs/semver", "description": "lp build 自动填 @see D36 D411" },
+    "platforms": { "type": "array", "items": { "$ref": "#/$defs/platform" }, "uniqueItems": true, "description": "不写 = 全平台 @see D138" },
+    "requires": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "capabilities": { "type": "array", "items": { "enum": ["webview", "canvas", "shaders", "touch", "tv", "windowTopmost", "windowClickThrough", "background"] }, "description": "@see D179" },
+        "components": { "type": "array", "items": { "$ref": "#/$defs/component" }, "description": "@see D381" }
+      }
+    },
+    "lan": { "type": "boolean", "default": false, "description": "会访问局域网 @see D247" },
+    "paid": { "type": "boolean", "default": false, "description": "含付费功能 @see D409" },
+    "homepage": { "type": "string" },
+    "repository": { "type": "string", "description": "进官方索引必须是公开仓库 @see D408 D483" },
+    "issues": { "type": "string", "description": "「反馈」按钮打开 @see D172" },
+    "license": { "type": "string" },
+    "activation": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "load": { "enum": ["lazy", "startup"], "default": "lazy" },
+        "lifetime": { "enum": ["resident", "idle"], "default": "resident" }
+      },
+      "description": "@see D51"
+    },
+    "contributes": { "$ref": "#/$defs/contributes", "description": "注入位最初四类(侧栏/首页栏目/详情区块/菜单)后扩成全表;包格式见 SPEC 4.1 @see D26 D30 D34" }
+  },
+  "$defs": {
+    "semver": { "type": "string", "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$" },
+    "platform": { "enum": ["windows", "linux", "android", "android_tv"] },
+    "component": { "enum": ["interp", "jar-runtime", "python", "geckoview", "whisper", "ffmpeg"] },
+    "localId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+    "commandRef": {
+      "type": "object", "required": ["command"], "additionalProperties": false,
+      "properties": { "command": { "$ref": "#/$defs/localId" }, "args": { "type": "object" } }
+    },
+    "settingItem": {
+      "type": "object", "required": ["key", "type"], "additionalProperties": false,
+      "properties": {
+        "key": { "$ref": "#/$defs/localId" },
+        "type": { "enum": ["toggle", "text", "password", "select", "multiselect", "number", "slider", "button", "group"], "description": "password 值存密钥区 @see D267" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "default": {},
+        "options": { "type": "array", "items": { "type": "object", "required": ["value", "label"], "properties": { "value": { "type": "string" }, "label": { "type": "string" } }, "additionalProperties": false } },
+        "min": { "type": "number" }, "max": { "type": "number" }, "step": { "type": "number" },
+        "action": { "$ref": "#/$defs/localId", "description": "type=button 触发 settingActions 里的实现" },
+        "multiline": { "type": "boolean", "description": "type=text 时多行输入(贴规则文本这类)" },
+        "when": { "type": "object", "required": ["key"], "properties": { "key": { "type": "string" }, "equals": {} }, "additionalProperties": false, "description": "条件显示" }
+      }
+    },
+    "block": { "$ref": "#/$defs/localId" },
+    "contributes": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "pages": { "type": "array", "items": { "type": "object", "required": ["id"], "additionalProperties": false, "properties": { "id": { "$ref": "#/$defs/localId" }, "title": { "type": "string" }, "icon": { "type": "string" } } }, "description": "@see D84" },
+        "pageTakeovers": { "type": "array", "items": { "type": "object", "required": ["target", "page"], "additionalProperties": false, "properties": { "target": { "type": "string", "not": { "enum": ["plugins", "server.add", "login", "settings.account", "settings.network", "settings.extensions", "settings.developer", "player"] } }, "page": { "$ref": "#/$defs/localId" } } }, "description": "target 为官方路由名,如 home / detail / ranking(D75) @see D29 D75 D407" },
+        "anchors": { "type": "array", "items": { "type": "object", "required": ["anchor", "mode"], "additionalProperties": false, "properties": { "anchor": { "type": "string" }, "mode": { "enum": ["before", "after", "replace", "hide"] }, "block": { "$ref": "#/$defs/block" } } }, "description": "@see D155 D159" },
+        "osd": { "type": "array", "items": { "type": "object", "required": ["id", "scope"], "additionalProperties": false, "properties": { "id": { "$ref": "#/$defs/localId" }, "scope": { "type": "string", "description": "vod | live | embedded | 开放键 | emby" }, "managesVisibility": { "type": "boolean" } } }, "description": "@see D14 D162 D297" },
+        "theme": { "type": "object", "required": ["platform"], "additionalProperties": false, "properties": { "platform": { "enum": ["desktop", "android", "android_tv"] }, "axaml": { "type": "array", "items": { "type": "string" } }, "json": { "type": "string" }, "modes": { "type": "array", "items": { "enum": ["light", "dark"] } } }, "description": "一包一端;三端 token 分开做 @see D72 D210 D214 D215 D216 D512" },
+        "wallpaper": { "type": "object", "required": ["id"], "additionalProperties": false, "properties": { "id": { "$ref": "#/$defs/localId" }, "title": { "type": "string" } }, "description": "@see D441" },
+        "launchTargets": { "type": "array", "items": { "type": "object", "required": ["id", "title", "page"], "additionalProperties": false, "properties": { "id": { "$ref": "#/$defs/localId" }, "title": { "type": "string" }, "page": { "$ref": "#/$defs/localId" }, "params": { "type": "object" } } }, "description": "@see D130" },
+        "nextUp": { "type": "boolean", "description": "@see D244" },
+        "shaders": { "type": "array", "items": { "type": "object", "required": ["id", "title", "files"], "additionalProperties": false, "properties": { "id": { "$ref": "#/$defs/localId" }, "title": { "type": "string" }, "files": { "type": "array", "items": { "type": "string" } } } }, "description": "全局一条着色器链;画面处理一律走 mpv 着色器 @see D107 D298" },
+        "sidebar": { "type": "array", "items": { "type": "object", "required": ["id", "title", "page"], "additionalProperties": false, "properties": { "id": { "$ref": "#/$defs/localId" }, "title": { "type": "string" }, "icon": { "type": "string" }, "page": { "$ref": "#/$defs/localId" } } }, "description": "@see D158 D305" },
+        "homeSections": { "type": "array", "items": { "type": "object", "required": ["id", "title", "kind"], "additionalProperties": false, "properties": { "id": { "$ref": "#/$defs/localId" }, "title": { "type": "string" }, "kind": { "enum": ["items", "custom"] }, "block": { "$ref": "#/$defs/block" }, "shape": { "enum": ["portrait", "landscape", "square"] } } }, "description": "@see D156 D303" },
+        "settings": { "type": "array", "items": { "$ref": "#/$defs/settingItem" }, "description": "@see D35 D267" },
+        "settingsPage": { "$ref": "#/$defs/block", "description": "复杂设置换成自己的 JSX 页 @see D35" },
+        "settingsSections": { "type": "array", "items": { "type": "object", "required": ["anchor", "title"], "additionalProperties": false, "properties": { "anchor": { "type": "string" }, "title": { "type": "string" }, "settings": { "type": "array", "items": { "$ref": "#/$defs/settingItem" } }, "block": { "$ref": "#/$defs/block" } } }, "description": "@see D286 D289" },
+        "menus": { "type": "array", "items": { "type": "object", "required": ["target", "title", "command"], "additionalProperties": false, "properties": { "target": { "enum": ["item", "episode", "player.more", "server"] }, "title": { "type": "string" }, "icon": { "type": "string" }, "command": { "$ref": "#/$defs/localId" } } }, "description": "@see D157" },
+        "playerOverlays": { "type": "array", "items": { "type": "object", "required": ["id"], "additionalProperties": false, "properties": { "id": { "$ref": "#/$defs/localId" }, "interactive": { "type": "boolean" } } }, "description": "@see D14 D65" },
+        "globalOverlays": { "type": "array", "items": { "type": "object", "required": ["id"], "additionalProperties": false, "properties": { "id": { "$ref": "#/$defs/localId" }, "interactive": { "type": "boolean" } } }, "description": "@see D279 D283" },
+        "playerPanels": { "type": "array", "items": { "type": "object", "required": ["id", "title"], "additionalProperties": false, "properties": { "id": { "$ref": "#/$defs/localId" }, "title": { "type": "string" }, "icon": { "type": "string" } } }, "description": "@see D300" },
+        "virtualLibraries": { "type": "array", "items": { "type": "object", "required": ["id", "title"], "additionalProperties": false, "properties": { "id": { "$ref": "#/$defs/localId" }, "title": { "type": "string" }, "icon": { "type": "string" } } }, "description": "@see D473" },
+        "searchActions": { "type": "boolean", "description": "@see D242" },
+        "commands": { "type": "array", "items": { "type": "object", "required": ["id", "title"], "additionalProperties": false, "properties": { "id": { "$ref": "#/$defs/localId" }, "title": { "type": "string" }, "icon": { "type": "string" }, "external": { "type": "boolean", "description": "允许 linplayer://cmd 调用 @see D492" }, "params": { "type": "array", "items": { "type": "object", "required": ["name"], "additionalProperties": false, "properties": { "name": { "type": "string" }, "title": { "type": "string" }, "complete": { "type": "boolean" } } } } } }, "description": "@see D243 D520 D521" },
+        "keybindings": { "type": "array", "items": { "type": "object", "required": ["command", "key"], "additionalProperties": false, "properties": { "command": { "$ref": "#/$defs/localId" }, "key": { "type": "string" }, "platforms": { "type": "array", "items": { "$ref": "#/$defs/platform" } }, "when": { "enum": ["global", "player", "page"] } } }, "description": "@see D64" },
+        "gestures": { "type": "array", "items": { "type": "object", "required": ["command", "gesture"], "additionalProperties": false, "properties": { "command": { "$ref": "#/$defs/localId" }, "gesture": { "type": "string" } } }, "description": "@see D194" },
+        "remoteButtons": { "type": "array", "items": { "type": "object", "required": ["title", "command"], "additionalProperties": false, "properties": { "title": { "type": "string" }, "icon": { "type": "string" }, "command": { "$ref": "#/$defs/localId" } } }, "description": "@see D491" },
+        "windows": { "type": "array", "items": { "type": "object", "required": ["id"], "additionalProperties": false, "properties": { "id": { "$ref": "#/$defs/localId" }, "title": { "type": "string" } } }, "description": "@see D220 D500" },
+        "trayMenu": { "type": "array", "items": { "type": "object", "required": ["title", "command"], "additionalProperties": false, "properties": { "title": { "type": "string" }, "command": { "$ref": "#/$defs/localId" } } }, "description": "@see D501" },
+        "android": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "shortcuts": { "type": "array", "maxItems": 4, "items": { "type": "object", "required": ["id", "title", "command"], "additionalProperties": false, "properties": { "id": { "$ref": "#/$defs/localId" }, "title": { "type": "string" }, "icon": { "type": "string" }, "command": { "$ref": "#/$defs/localId" } } } },
+            "widgets": { "type": "array", "items": { "type": "object", "required": ["id", "title", "template"], "additionalProperties": false, "properties": { "id": { "$ref": "#/$defs/localId" }, "title": { "type": "string" }, "template": { "enum": ["posterRow", "list", "card"] } } } },
+            "tvChannels": { "type": "array", "items": { "type": "object", "required": ["id", "title"], "additionalProperties": false, "properties": { "id": { "$ref": "#/$defs/localId" }, "title": { "type": "string" } } } },
+            "mediaActions": { "type": "array", "maxItems": 2, "items": { "type": "object", "required": ["title", "command"], "additionalProperties": false, "properties": { "title": { "type": "string" }, "icon": { "type": "string" }, "command": { "$ref": "#/$defs/localId" } } } }
+          },
+          "description": "@see D505 D506 D511"
+        },
+        "deepLinks": { "type": "array", "items": { "type": "object", "required": ["path"], "additionalProperties": false, "properties": { "path": { "type": "string" } } }, "description": "linplayer://p/作者/名字/<path> @see D154" },
+        "externalInputs": { "type": "array", "items": { "type": "object", "required": ["id", "kinds"], "additionalProperties": false, "properties": { "id": { "$ref": "#/$defs/localId" }, "kinds": { "type": "array", "items": { "enum": ["share", "drop", "file", "clipboard"] } }, "urlPatterns": { "type": "array", "items": { "type": "string" } }, "extensions": { "type": "array", "items": { "type": "string" } }, "textRegex": { "type": "string" }, "title": { "type": "string" } } }, "description": "@see D304 D306 D307" },
+        "dataSource": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "serverTypes": { "type": "array", "items": { "type": "object", "required": ["id", "name", "fields"], "additionalProperties": false, "properties": { "id": { "$ref": "#/$defs/localId" }, "name": { "type": "string" }, "icon": { "type": "string" }, "fields": { "type": "array", "items": { "$ref": "#/$defs/settingItem" } } } } },
+            "disablePrefetch": { "type": "boolean", "description": "@see D173" }
+          },
+          "description": "@see D10 D131 D132"
+        },
+        "providers": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "danmaku": { "type": "object", "additionalProperties": false, "properties": { "name": { "type": "string" }, "send": { "type": "boolean" } } },
+            "subtitles": { "type": "object", "additionalProperties": false, "properties": { "name": { "type": "string" } } },
+            "metadata": { "type": "object", "required": ["mode"], "additionalProperties": false, "properties": { "name": { "type": "string" }, "mode": { "enum": ["supplement", "override", "complete"] }, "aliases": { "type": "boolean" } } },
+            "download": { "type": "object", "additionalProperties": false, "properties": { "name": { "type": "string" } } },
+            "skipSegments": { "type": "object", "additionalProperties": false, "properties": { "name": { "type": "string" } } },
+            "thumbnails": { "type": "object", "additionalProperties": false, "properties": { "name": { "type": "string" } } }
+          },
+          "description": "第 10 章"
+        },
+        "hooks": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "navigate": { "type": "boolean" },
+            "listTransform": { "type": "object", "required": ["lists"], "additionalProperties": false, "properties": { "lists": { "type": "array", "items": { "type": "string" } } } },
+            "cardBadge": { "type": "boolean" }
+          },
+          "description": "@see D277 D278 D474"
+        },
+        "m3u8Filters": { "type": "array", "items": { "type": "object", "required": ["id", "title"], "additionalProperties": false, "properties": { "id": { "$ref": "#/$defs/localId" }, "title": { "type": "string" } } }, "description": "@see D102 D493" },
+        "registry": { "type": "object", "additionalProperties": false, "properties": { "channels": { "type": "array", "items": { "type": "object", "required": ["name"], "additionalProperties": false, "properties": { "name": { "type": "string" }, "recommendedReader": { "type": "string" } } } } }, "description": "@see D273 D275" },
+        "background": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "tasks": { "type": "array", "items": { "type": "object", "required": ["id", "intervalMinutes", "purpose"], "additionalProperties": false, "properties": { "id": { "$ref": "#/$defs/localId" }, "intervalMinutes": { "type": "integer", "minimum": 15 }, "purpose": { "enum": ["widgets", "notifications", "downloads"] }, "wifiOnly": { "type": "boolean" }, "chargingOnly": { "type": "boolean" } } } },
+            "service": { "type": "object", "required": ["purpose"], "additionalProperties": false, "properties": { "purpose": { "enum": ["widgets", "notifications", "downloads"] }, "notificationTitle": { "type": "string" } } }
+          },
+          "description": "@see D129 D502 D504 D508"
+        }
+      }
+    }
+  }
+}

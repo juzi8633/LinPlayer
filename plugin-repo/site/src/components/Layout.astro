@@ -1,0 +1,112 @@
+---
+import { ClientRouter } from 'astro:transitions';
+import { t, other, href, type Lang } from '../lib/i18n';
+import '../styles/global.css';
+
+interface Props {
+  lang: Lang; title: string; description?: string;
+  ogImage?: string; nav?: 'plugins' | 'docs' | 'guide'; altPath?: string;
+}
+const { lang, title, description = '', ogImage, nav, altPath = '/' } = Astro.props;
+const L = t(lang);
+const o = other(lang);
+// 主仓库地址只从构建期变量来:仓库文件里不写域名(SPEC 15.6)
+const repo = import.meta.env.PUBLIC_REPO_URL || '';
+const og = ogImage ? new URL(ogImage, Astro.site).href : undefined;
+---
+<!doctype html>
+<html lang={lang === 'zh' ? 'zh-Hans' : 'en'}>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{title}</title>
+<meta name="description" content={description} />
+<meta property="og:title" content={title} />
+<meta property="og:description" content={description} />
+<meta property="og:type" content="website" />
+{og && <meta property="og:image" content={og} />}
+{og && <meta name="twitter:card" content="summary_large_image" />}
+<link rel="alternate" type="application/rss+xml" title={L.feedNew} href={href(lang, '/rss/new.xml')} />
+<link rel="alternate" type="application/rss+xml" title={L.feedUpdated} href={href(lang, '/rss/updated.xml')} />
+<link rel="alternate" hreflang={o} href={href(o, altPath)} />
+<!-- 主题在首帧之前定,否则深色用户会先闪一下浅色 -->
+<script is:inline>
+  try {
+    const v = localStorage.getItem('lp-theme');
+    if (v === 'dark' || v === 'light') document.documentElement.dataset.theme = v;
+  } catch {}
+</script>
+<ClientRouter />
+</head>
+<body>
+<div class="bg-field" aria-hidden="true"><b></b><b></b><i></i></div>
+
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href={href(lang, '/')}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5z" /><path d="M10 9.5v5l4.5-2.5z" fill="currentColor" stroke="none" />
+      </svg>
+      {L.brand}
+    </a>
+    <nav class="nav">
+      <a href={href(lang, '/')} aria-current={nav === 'plugins' ? 'page' : undefined}>{L.navPlugins}</a>
+      <a href={href(lang, '/docs')} aria-current={nav === 'docs' ? 'page' : undefined}>{L.navDocs}</a>
+      <a href={href(lang, '/guide')} aria-current={nav === 'guide' ? 'page' : undefined}>{L.navGuide}</a>
+      <a href={href(lang, '/download')}>{L.navDownload}</a>
+    </nav>
+    <span class="spacer"></span>
+    <a class="icon-btn" href={href(o, altPath)} hreflang={o}>{L.langSwitch}</a>
+    <button class="icon-btn" id="theme-toggle" type="button" title={L.theme} aria-label={L.theme}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z" />
+      </svg>
+    </button>
+  </div>
+</header>
+
+<main><slot /></main>
+
+<footer class="foot">
+  <div class="wrap">
+    <span>LinPlayer · AGPL-3.0</span>
+    {repo && <a href={repo}>{L.footerRepo}</a>}
+    <a href={href(lang, '/guide')}>{L.footerGuide}</a>
+    <span class="spacer"></span>
+    <a href={href(lang, '/rss/new.xml')}>{L.footerRss} · {L.feedNew}</a>
+    <a href={href(lang, '/rss/updated.xml')}>{L.footerRss} · {L.feedUpdated}</a>
+  </div>
+</footer>
+
+<script>
+  // 明暗:没存过就跟随系统 —— 只有点过才写 localStorage
+  const apply = () => {
+    const el = document.getElementById('theme-toggle');
+    el?.addEventListener('click', () => {
+      const cur = document.documentElement.dataset.theme
+        || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      const next = cur === 'dark' ? 'light' : 'dark';
+      document.documentElement.dataset.theme = next;
+      try { localStorage.setItem('lp-theme', next); } catch {}
+    });
+  };
+  apply();
+  document.addEventListener('astro:page-load', apply);
+</script>
+<script>
+  // 滚动进入错落淡入。observer 只加 class,动画交给 CSS(reduced-motion 在那边统一关)
+  const rise = () => {
+    const io = new IntersectionObserver((es) => {
+      for (const e of es) if (e.isIntersecting) {
+        const i = Number((e.target as HTMLElement).dataset.i || 0);
+        setTimeout(() => e.target.classList.add('in'), Math.min(i, 8) * 40);
+        io.unobserve(e.target);
+      }
+    }, { rootMargin: '0px 0px -8% 0px' });
+    document.querySelectorAll('.rise:not(.in)').forEach((n) => io.observe(n));
+  };
+  rise();
+  document.addEventListener('astro:page-load', rise);
+</script>
+</body>
+</html>

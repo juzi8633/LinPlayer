@@ -1,0 +1,14 @@
+---
+import Layout from './Layout.astro';
+import Wall from './Wall.astro';
+import { t, type Lang } from '../lib/i18n';
+import { index } from '../lib/registry';
+
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const L = t(lang);
+---
+<Layout lang={lang} nav="plugins" title={`${L.brand} — ${L.navPlugins}`}
+        description={index.name} altPath="/">
+  <Wall lang={lang} />
+</Layout>

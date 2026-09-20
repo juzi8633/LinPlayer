@@ -1,0 +1,159 @@
+---
+import PluginCard from './PluginCard.astro';
+import { plugins, searchIndex, type Lang } from '../lib/registry';
+import { t, catName, platName, CATEGORIES, PLATFORMS } from '../lib/i18n';
+
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const L = t(lang);
+const rows = searchIndex(lang);
+// 分类 chip 只列真有插件的:空 chip 点下去永远是空列表
+const used = CATEGORIES.filter((c) => rows.some((r) => r.c.includes(c)));
+---
+<div class="wrap">
+  <div class="searchrow">
+    <div class="searchbox">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
+      </svg>
+      <input id="q" type="search" autocomplete="off" placeholder={L.search} aria-label={L.search} />
+    </div>
+  </div>
+
+  <div class="chips" id="cats" role="group">
+    <button class="chip" data-cat="" aria-pressed="true">{L.all}</button>
+    {used.map((c) => <button class="chip" data-cat={c} aria-pressed="false">{catName(lang, c)}</button>)}
+  </div>
+
+  <div class="filterbar">
+    <span class="fieldlabel">{L.platform}</span>
+    <div class="seg" id="plats">
+      <button data-plat="" aria-pressed="true">{L.all}</button>
+      {PLATFORMS.map((p) => <button data-plat={p} aria-pressed="false">{platName(lang, p)}</button>)}
+    </div>
+    <span class="fieldlabel">{L.sort}</span>
+    <div class="seg" id="sorts">
+      <button data-sort="d" aria-pressed="true">{L.sortDownloads}</button>
+      <button data-sort="up" aria-pressed="false">{L.sortUpdated}</button>
+      <button data-sort="st" aria-pressed="false">{L.sortStars}</button>
+      <button data-sort="add" aria-pressed="false">{L.sortNew}</button>
+    </div>
+    <label class="toggle"><input type="checkbox" id="only-official" />{L.officialOnly}</label>
+    <label class="toggle"><input type="checkbox" id="hide-paid" />{L.paidHide}</label>
+    <span class="count" id="count"></span>
+  </div>
+
+  <div class="grid" id="grid">
+    {plugins.map((e, i) => <PluginCard entry={e} lang={lang} i={i} />)}
+  </div>
+  <p class="empty" id="empty" hidden>{L.empty}</p>
+</div>
+
+<script type="application/json" id="idx" set:html={JSON.stringify(rows)} />
+<script type="application/json" id="i18n" set:html={JSON.stringify({ count: L.count(0).replace('0', '{n}') })} />
+
+<script>
+  // 索引构建期就生成了,前端只做 includes + 排序 —— 九个到几千个插件都够快,不引搜索库
+  type Row = { s: string; hay: string; c: string[]; p: string[]; o: boolean; paid: boolean;
+               d: number; st: number; up: number; add: number };
+
+  function boot() {
+    const grid = document.getElementById('grid');
+    const idxEl = document.getElementById('idx');
+    if (!grid || !idxEl) return;
+    const rows: Row[] = JSON.parse(idxEl.textContent || '[]');
+    const tpl = JSON.parse(document.getElementById('i18n')?.textContent || '{}');
+    const cards = new Map<string, HTMLElement>();
+    grid.querySelectorAll<HTMLElement>('.card').forEach((c) => cards.set(c.dataset.slug!, c));
+
+    const state = { q: '', cat: '', plat: '', sort: 'd', official: false, hidePaid: false };
+
+    const press = (box: HTMLElement | null, attr: string, val: string) =>
+      box?.querySelectorAll<HTMLElement>('[data-' + attr + ']').forEach((b) =>
+        b.setAttribute('aria-pressed', String(b.dataset[attr] === val)));
+
+    function render() {
+      // FLIP:先记旧位置,改完 DOM 再算差量反向位移,最后放行
+      const first = new Map<string, DOMRect>();
+      cards.forEach((el, k) => { if (el.style.display !== 'none') first.set(k, el.getBoundingClientRect()); });
+
+      const q = state.q.trim().toLowerCase();
+      const hit = rows.filter((r) =>
+        (!q || r.hay.includes(q)) &&
+        (!state.cat || r.c.includes(state.cat)) &&
+        (!state.plat || r.p.includes(state.plat)) &&
+        (!state.official || r.o) &&
+        (!state.hidePaid || !r.paid));
+      const key = state.sort as 'd' | 'st' | 'up' | 'add';
+      hit.sort((a, b) => b[key] - a[key]);
+
+      cards.forEach((el) => { el.style.display = 'none'; });
+      hit.forEach((r, i) => {
+        const el = cards.get(r.s);
+        if (!el) return;
+        el.style.display = '';
+        el.style.order = String(i);
+        el.classList.add('in');
+      });
+      document.getElementById('count')!.textContent = (tpl.count || '{n}').replace('{n}', String(hit.length));
+      document.getElementById('empty')!.toggleAttribute('hidden', hit.length > 0);
+
+      if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      cards.forEach((el, k) => {
+        const a = first.get(k);
+        if (!a || el.style.display === 'none') return;
+        const b = el.getBoundingClientRect();
+        const dx = a.left - b.left, dy = a.top - b.top;
+        if (!dx && !dy) return;
+        el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }],
+          { duration: 300, easing: 'cubic-bezier(.2,.7,.3,1)' });
+      });
+    }
+
+    document.getElementById('q')?.addEventListener('input', (e) => {
+      state.q = (e.target as HTMLInputElement).value; render();
+    });
+    document.getElementById('cats')?.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>('[data-cat]');
+      if (!b) return;
+      state.cat = b.dataset.cat!; press(document.getElementById('cats'), 'cat', state.cat); render();
+    });
+    document.getElementById('plats')?.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>('[data-plat]');
+      if (!b) return;
+      state.plat = b.dataset.plat!; press(document.getElementById('plats'), 'plat', state.plat); render();
+    });
+    document.getElementById('sorts')?.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>('[data-sort]');
+      if (!b) return;
+      state.sort = b.dataset.sort!; press(document.getElementById('sorts'), 'sort', state.sort); render();
+    });
+    document.getElementById('only-official')?.addEventListener('change', (e) => {
+      state.official = (e.target as HTMLInputElement).checked; render();
+    });
+    document.getElementById('hide-paid')?.addEventListener('change', (e) => {
+      state.hidePaid = (e.target as HTMLInputElement).checked; render();
+    });
+    render();
+
+    // 悬停轮播:只在鼠标停在卡上时跑,离开就停,免得一屏十几个计时器空转
+    grid.querySelectorAll<HTMLElement>('.shot[data-n]').forEach((box) => {
+      const imgs = [...box.querySelectorAll('img')];
+      const dots = [...box.querySelectorAll('.dots i')];
+      if (imgs.length < 2) return;
+      let at = 0, timer = 0;
+      const step = () => {
+        imgs[at].classList.remove('on'); dots[at]?.classList.remove('on');
+        at = (at + 1) % imgs.length;
+        imgs[at].classList.add('on'); dots[at]?.classList.add('on');
+      };
+      box.closest('.card')!.addEventListener('mouseenter', () => {
+        if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        timer = window.setInterval(step, 1400);
+      });
+      box.closest('.card')!.addEventListener('mouseleave', () => clearInterval(timer));
+    });
+  }
+  boot();
+  document.addEventListener('astro:page-load', boot);
+</script>

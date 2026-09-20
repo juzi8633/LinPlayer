@@ -1,0 +1,68 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "id": "alice/hello-cms",
+  "name": "苹果CMS 示例源",
+  "version": "0.1.0",
+  "description": "最小数据源示例:把一个苹果CMS JSON 接口变成一台「服务器」。",
+  "i18n": {
+    "en": {
+      "name": "Hello CMS source",
+      "description": "Minimal data source example."
+    }
+  },
+  "minAppVersion": "2.0.0",
+  "iconMono": "icon-mono.svg",
+  "license": "MIT",
+  "contributes": {
+    "dataSource": {
+      "serverTypes": [
+        {
+          "id": "cms",
+          "name": "苹果CMS 接口",
+          "fields": [
+            {
+              "key": "api",
+              "type": "text",
+              "title": "接口地址"
+            },
+            {
+              "key": "name",
+              "type": "text",
+              "title": "显示名"
+            }
+          ]
+        }
+      ]
+    },
+    "homeSections": [
+      {
+        "id": "latest",
+        "title": "示例源·最近更新",
+        "kind": "items"
+      }
+    ],
+    "commands": [
+      {
+        "id": "clear-cache",
+        "title": "清空示例源缓存"
+      }
+    ],
+    "settings": [
+      {
+        "key": "cacheMinutes",
+        "type": "slider",
+        "title": "列表缓存(分钟)",
+        "default": 10,
+        "min": 0,
+        "max": 120,
+        "step": 5
+      },
+      {
+        "key": "clear",
+        "type": "button",
+        "title": "清空缓存",
+        "action": "clear"
+      }
+    ]
+  }
+}

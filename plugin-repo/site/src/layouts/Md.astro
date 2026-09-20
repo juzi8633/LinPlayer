@@ -1,0 +1,17 @@
+---
+import Layout from '../components/Layout.astro';
+import type { Lang } from '../lib/registry';
+
+// Markdown 页面的外壳:frontmatter 里带 lang / title / nav / altPath 就够了
+const { frontmatter } = Astro.props;
+const lang: Lang = frontmatter.lang ?? 'zh';
+---
+<Layout lang={lang} title={frontmatter.title} description={frontmatter.description ?? ''}
+        nav={frontmatter.nav} altPath={frontmatter.altPath ?? '/'}>
+  <div class="wrap" style="max-width:820px">
+    <article class="prose rise" style="padding:var(--s34) 0 var(--s42)">
+      <h1 style="letter-spacing:-.02em;margin:0 0 var(--s18)">{frontmatter.title}</h1>
+      <slot />
+    </article>
+  </div>
+</Layout>

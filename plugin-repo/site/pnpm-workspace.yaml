@@ -1,0 +1,5 @@
+# pnpm 10 起构建脚本要显式放行。sharp 用来生成 og:image,esbuild 是 Astro 的打包器。
+# plugin-repo 将来立 workspace 根的时候,这一段挪上去。
+allowBuilds:
+  esbuild: true
+  sharp: true
