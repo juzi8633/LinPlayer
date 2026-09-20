@@ -47,13 +47,26 @@
 
 | spike | 何时 | 决定什么 | 出处 |
 |---|---|---|---|
-| goja `Interrupt` 打断死循环的实际延迟;Android 真机同组基准 | ① 开始时 | 超时机制是否够用 | `08-runtime-benchmark.md` |
+| ~~goja `Interrupt` 打断死循环的实际延迟;Android 同组基准~~ **已做**,结论见下 | ① 开始时 | 超时机制够用 + 补 regexp2 超时 | `09-goja-interrupt-spike.md` |
 | 桌面 JVM 跑安卓 jar:用公开配置的 jar 源跑 home/search,报告跑通率与组件体积 | ① 之后 | 桌面 jar 支持 / 改「仅安卓」 | D351 |
 | Android 动态加载 GeckoView:能否加载、各盒子兼容性 | ② 前 | WebView 兜底方案 | D375 |
 | `<Player>` 视频层区域跟随(桌面视频是独立子窗口) | ② | `<Player>` 组件桌面实现 | D268 |
 | 视频壁纸实现方式(第二个轻量 libmpv 实例 / 平台原生播放器) | ⑤ | 视频壁纸 | D443 |
 
 spike 结论写进 `docs/research/plugins-v2/`,并回填本文与 DECISIONS.md。
+
+### 已完成:goja `Interrupt`(2026-09-20,`09-goja-interrupt-spike.md`)
+
+1. **超时机制够用**:纯 JS 死循环(含微任务里的)被打断的延迟桌面 <1ms、Android <2.5ms,
+   远小于最小预算 `BudgetHook = 300ms`。两个平台同量级 —— goja 每条字节码查中断标志,与平台无关。
+2. **必须补一处**:回溯类正则(前瞻 / 反向引用)会落到 regexp2,而 regexp2 默认不超时、
+   匹配中途也不看 goja 的中断标志,**一条坏规则能把运行时永久卡死**。
+   `core/plugin/rt` 在包初始化把 `regexp2.DefaultMatchTimeout` 钉 1 秒(D552)。
+   代价:超时的那次匹配被 goja 当成「不匹配」,插件看不到错误结果。
+3. ⚠️ **预算不是硬上限**:单次原生大操作(超大数组 `join`、超大字符串 `repeat`)中途不查中断标志,
+   要跑完这一步才停。同一段 3000 万元素 `join` 桌面 2.8s、Android 模拟器 p50 13.1s / max 35.0s ——
+   **慢设备上一次这种操作就能超过 `BudgetData = 30s`**。不再加机制,内存看门狗(D141)兜住同一类问题,
+   但文档里不许把预算说成硬上限(D553)。
 
 ## 19.5 提交与门禁(D328 D229)
 

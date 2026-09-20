@@ -71,8 +71,8 @@
 
 | spike | 到期 | 状态 |
 |---|---|---|
-| goja `Interrupt` 打断延迟 | ① 开始时 | ✅ 有报告 `docs/research/plugins-v2/09-goja-interrupt-spike.md`,结论已落到 `rt/runtime.go:33-35`(regexp2 超时)+ 回归测试;**❌ 未按 19-plan.md:56 回填本文与 DECISIONS.md** |
-| 同上 Android 真机基准 | ① 开始时 | ❌ 没测(报告自述 `adb devices` 为空);现在已有可用设备 |
+| goja `Interrupt` 打断延迟 | ① 开始时 | ✅ 报告 + `rt/runtime.go:33-35`(regexp2 超时)+ 回归测试;已回填 `19-plan.md` 19.4 与 DECISIONS D552 D553 |
+| 同上 Android 基准 | ① 开始时 | ✅ 2026-09-20 在 Android 16 模拟器(x86_64)补测九个用例;纯 JS 打断 max 2.5ms,**原生大 join p50 13.1s / max 35.0s 超过 30s 预算**(D553)。arm64 真机未测 |
 | 桌面 JVM 跑 jar(D351) | ① 之后 | ⏸ |
 | GeckoView(D375) | ② 前 | ⏸ |
 | `<Player>` 区域跟随(D268) / 视频壁纸(D443) | ② / ⑤ | ⏸ |
