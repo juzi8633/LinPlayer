@@ -87,10 +87,29 @@ fun TvRoot(app: AppState) {
     TvFrame(app, tvConfig) {
         val loggedIn by app.loggedIn.collectAsStateWithLifecycle()
         val nav = remember { TvNav() }
-        LaunchedEffect(Unit) { app.boot() }
+        LaunchedEffect(Unit) {
+            // 自检:先用开发版加载一个本地插件目录(和手机那条同一个开关)
+            xyz.linplayer.app.MainActivity.SelfCheck.devPlugin?.let { dir ->
+                xyz.linplayer.app.MainActivity.SelfCheck.devPlugin = null
+                runCatching { app.call("plugin.devLoad", xyz.linplayer.app.ui.pages.args("dir" to dir)) }
+            }
+            app.boot()
+        }
         // 手机遥控开机即起(§9.3 默认开)。手机形态从不调这条,所以手机上不监听
         LaunchedEffect(Unit) { runCatching { app.call("companion.start") } }
         CompanionBridge(nav)
+        // 自检直达:`-e lp_page 'tv:pluginpage:<插件id>/<页面id>'`
+        LaunchedEffect(loggedIn) {
+            val p = xyz.linplayer.app.MainActivity.SelfCheck.page ?: return@LaunchedEffect
+            if (!p.startsWith("tv:")) return@LaunchedEffect
+            xyz.linplayer.app.MainActivity.SelfCheck.page = null
+            val want = p.removePrefix("tv:")
+            if (want.startsWith("pluginpage:")) {
+                val raw = want.removePrefix("pluginpage:")
+                val at = raw.lastIndexOf('/')
+                if (at > 0) nav.push(TvRoute.PluginPage(raw.substring(0, at), raw.substring(at + 1), "插件页"))
+            }
+        }
         when (loggedIn) {
             null -> TvShell(nav, booting = true)
             false -> OnboardingPage(embedded = false)

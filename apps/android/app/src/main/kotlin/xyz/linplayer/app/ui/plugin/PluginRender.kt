@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.serialization.json.JsonObject
 import xyz.linplayer.app.data.AppState
+import xyz.linplayer.app.tv.memo
 import xyz.linplayer.app.ui.components.NetImage
 import xyz.linplayer.app.ui.components.pressable
 import xyz.linplayer.app.ui.theme.Lp
@@ -45,9 +46,20 @@ import xyz.linplayer.app.ui.theme.Lp
  * 未知组件画占位、未知属性直接忽略(D319):老宿主遇到新组件时用户看到的是
  * 「这一块需要更新 LinPlayer」,而不是整页崩掉或者一片空白。
  */
+/**
+ * TV 形态开关。
+ *
+ * ☠ TV 上**不可聚焦的元素等于不存在**:遥控器进不去,整页没有落点时方向键直接失灵
+ * (TvNav.kt 顶上那条「最经典的 P0」)。所以交互组件在 TV 上换成 TV 套件的那一份,
+ * 它们自带焦点态与放大。判据不是「长得像 TV」,是「遥控器点得到」。
+ */
+val LocalPluginTv = androidx.compose.runtime.staticCompositionLocalOf { false }
+
 @Composable
 internal fun RenderNode(n: UiNode, surface: String, app: AppState) {
     val m = styleOf(n)
+    val tv = LocalPluginTv.current
+    if (tv && renderTv(n, m, surface, app)) return
     when (n.type) {
         "#root", "View", "Column", "SettingsGroup" -> Stack(n, m, surface, app, row = n.style().dirRow())
         "Row", "ChipGroup" -> Stack(n, m, surface, app, row = true, wrapScroll = n.type == "ChipGroup")
@@ -269,3 +281,41 @@ private fun VirtualList(n: UiNode, m: Modifier, surface: String, app: AppState) 
         }
     }
 }
+
+
+/**
+ * TV 形态下的交互组件。返回 true = 这一类已经画过了,不用再走通用那条。
+ *
+ * 只覆盖**需要焦点**的那几种;纯展示的(Text / Image / Divider)两端共用一份。
+ */
+@Composable
+private fun renderTv(n: UiNode, m: Modifier, surface: String, app: AppState): Boolean {
+    val key = "plug.${n.id}"
+    when (n.type) {
+        "Button" -> xyz.linplayer.app.tv.kit.TvButton(
+            n.str("title") ?: n.str("label") ?: textOfNode(n),
+            modifier = m.memo(key),
+        ) { fire(app, surface, n.fn("onPress")) }
+        "Chip" -> xyz.linplayer.app.tv.kit.TvButton(
+            n.str("label") ?: textOfNode(n),
+            modifier = m.memo(key),
+        ) { fire(app, surface, n.fn("onPress")) }
+        "Pressable" -> xyz.linplayer.app.tv.kit.TvButton("", modifier = m.memo(key)) {
+            fire(app, surface, n.fn("onPress"))
+        }
+        "Switch", "Checkbox" -> {
+            /* ☠ 别映射成 PanelItem:那是**整行**的设置项,而插件常把开关摆在一行里,
+               整行会把旁边的文字挤成一列竖字。这里要的只是「一个能聚焦、按了会翻」的东西。 */
+            val on = n.bool("value") || n.bool("checked")
+            xyz.linplayer.app.tv.kit.TvButton(
+                listOfNotNull(n.str("label"), if (on) "开" else "关").joinToString(" "),
+                modifier = m.memo(key),
+            ) { fire(app, surface, n.fn("onChange") ?: n.fn("onToggle"), !on) }
+        }
+        else -> return false
+    }
+    return true
+}
+
+internal fun textOfNode(n: UiNode): String =
+    n.text + n.children.filter { it.type == "#text" }.joinToString("") { it.text }

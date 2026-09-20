@@ -88,7 +88,8 @@ class MainActivity : ComponentActivity() {
                     tvDraft != null -> xyz.linplayer.app.ui.drafts.tv.TvDraftGallery(
                         tvDraft.substringAfter(":", "0").toIntOrNull() ?: 0)
                     // `-e lp_page tv`:在不是电视的设备上强制走 TV 形态,给真机自检用
-                    isTelevision() || SelfCheck.page == "tv" -> xyz.linplayer.app.tv.TvRoot(app)
+                    // `-e lp_page tv` 或 `tv:<页>`:在不是电视的设备上强制走 TV 形态
+                    isTelevision() || SelfCheck.page?.startsWith("tv") == true -> xyz.linplayer.app.tv.TvRoot(app)
                     else -> PhoneRoot(app)
                 }
             }
