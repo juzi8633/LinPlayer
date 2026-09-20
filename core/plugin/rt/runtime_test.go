@@ -13,7 +13,7 @@ import (
 	"linplayer/core/paths"
 )
 
-func newRT(t *testing.T, code string, mod ...func(*Options)) *Runtime {
+func newRT(t testing.TB, code string, mod ...func(*Options)) *Runtime {
 	t.Helper()
 	paths.SetRoot(t.TempDir())
 	opt := Options{ID: "test/plugin", Version: "1.0.0", PkgDir: t.TempDir(), DataDir: t.TempDir()}

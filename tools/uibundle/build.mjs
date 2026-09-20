@@ -36,7 +36,7 @@ const parts = [
   `}`,
   read('src/dom.js'),
   read('src/renderer.js'),
-  `g.__lp_ui_init = function (host) { return makeRenderer(__lp_makeScope, host); };`,
+  `g.__lp_ui_init = function (host, sdk) { return makeRenderer(__lp_makeScope, host, sdk); };`,
   `g.__lp_preact_version = ${JSON.stringify(preactVersion)};`,
   `})(this);`,
 ]

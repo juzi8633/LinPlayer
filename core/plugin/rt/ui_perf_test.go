@@ -29,7 +29,15 @@ const benchPage = `
 		h('Button', {title: '加载更多', onPress: () => {}})) } })
 `
 
-func TestUI首帧预算(t *testing.T) {
+/*
+首帧。
+
+☠ 这里**不断言墙钟**:CI 机器忙起来时 150ms 这条会无理由地红,而一条经常红的门禁
+  等于没有门禁 —— 人会开始习惯性忽略它。D543 的 300ms 量的也不是这一段
+  (那条是「nav.push 到真正上屏」),归两端自检脚本按 SPEC 7.12 的口径量。
+  这里只断言**确定性**的那半:这一页建全了没有。时间用 BenchmarkUI首帧 报。
+*/
+func TestUI首帧把页面建全(t *testing.T) {
 	r, cap := newUI(t, benchPage)
 	start := time.Now()
 	if err := r.UIMount("s1", "page", "p", nil); err != nil {
@@ -40,15 +48,30 @@ func TestUI首帧预算(t *testing.T) {
 		defer cap.mu.Unlock()
 		return len(cap.frames) > 0
 	})
-	took := time.Since(start)
 	ops := cap.ops(t)
-	t.Logf("首帧 %v,%d 条 op", took.Round(time.Millisecond), len(ops))
+	t.Logf("首帧 %v,%d 条 op", time.Since(start).Round(time.Millisecond), len(ops))
 	if len(ops) < 40 {
 		t.Fatalf("只发了 %d 条 op,这一页没建全 —— 数字再好看也不算数", len(ops))
 	}
-	// 300ms 是 D543 的整条预算(含壳渲染);核心层这半截留一半余量
-	if took > 150*time.Millisecond {
-		t.Errorf("首帧 %v,超过核心层这一半的预算(150ms)", took)
+}
+
+// BenchmarkUI首帧 报核心层这半截的耗时。`go test -bench UI首帧 ./plugin/rt/`
+func BenchmarkUI首帧(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		r, cap := newUI(b, benchPage)
+		if err := r.UIMount("s1", "page", "p", nil); err != nil {
+			b.Fatal(err)
+		}
+		for {
+			cap.mu.Lock()
+			done := len(cap.frames) > 0
+			cap.mu.Unlock()
+			if done {
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
+		r.Close()
 	}
 }
 

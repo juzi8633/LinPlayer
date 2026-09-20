@@ -433,7 +433,15 @@ func (h *Host) SetSetting(id, key string, v any) error {
 	if err != nil {
 		return err
 	}
-	return h.setSetting(id, m, key, v)
+	if err := h.setSetting(id, m, key, v); err != nil {
+		return err
+	}
+	// 叫醒插件里的 settings.onChange / useSetting。不叫的话设置页改完,
+	// 插件页上还是旧值,用户得退出重进才看得到 —— 而这件事不报错。
+	if l, err := h.get(id, "lazy"); err == nil {
+		l.rt.NotifySettingChanged(key)
+	}
+	return nil
 }
 
 // Usage 占用:KV + data + cache(D143 D224)。

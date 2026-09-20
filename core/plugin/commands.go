@@ -168,6 +168,12 @@ func RegisterCommands() {
 		rt.SetShellCaps(rt.ShellCaps{WebView: b(a, "webview"), SpiderJar: b(a, "spider_jar"), SpiderPy: b(a, "spider_py")})
 		return nil, nil
 	})
+	// 壳报环境(主题 token / 深浅色 / 减少动态效果):切一次主题报一次(SPEC 7.5 7.6,D89 D428)
+	reg("plugin.setEnv", func(ctx context.Context, a map[string]any) (any, error) {
+		tokens, _ := a["theme_tokens"].(map[string]any)
+		rt.SetEnv(rt.Env{ReducedMotion: b(a, "reduced_motion"), ThemeMode: s(a, "theme_mode"), ThemeTokens: tokens})
+		return nil, nil
+	})
 	// 整页 WebView 过验证后,Cookie 进该源的罐子(罐子名 = 数据源开放键),插件后续请求都带上(D60 D323)
 	reg("plugin.setCookies", func(ctx context.Context, a map[string]any) (any, error) {
 		l, err := h().get(s(a, "plugin_id"), "lazy")

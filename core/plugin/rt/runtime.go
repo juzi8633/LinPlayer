@@ -76,6 +76,14 @@ type Runtime struct {
 	subs       sync.Map // 子运行时
 	transports sync.Map // transportKey → http.RoundTripper
 	disposes   []func()
+
+	// 设置项订阅(settings.onChange / useSetting)。宿主那边改完要叫醒插件,
+	// 不然设置页改完插件页还是旧值,用户得退出重进。
+	stats   statBox
+
+	setMu   sync.Mutex
+	setSubs map[string]map[int64]func()
+	setSeq  int64
 }
 
 // call 一次宿主→插件调用在循环里的记账。
@@ -323,6 +331,14 @@ func (r *Runtime) run(ctx context.Context, budget time.Duration, f func(*goja.Ru
 	r.mu.Lock()
 	r.calls[c] = struct{}{}
 	r.mu.Unlock()
+	// 调用统计只在开发者模式记:ReadMemStats 会 stop-the-world,
+	// 给每一次数据源调用都来一次是拿全进程的停顿换一个调试面板上的数字
+	var t0 time.Time
+	var heap0 int64
+	if r.opt.Dev {
+		t0, heap0 = time.Now(), heapNow()
+		defer func() { r.stats.note(time.Since(t0), false, heapNow()-heap0) }()
+	}
 	r.post(func() {
 		v, err := f(r.vm, c)
 		if err != nil {
@@ -407,6 +423,7 @@ func (r *Runtime) Close() {
 	if !r.dead.CompareAndSwap(false, true) {
 		return
 	}
+	envUnsubscribe(r)
 	close(r.quit)
 	// 循环可能正卡在插件的死循环里:不打断它,停用/卸载这个插件会把调用方一起挂住。
 	r.vm.Interrupt("closed")

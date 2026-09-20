@@ -233,12 +233,14 @@ func (s *surface) emit() {
 	ops := s.pending
 	s.pending = nil
 	s.timer = nil
+	if len(ops) == 0 {
+		// 空帧不占帧号:壳按帧号连续性判「有没有漏帧」,跳号会被当成丢了一帧
+		s.mu.Unlock()
+		return
+	}
 	s.seq++
 	seq := s.seq
 	s.mu.Unlock()
-	if len(ops) == 0 {
-		return
-	}
 	bus.Emit("plugin.ui", map[string]any{"surface": s.id, "frame": seq, "ops": ops}, "")
 }
 
@@ -276,3 +278,14 @@ func UISurfaceCount() int {
 	return len(ui.list)
 }
 
+
+// snapshot 当前挂着的 surface(调试面板的「UI 树」那一块要先列出来选)。
+func (u *uiState) snapshot() []map[string]any {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	out := make([]map[string]any, 0, len(u.list))
+	for _, s := range u.list {
+		out = append(out, map[string]any{"surface": s.id, "plugin": s.plugin, "kind": s.kind, "target": s.target})
+	}
+	return out
+}

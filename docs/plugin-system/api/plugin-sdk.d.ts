@@ -1256,7 +1256,12 @@ export declare function LineTabs(p: BaseProps & { lines: Line[]; current: string
 export declare function DetailHeader(p: BaseProps & { item: MediaItem; actions?: Child }): LpElement
 export declare function FilterPanel(p: BaseProps & { dimensions: FilterDimension[]; value: Record<string, string[]>; onChange: (v: Record<string, string[]>) => void }): LpElement
 /** 原生绑定 mpv 进度,不过 JS;自带预览缩略图。@see D161 D163 */
-export declare function ProgressBar(p: BaseProps & { seekable?: boolean }): LpElement
+/**
+ * 官方进度条(D161 D163)。不给 `value` 时绑当前播放进度,原生直接读 mpv、不过 JS;
+ * 给了 `value`(0~1)就画插件自己的进度(下载、任务这类)。
+ * `seekable` 只对绑 mpv 的那一种有意义 —— 插件自己的进度条拖到哪儿宿主也不知道该做什么。
+ */
+export declare function ProgressBar(p: BaseProps & { value?: number; seekable?: boolean }): LpElement
 export declare function ServerCard(p: BaseProps & PressProps & { server: ServerInfo }): LpElement
 export declare function Chip(p: BaseProps & PressProps & { label: string; selected?: boolean }): LpElement
 export declare function ChipGroup(p: BaseProps & { options: { value: string; label: string }[]; value: string[]; multi?: boolean; onChange: (v: string[]) => void }): LpElement
@@ -1334,6 +1339,38 @@ export declare function useSetting<T extends Json = Json>(key: string): [T, (v: 
 export declare function useStorage<T>(key: string, initial: T): [T, (v: T) => void]
 export declare function useReducedMotion(): boolean
 
+/**
+ * 调试 API:**只在开发者模式存在**(D80 D128),对所有插件开放。
+ *
+ * 官方调试面板(`linplayer/devtools`,16.5)就是靠它画那四块。
+ * 开发者模式没开时整个命名空间不挂 —— 挂一个永远返回空表的版本,
+ * 面板会把「这一版不收」显示成「这个插件没日志」。
+ */
+export declare namespace debug {
+  /** 装着的插件(含自己)。 */
+  function plugins(): Promise<{ id: string; name: string; version: string; enabled: boolean }[]>
+  /** 最近的日志(内存里,不落盘,D172)。 */
+  function logs(pluginId: string): Promise<DebugLog[]>
+  /** 最近的网络请求。 */
+  function requests(pluginId: string): Promise<DebugRequest[]>
+  /** 当前挂着的 surface。 */
+  function surfaces(): Promise<DebugSurface[]>
+  /** 某个 surface 的组件树与属性;函数属性折成字符串 `'fn'`。 */
+  function uiTree(surfaceId: string): Promise<DebugTreeNode | null>
+  /** 某个插件的 KV 快照。 */
+  function storage(pluginId: string): Promise<Record<string, Json>>
+  /** 改一个键;`value` 为 `null` = 删。 */
+  function setStorage(pluginId: string, key: string, value: Json | null): Promise<void>
+  /** 调用耗时与内存。`heap_delta` 是**进程级**采样的近似,不是这个插件真占了多少。 */
+  function stats(pluginId: string): Promise<DebugStats>
+}
+
+export interface DebugLog { ts: number; level: 'debug' | 'info' | 'warn' | 'error'; msg: string }
+export interface DebugRequest { ts: number; method: string; url: string; status: number; ms: number; err?: string }
+export interface DebugSurface { surface: string; plugin: string; kind: string; target: string }
+export interface DebugTreeNode { id: number; type: string; text?: string; props: Record<string, Json>; children: DebugTreeNode[] }
+export interface DebugStats { calls: number; total_ms: number; max_ms: number; timeouts: number; heap_delta: number }
+
 /** 插件设置值(非 hook)。 */
 export declare namespace settings {
   function get<T extends Json = Json>(key: string): T | undefined
@@ -1364,3 +1401,9 @@ export declare function useEffect(fn: () => void | (() => void), deps?: unknown[
 export declare function useMemo<T>(fn: () => T, deps: unknown[]): T
 export declare function useCallback<T extends (...a: never[]) => unknown>(fn: T, deps: unknown[]): T
 export declare function useRef<T>(initial: T): { current: T }
+export declare function useContext<T>(ctx: Context<T>): T
+export declare function useReducer<S, A>(reducer: (s: S, a: A) => S, initial: S): [S, (a: A) => void]
+/** 这一块崩了只让这一块显示出错(SPEC 7.11 D136)。 */
+export declare function useErrorBoundary(cb?: (err: unknown) => void): [unknown, () => void]
+export interface Context<T> { Provider(p: { value: T; children?: Child }): LpElement }
+export declare function createContext<T>(initial: T): Context<T>

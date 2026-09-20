@@ -42,7 +42,28 @@ func (r *Runtime) installSDK() error {
 	_ = app.Set("formFactor", info.FormFactor)
 	_ = app.Set("locale", info.Locale)
 	_ = app.Set("devMode", info.DevMode)
-	_ = app.Set("reducedMotion", false)
+	// 壳会随主题一起报上来,切一次深浅色就变一次:取快照的话插件读到的永远是启动那一刻
+	_ = app.DefineAccessorProperty("reducedMotion", vm.ToValue(func() goja.Value {
+		return vm.ToValue(CurrentEnv().ReducedMotion)
+	}), nil, goja.FLAG_FALSE, goja.FLAG_TRUE)
+	host0 := r.opt.Host
+	_ = app.Set("getSetting", func(k string) goja.Value {
+		if host0.AppSettingGet == nil {
+			return goja.Undefined()
+		}
+		return r.jsValue(host0.AppSettingGet(k))
+	})
+	_ = app.Set("setSetting", func(k string, v goja.Value) {
+		if !AppSettingWritable(k) {
+			r.throw(KindPermission, "应用设置 "+k+" 对插件只读(账号 / 服务器 / 代理类,D93)")
+		}
+		if host0.AppSettingSet == nil {
+			r.throw(KindUnsupported, "宿主没有提供应用设置写入")
+		}
+		if err := host0.AppSettingSet(k, exportJSON(r, v)); err != nil {
+			r.throw(KindInvalid, err.Error())
+		}
+	})
 	// 能力由壳在启动后报上来,晚于插件加载也要读到最新的:用 getter 不用快照
 	_ = app.DefineAccessorProperty("capabilities", vm.ToValue(func() goja.Value {
 		c := Caps()
@@ -191,6 +212,15 @@ func (r *Runtime) installSDK() error {
 		if err := h.SettingSet(k, v.Export()); err != nil {
 			r.throw(KindInvalid, err.Error())
 		}
+		r.notifySetting(k)
+	})
+	// onChange 让 useSetting 在设置页改完之后跟着变。没有它的话插件页要用户手动退出重进
+	_ = set.Set("onChange", func(k string, cb goja.Callable) goja.Value {
+		dispose := r.watchSetting(k, func() { _, _ = cb(goja.Undefined()) })
+		r.disposes = append(r.disposes, dispose)
+		d := vm.NewObject()
+		_ = d.Set("dispose", dispose)
+		return d
 	})
 
 	r.installRegistry(ns("registry"))
@@ -198,6 +228,7 @@ func (r *Runtime) installSDK() error {
 	r.installHTML(ns("html"))
 	r.installCrypt(ns("crypt"))
 	r.installShell(sdk)
+	r.installDebug(sdk)
 	if err := r.installUI(sdk); err != nil {
 		return err
 	}

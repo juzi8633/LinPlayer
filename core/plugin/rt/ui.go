@@ -59,10 +59,21 @@ func (r *Runtime) installUI(sdk *goja.Object) error {
 		if r.uiSink.OnFrame == nil {
 			return
 		}
+		// ☠ 序列化失败**不许照发**:属性里出现 NaN / Inf 会让 Marshal 整体失败,
+		//   照发的结果是 Ops 为 nil —— 这一帧的 create/props/insert 凭空消失,
+		//   界面停在上一帧、编译全绿、日志一片干净。让 surface 进 error 才看得见。
 		var raw []json.RawMessage
 		b, err := json.Marshal(exportJSON(r, ops))
 		if err == nil {
-			_ = json.Unmarshal(b, &raw)
+			err = json.Unmarshal(b, &raw)
+		}
+		if err != nil {
+			r.logs.add(LogEntry{TS: nowMS(), Level: "error", Msg: "UI 帧序列化失败: " + err.Error()})
+			if r.uiSink.OnState != nil {
+				r.uiSink.OnState(UIState{Surface: surface, State: "error",
+					Message: "这一帧渲染不出来(属性里有 NaN / Infinity 之类序列化不了的值): " + err.Error()})
+			}
+			return
 		}
 		r.uiSink.OnFrame(UIFrame{Surface: surface, Frame: frame, Ops: raw})
 	})
@@ -93,7 +104,7 @@ func (r *Runtime) installUI(sdk *goja.Object) error {
 	if !ok {
 		return fmt.Errorf("uiruntime.js 没有导出 __lp_ui_init")
 	}
-	v, err := init(goja.Undefined(), host)
+	v, err := init(goja.Undefined(), host, sdk)
 	if err != nil {
 		return fmt.Errorf("初始化 UI 渲染器失败: %w", err)
 	}
@@ -106,11 +117,26 @@ func (r *Runtime) installUI(sdk *goja.Object) error {
 	_ = sdk.Set("h", pre.Get("h"))
 	_ = sdk.Set("Fragment", pre.Get("Fragment"))
 	_ = sdk.Set("createContext", pre.Get("createContext"))
-	// useViewport 由渲染器提供(它按 surface 分帐),不是 Preact 自带的钩子
-	_ = sdk.Set("useViewport", r.ui.Get("useViewport"))
-	for _, n := range []string{"useState", "useEffect", "useMemo", "useCallback", "useRef", "useContext", "useReducer", "useErrorBoundary"} {
-		_ = sdk.Set(n, hk.Get(n))
+	/* hooks:Preact 自带的从 hooks 模块取,其余(视口 / 主题 / 设置 / 存储 / 播放状态)
+	   是渲染器自己的。名单由 gen.mjs 从 plugin-sdk.d.ts 生成 ——
+	   ☠ 少挂一个的表现是插件拿到 undefined,报错报在插件那边、看起来像它自己写错了,
+	     所以这里**挂不上就整个插件加载失败**,而不是悄悄跳过(D555)。 */
+	for _, n := range SDKHooks {
+		v := hk.Get(n)
+		if v == nil || goja.IsUndefined(v) {
+			v = r.ui.Get(n)
+		}
+		if v == nil || goja.IsUndefined(v) {
+			return fmt.Errorf("plugin-sdk.d.ts 声明了 %s,但 Preact 与渲染器都没有提供它", n)
+		}
+		_ = sdk.Set(n, v)
 	}
+	// 装完先把当前环境交给它:插件的第一次渲染就要拿到真的主题,不是默认值。
+	// 这里**直接调**而不走 pushEnv —— installUI 本来就在 VM 线程上,再进一次 r.run 会自锁。
+	if fn, ok := goja.AssertFunction(r.ui.Get("env")); ok {
+		_, _ = fn(r.ui, r.jsValue(envPayload(CurrentEnv())))
+	}
+	envSubscribe(r)
 	// 组件名挂的就是它自己:JSX 的 <View> 编译成标识符 View,
 	// 而 Preact 见到字符串类型就建宿主元素 —— 那个字符串正好是 ops 里的 type
 	for _, n := range SDKComponents {
@@ -215,4 +241,27 @@ func (r *Runtime) UIEvent(surfaceID string, fn int, args []any) error {
 // UIViewport 壳报来的视口 / 断点 / 安全区(SPEC 7.7)。节流由壳那边做,每帧最多一条。
 func (r *Runtime) UIViewport(surfaceID string, v map[string]any) error {
 	return r.uiCall(BudgetEvent, "viewport", surfaceID, v)
+}
+
+// UIFnCount 当前挂着多少个回调号。给门禁用 —— 回调号泄漏在界面上看不出来,
+// 只会表现成插件跑久了越来越吃内存,所以必须有一个数能被断言。
+func (r *Runtime) UIFnCount() (int, error) {
+	v, err := r.run(context.Background(), BudgetHook, func(vm *goja.Runtime, _ *call) (goja.Value, error) {
+		if r.ui == nil {
+			return nil, fmt.Errorf("UI 渲染器没装起来")
+		}
+		fn, ok := goja.AssertFunction(r.ui.Get("fnCount"))
+		if !ok {
+			return nil, fmt.Errorf("渲染器没有 fnCount")
+		}
+		return fn(r.ui)
+	})
+	if err != nil {
+		return 0, err
+	}
+	var n int
+	if err := json.Unmarshal(v, &n); err != nil {
+		return 0, err
+	}
+	return n, nil
 }

@@ -25,7 +25,7 @@ D514 的门禁:宿主 API 的**定义源是 `docs/plugin-system/api/plugin-sdk.d
 
 // implementedFully 这些命名空间声称「定义源里有几个就实现几个」。
 // 阶段 ② 起逐个往里加 —— 加进来之后少一个成员就红。
-var implementedFully = []string{"storage", "secrets", "cookies", "assets", "crypt", "html", "js", "registry"}
+var implementedFully = []string{"storage", "secrets", "cookies", "assets", "crypt", "html", "js", "registry", "settings", "app"}
 
 // sdkShape 问运行时:__linplayer_sdk 上真有哪些命名空间、每个下面有哪些键。
 func sdkShape(t *testing.T) map[string][]string {
@@ -141,4 +141,87 @@ func contains(xs []string, s string) bool {
 		}
 	}
 	return false
+}
+
+/*
+hooks 是 D514 一直漏掉的那一半。
+
+☠ 2026-09-20 的复核抓到:`.d.ts` 声明了 useTheme / usePlayerState / useSetting /
+   useStorage / useReducedMotion,运行时**一个都没挂**,插件拿到 undefined ——
+   而那个错误报在插件那边,看起来像插件自己写错了。组件名有门禁,hooks 没有。
+
+这一条不是自己验自己:SDKHooks 由 gen.mjs 从 `.d.ts` 解析,挂的那一侧来自
+Preact 的 hooks 模块与渲染器,两边没有共同的源。
+*/
+func TestSDKHooks全部挂上且可调用(t *testing.T) {
+	if len(SDKHooks) < 10 {
+		t.Fatal("SDKHooks 太少 —— 生成器八成没抽到 hooks")
+	}
+	r := newRT(t, ``)
+	for _, name := range SDKHooks {
+		v, err := r.Eval(context.Background(), BudgetData, "x.js",
+			"typeof "+SDKGlobal+"["+strconv.Quote(name)+"]")
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		var raw string
+		_ = json.Unmarshal(v, &raw)
+		if raw != "function" {
+			t.Errorf("hook %s 没挂上(typeof = %s)—— 插件会拿到 undefined", name, raw)
+		}
+	}
+}
+
+// 渲染器自己那几个 hook 在**真渲染**里要能出值,不能只是挂着一个函数。
+func TestSDKHooks在渲染里真能取到值(t *testing.T) {
+	r, cap := newUI(t, `
+		const { h, useTheme, useReducedMotion, useViewport } = __linplayer_sdk;
+		definePlugin({ pages: { p: () => {
+			const t = useTheme(), rm = useReducedMotion(), vp = useViewport();
+			return h('Text', { mode: t.mode, reduced: String(rm), bp: vp.breakpoint });
+		} } })
+	`)
+	if err := r.UIMount("s1", "page", "p", nil); err != nil {
+		t.Fatal(err)
+	}
+	cap.wait(t, func() bool { return hasProp(cap.ops(t), "mode") })
+	ops := cap.ops(t)
+	for _, want := range []string{"mode", "reduced", "bp"} {
+		if !hasProp(ops, want) {
+			t.Errorf("hook 的结果没进 props:缺 %s\n%s", want, cap.dump())
+		}
+	}
+}
+
+// 壳报来的主题变化要能叫醒 useTheme(SPEC 7.5 D89)。
+//
+// 反向验证过:把 renderer.js 的 env() 改成只存不通知,这条当场红在「主题变了界面没跟着变」。
+func TestSDKHooks主题变了要重渲染(t *testing.T) {
+	r, cap := newUI(t, `
+		const { h, useTheme } = __linplayer_sdk;
+		definePlugin({ pages: { p: () => {
+			const t = useTheme();
+			return h('Text', { mode: t.mode, acc: t.token('color.accent') || '' });
+		} } })
+	`)
+	if err := r.UIMount("s1", "page", "p", nil); err != nil {
+		t.Fatal(err)
+	}
+	cap.wait(t, func() bool { return hasProp(cap.ops(t), "mode") })
+
+	SetEnv(Env{ThemeMode: "light", ThemeTokens: map[string]any{"color.accent": "#ff8800"}})
+	t.Cleanup(func() { SetEnv(Env{}) })
+
+	cap.wait(t, func() bool {
+		var mode, acc bool
+		for _, o := range cap.ops(t) {
+			set, ok := o["set"].(map[string]any)
+			if !ok {
+				continue
+			}
+			mode = mode || set["mode"] == "light"
+			acc = acc || set["acc"] == "#ff8800"
+		}
+		return mode && acc
+	})
 }

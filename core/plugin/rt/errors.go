@@ -114,12 +114,30 @@ type Host struct {
 	// Setting* 实现 settings 命名空间(D35 D267)。
 	SettingGet func(key string) any
 	SettingSet func(key string, v any) error
+	// AppSetting* 实现 app.getSetting / app.setSetting(D92 D93 D427):**应用**设置,
+	// 不是插件自己的设置项。可写性由 AppSettingWritable 判,拒绝的原因要能说给用户听。
+	AppSettingGet func(key string) any
+	AppSettingSet func(key string, v any) error
 	// HostPort 宿主本地服务端口:访问它不算局域网(L1 例外)。
 	HostPort func() int
 	// AssetURL 包内资源在数据通道上的地址(assets.url)。
 	AssetURL func(p string) string
 	// App 给 app 命名空间的静态信息。
 	App AppInfo
+	// Debug 实现 debug 命名空间(SPEC 16.5,D80 D81)。只在开发者模式下非 nil。
+	Debug *DebugHooks
+}
+
+// DebugHooks 调试面板要的四块数据。整块为 nil = 这一版不挂 debug 命名空间。
+type DebugHooks struct {
+	Plugins    func() any
+	Logs       func(pluginID string) any
+	Requests   func(pluginID string) any
+	Surfaces   func() any
+	UITree     func(surfaceID string) (any, error)
+	Storage    func(pluginID string) any
+	SetStorage func(pluginID, key string, v any) error
+	Stats      func(pluginID string) any
 }
 
 // AppInfo app 命名空间的只读字段。

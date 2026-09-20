@@ -102,6 +102,9 @@ func RegisterCommands(version string) {
 				}
 			}
 		}
+		if v, ok := a["dev_mode"].(bool); ok {
+			p.DevMode = v
+		}
 		if v, ok := a["calendar_notify"].(bool); ok {
 			p.CalendarNotify = v
 		}

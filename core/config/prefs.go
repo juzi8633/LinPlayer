@@ -312,6 +312,13 @@ type Prefs struct {
 	// 线路没了退回第一条(D343)。记名字不记下标:换源、订阅刷新后线路顺序会变。
 	SourceLines map[string]string `json:"source_lines,omitempty"`
 
+	// DevMode 开发者模式(SPEC 16.4,D80):关于页连点版本号 7 次打开。
+	//
+	// ★ 它同时是 `debug` 命名空间的总闸:关着的时候整个命名空间不挂,
+	//   插件调用当场报 unsupported。挂一个永远返回空表的版本的话,
+	//   调试面板会把「这一版不收」显示成「这个插件没日志」。
+	DevMode bool `json:"dev_mode,omitempty"`
+
 	// CalendarNotify 追剧日历开播提醒:追的剧有新集发系统通知(D366)。默认开。
 	CalendarNotify bool `json:"calendar_notify"`
 

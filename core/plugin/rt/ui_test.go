@@ -28,7 +28,7 @@ func (c *uiCapture) sink() UISink {
 }
 
 // ops 把收到的所有帧摊平成 []map,按到达顺序。
-func (c *uiCapture) ops(t *testing.T) []map[string]any {
+func (c *uiCapture) ops(t testing.TB) []map[string]any {
 	t.Helper()
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -45,7 +45,7 @@ func (c *uiCapture) ops(t *testing.T) []map[string]any {
 	return out
 }
 
-func (c *uiCapture) wait(t *testing.T, want func() bool) {
+func (c *uiCapture) wait(t testing.TB, want func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
@@ -71,7 +71,7 @@ func (c *uiCapture) dump() string {
 }
 
 // newUI 起一个带 UI 的运行时;code 里用 h / useState,就像插件 JSX 编译出来的那样。
-func newUI(t *testing.T, code string) (*Runtime, *uiCapture) {
+func newUI(t testing.TB, code string) (*Runtime, *uiCapture) {
 	t.Helper()
 	cap := &uiCapture{}
 	r := newRT(t, code)
@@ -247,35 +247,9 @@ func TestUI错误边界只崩那一块(t *testing.T) {
 	}
 }
 
-// 卸载之后,壳上迟到的一次点击不许再打到已经没了的闭包上。
-func TestUI卸载后回调号作废(t *testing.T) {
-	r, cap := newUI(t, `
-		const { h } = __linplayer_sdk;
-		globalThis.__hits = 0;
-		definePlugin({ pages: { p: () => h('Button', {onPress: () => { globalThis.__hits++; }}) } })
-	`)
-	if err := r.UIMount("s1", "page", "p", nil); err != nil {
-		t.Fatal(err)
-	}
-	cap.wait(t, func() bool { return hasProp(cap.ops(t), "onPress") })
-	fn := fnRefOf(t, cap.ops(t), "onPress")
-
-	if err := r.UIUnmount("s1"); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.UIEvent("s1", fn, nil); err != nil {
-		t.Fatalf("对已卸载的 surface 发事件应该**静默丢掉**,不该报错: %v", err)
-	}
-	v, err := r.Eval(t.Context(), BudgetData, "x.js", `String(globalThis.__hits)`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got string
-	_ = json.Unmarshal(v, &got)
-	if got != "0" {
-		t.Fatalf("卸载后回调仍被调到 %s 次", got)
-	}
-}
+// 回调号的作废与回收有独立的一组用例(ui_fn_test.go)。
+// 这里原来那条「卸载后回调号作废」删了:它靠的是 `surfaces.has()` 那道门 ——
+// 把整段回收代码删掉照样绿,而真正会出事的是「surface 还在、节点没了」。
 
 // ---------------------------------------------------------------- 助手
 
@@ -467,5 +441,66 @@ func TestUICanvas录成指令流(t *testing.T) {
 	// **不许**同时又发一条 cmds 属性:那是整帧数组走 props diff
 	if hasProp(cap.ops(t), "cmds") {
 		t.Error("指令流还走了一遍 props —— 整帧数组每帧 diff 一次,白花的")
+	}
+}
+
+/*
+JS 那层的合批(D318):**一次渲染产生的所有 ops 走一条提交**,不是一个 op 一条。
+
+☠ 这条必须在 rt 包里数 —— 它数的是渲染器调 OnFrame 的次数。
+  放到 core/plugin 去数 `plugin.ui` 事件的话,Go 那层的 16ms 窗口会把
+  没合批的多次提交重新并成一条,于是 JS 这层删掉照样全绿。
+☠ 判据也不能是「20 次 setState 只出一帧」—— 那一条 Preact 自己就做到了
+  (同步的多次 setState 本来就并成一次渲染),把 schedule() 换成「来一条发一条」
+  照样绿。真正由 schedule() 保证的是**一次渲染里的多条 op 不被拆成多帧**。
+*/
+func TestUI一次渲染的ops只提交一次(t *testing.T) {
+	r, cap := newUI(t, `
+		const { h, useState } = __linplayer_sdk;
+		definePlugin({ pages: { p: () => {
+			const [n, setN] = useState(0);
+			globalThis.__bump = () => setN(v => v + 1);
+			// 三个兄弟节点一起变:一次渲染产生至少三条 props op
+			return h('Column', null,
+				h('Text', {a: n}), h('Text', {b: n}), h('Text', {c: n}));
+		} } })
+	`)
+	if err := r.UIMount("s1", "page", "p", nil); err != nil {
+		t.Fatal(err)
+	}
+	cap.wait(t, func() bool { return len(cap.ops(t)) >= 8 })
+	time.Sleep(60 * time.Millisecond)
+
+	cap.mu.Lock()
+	mountFrames, mountOps := len(cap.frames), 0
+	for _, f := range cap.frames {
+		mountOps += len(f.Ops)
+	}
+	cap.mu.Unlock()
+	if mountFrames != 1 {
+		t.Fatalf("首帧的 %d 条 op 被拆成了 %d 次提交 —— 一次渲染要走一条", mountOps, mountFrames)
+	}
+
+	if _, err := r.Eval(t.Context(), BudgetData, "x.js", `globalThis.__bump()`); err != nil {
+		t.Fatal(err)
+	}
+	cap.wait(t, func() bool {
+		cap.mu.Lock()
+		defer cap.mu.Unlock()
+		return len(cap.frames) > mountFrames
+	})
+	time.Sleep(80 * time.Millisecond)
+
+	cap.mu.Lock()
+	added, addedOps := len(cap.frames)-mountFrames, 0
+	for _, f := range cap.frames[mountFrames:] {
+		addedOps += len(f.Ops)
+	}
+	cap.mu.Unlock()
+	if addedOps < 3 {
+		t.Fatalf("三个兄弟节点一起变只发了 %d 条 op —— 用例没测到该测的东西", addedOps)
+	}
+	if added != 1 {
+		t.Fatalf("一次渲染的 %d 条 op 被拆成了 %d 次提交 —— JS 这层没合批", addedOps, added)
 	}
 }

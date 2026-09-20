@@ -301,6 +301,7 @@ object LinPlayerCommandNames {
         "plugin.devUnload",
         "plugin.devList",
         "plugin.setCapabilities",
+        "plugin.setEnv",
         "plugin.shellResult",
         "plugin.setCookies",
         "plugin.ui.mount",
@@ -812,7 +813,7 @@ suspend fun LinPlayerCommands.syncCalendarLibrary(args: Map<String, Any?>? = nul
 suspend fun LinPlayerCommands.syncCalendarDue(args: Map<String, Any?>? = null): JsonElement =
     call("sync.calendarDue", args)
 
-// ---- 插件 · plugin.* (37 条) ----
+// ---- 插件 · plugin.* (38 条) ----
 suspend fun LinPlayerCommands.pluginList(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.list", args)
 suspend fun LinPlayerCommands.pluginPendingRestart(args: Map<String, Any?>? = null): JsonElement =
@@ -875,6 +876,8 @@ suspend fun LinPlayerCommands.pluginDevList(args: Map<String, Any?>? = null): Js
     call("plugin.devList", args)
 suspend fun LinPlayerCommands.pluginSetCapabilities(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.setCapabilities", args)
+suspend fun LinPlayerCommands.pluginSetEnv(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.setEnv", args)
 suspend fun LinPlayerCommands.pluginShellResult(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.shellResult", args)
 suspend fun LinPlayerCommands.pluginSetCookies(args: Map<String, Any?>? = null): JsonElement =

@@ -301,7 +301,10 @@ func (h *Host) load(id, ver, dir string, m *Manifest, dev bool, reason string) (
 	host.OnError = func(e *rt.Error) { h.noteError(id, e) }
 	host.SettingGet = func(k string) any { return h.settingValue(id, m, k) }
 	host.SettingSet = func(k string, v any) error { return h.setSetting(id, m, k, v) }
-	host.App = rt.AppInfo{Version: h.version, Platform: h.platform, FormFactor: formFactor(h.platform), Locale: "zh-CN"}
+	host.AppSettingGet = appSettingGet
+	host.AppSettingSet = appSettingSet
+	host.App = rt.AppInfo{Version: h.version, Platform: h.platform, FormFactor: formFactor(h.platform), Locale: "zh-CN", DevMode: DevModeOn()}
+	host.Debug = h.debugHooks()
 	r, err := rt.New(rt.Options{ID: id, Version: ver, Dev: dev, PkgDir: dir, DataDir: DataDir(id), LAN: m.LAN, Host: host})
 	if err != nil {
 		return nil, err

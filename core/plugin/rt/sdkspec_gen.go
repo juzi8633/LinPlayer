@@ -12,6 +12,7 @@ var SDKSpec = map[string][]string{
 	"cast": {"open"},
 	"cookies": {"clear", "get", "set"},
 	"crypt": {"aesDecrypt", "aesEncrypt", "base64Decode", "base64Encode", "desDecrypt", "desEncrypt", "gbkDecode", "gbkEncode", "hmac", "md5", "rsaDecrypt", "rsaEncrypt", "sha1", "sha256"},
+	"debug": {"logs", "plugins", "requests", "setStorage", "stats", "storage", "surfaces", "uiTree"},
 	"desktop": {"setTaskbarBadge", "setTaskbarProgress", "setWindowTitle"},
 	"download": {"enqueue"},
 	"emby": {"request"},
@@ -84,4 +85,23 @@ var SDKComponents = []string{
 	"VirtualGrid",
 	"VirtualList",
 	"WebView",
+}
+
+// SDKHooks 定义源里声明的 hooks。它们和组件一样挂在 SDK 根上,
+// 少一个的表现是插件拿到 undefined,而报错报在插件那边。
+var SDKHooks = []string{
+	"useCallback",
+	"useContext",
+	"useEffect",
+	"useErrorBoundary",
+	"useMemo",
+	"usePlayerState",
+	"useReducedMotion",
+	"useReducer",
+	"useRef",
+	"useSetting",
+	"useState",
+	"useStorage",
+	"useTheme",
+	"useViewport",
 }

@@ -36,6 +36,11 @@ function membersOf(body) {
  *  JSX 里 <View> 编译成**标识符** View,所以 SDK 上必须有同名的值。 */
 const components = []
 
+/** 顶层 hooks:`export declare function useTheme(): ...`。
+ * 它们和组件一样挂在 SDK 根上,却一直不在门禁里 —— 于是 .d.ts 声明了五个、
+ * 运行时一个没挂,插件拿到 undefined,而报错报在插件那边(D555)。 */
+const hooks = []
+
 for (const st of src.statements) {
   if (
     ts.isFunctionDeclaration(st) && st.name &&
@@ -46,6 +51,12 @@ for (const st of src.statements) {
   ) {
     components.push(st.name.text)
   }
+  if (
+    ts.isFunctionDeclaration(st) && st.name && /^use[A-Z]/.test(st.name.text) &&
+    st.modifiers && st.modifiers.some((m) => m.kind === ts.SyntaxKind.DeclareKeyword)
+  ) {
+    hooks.push(st.name.text)
+  }
   if (!ts.isModuleDeclaration(st) || !st.name || !ts.isIdentifier(st.name)) continue
   if (!st.body || !ts.isModuleBlock(st.body)) continue
   const names = membersOf(st.body)
@@ -55,6 +66,10 @@ for (const st of src.statements) {
 
 if (spec.size < 10) {
   console.error(`只解析出 ${spec.size} 个命名空间 —— 定义源的写法八成变了,先看清楚再改这个脚本`)
+  process.exit(1)
+}
+if (hooks.length < 5) {
+  console.error(`只解析出 ${hooks.length} 个 hook —— 定义源里 hooks 的写法八成变了`)
   process.exit(1)
 }
 if (components.length < 20) {
@@ -81,5 +96,11 @@ lines.push('// 因为 JSX 的 <View> 编译成标识符 View,而 Preact 见到�
 lines.push('var SDKComponents = []string{')
 for (const c of components.slice().sort()) lines.push(`\t${JSON.stringify(c)},`)
 lines.push('}')
+lines.push('')
+lines.push('// SDKHooks 定义源里声明的 hooks。它们和组件一样挂在 SDK 根上,')
+lines.push('// 少一个的表现是插件拿到 undefined,而报错报在插件那边。')
+lines.push('var SDKHooks = []string{')
+for (const h of hooks.slice().sort()) lines.push(`	${JSON.stringify(h)},`)
+lines.push('}')
 writeFileSync(out, lines.join('\n') + '\n')
-console.log(`✓ ${spec.size} 个命名空间、${components.length} 个组件 → ${out}`)
+console.log(`✓ ${spec.size} 个命名空间、${components.length} 个组件、${hooks.length} 个 hook → ${out}`)

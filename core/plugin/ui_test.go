@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"linplayer/core/bus"
+	"linplayer/core/config"
 	"linplayer/core/paths"
 	"linplayer/core/plugin/rt"
 )
@@ -225,47 +226,13 @@ clicked:
 /*
 一帧一条(D318)有**两层**合批,要分开测,不然容易误以为测到了:
 
-  · JS 那层:一次交互里的多次 setState 并成一次提交 —— 下面这条。
-  · Go 这层:16ms 内的多次提交并成一条事件 —— 再下面那条。
+  · JS 那层:一次交互里的多次 setState 并成一次**提交** —— 在 rt 包里测
+    (`rt/ui_test.go` 的「一次交互只提交一次」),那里数的是渲染器调 OnFrame 的次数。
+  · Go 这层:16ms 内的多次提交并成一条**事件** —— 下面这条。
 
-☠ 只测第一层的话,把 Go 这层的定时器换成「来一次发一次」照样全绿
-  (2026-09-20 实测:注入「不合批」,这条测试一声不吭)。
+☠ 原来这里有一条叫「JS 层合批」的用例,数的却是 Go 发出的事件 ——
+  把 JS 那层删掉照样全绿,因为 Go 这层会把它们重新并成一条。两层的判据不能共用一个计数器。
 */
-func TestUI一次交互里的多次setState合成一次提交(t *testing.T) {
-	h := installAndRestart(t, `definePlugin({ pages: { p: () => {
-		const { h, useState } = `+`__linplayer_sdk;
-		const [n, setN] = useState(0);
-		globalThis.__burst = () => { for (let i = 0; i < 20; i++) setN(v => v + 1); };
-		return h('Text', null, '计数 ' + n);
-	} } })`)
-	registerUI()
-	c := captureUI(t)
-
-	sid := mountUI(t, c, map[string]any{"plugin": "alice/demo", "target": "p", "kind": "page"})
-	c.wait(t, "首帧", func() bool { return len(c.ops()) > 0 })
-	c.mu.Lock()
-	before := len(c.frames)
-	c.mu.Unlock()
-
-	l, _ := h.get("alice/demo", "test")
-	if _, err := l.rt.Eval(context.Background(), 2*time.Second, "x.js", `globalThis.__burst()`); err != nil {
-		t.Fatal(err)
-	}
-	c.wait(t, "更新帧", func() bool {
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		return len(c.frames) > before
-	})
-	time.Sleep(80 * time.Millisecond) // 让晚到的帧都落进来
-
-	c.mu.Lock()
-	added := len(c.frames) - before
-	c.mu.Unlock()
-	if added != 1 {
-		t.Errorf("一次交互里改了 20 次状态,发了 %d 帧 —— 应该合成 1 帧", added)
-	}
-	_ = sid
-}
 
 // Go 这层的 16ms 窗口:**两次独立提交**落在同一个窗口里,也只能出一条事件。
 func TestUI十六毫秒窗口内的多次提交合成一条(t *testing.T) {
@@ -340,11 +307,17 @@ func findFn(t *testing.T, ops []map[string]any, name string) int {
 */
 func TestUI调试面板能渲染出来(t *testing.T) {
 	root := repoRoot(t)
-	dir := filepath.Join(root, "plugins", "debug-panel")
+	dir := filepath.Join(root, "plugins", "devtools")
 	if _, err := os.Stat(dir); err != nil {
-		t.Skip("仓库里没有 plugins/debug-panel")
+		t.Skip("仓库里没有 plugins/devtools")
 	}
 	paths.SetRoot(t.TempDir())
+	if _, err := config.Load(); err != nil {
+		t.Fatal(err)
+	}
+	// 面板的四块靠 `debug` 命名空间,而它跟着开发者模式开关(D555)——
+	// 不开的话这一页只画一句「去打开开发者模式」,测不到渲染器
+	devMode(t, true)
 	h := ResetForTest()
 	h.Start("windows", "2.0.0")
 	t.Cleanup(h.Shutdown)
@@ -356,7 +329,7 @@ func TestUI调试面板能渲染出来(t *testing.T) {
 	c := captureUI(t)
 
 	sid := mountUI(t, c, map[string]any{
-		"plugin": "linplayer/debug-panel", "target": "panel", "kind": "page",
+		"plugin": "linplayer/devtools", "target": "panel", "kind": "page",
 	})
 	c.wait(t, "首帧", func() bool { return len(c.ops()) > 20 })
 

@@ -107,7 +107,12 @@ func (r *Runtime) installShell(sdk *goja.Object) {
 			return json.RawMessage(out), nil
 		})
 	}
-	wantWeb := func(c ShellCaps) (bool, string) { return c.WebView, "本设备没有可用的 WebView" }
+	// 说人话并给一条**能走**的出路(D560:不做 GeckoView 兜底了,那就得说清怎么自己修)。
+	// 只说「不可用」的话用户只能猜是应用坏了。
+	wantWeb := func(c ShellCaps) (bool, string) {
+		return c.WebView, "本设备没有可用的系统 WebView(嗅探、内嵌网页要用它)——" +
+			"到应用商店装或更新 Android System WebView / Chrome 之后重开应用"
+	}
 	optsOf := func(v goja.Value) map[string]any {
 		if absent(v) {
 			return map[string]any{}

@@ -380,6 +380,7 @@
 | [x] | `plugin.devUnload` | **新增** | `id` | `—` | ✅ |
 | [x] | `plugin.devList` | **新增** | `—` | `{id: dir}` | ✅ |
 | [x] | `plugin.setCapabilities` | **新增** | `webview, spider_jar, spider_py` | `—` | ✅ |
+| [x] | `plugin.setEnv` | **新增** | `theme_mode, theme_tokens, reduced_motion` | `—` | ✅ |
 | [x] | `plugin.shellResult` | **新增** | `id, ok, data?, error?` | `—` | ✅ |
 | [x] | `plugin.setCookies` | **新增** | `plugin_id, jar, url, cookies` | `—` | ✅ |
 | [x] | `plugin.ui.mount` | **新增** | `plugin, target, kind, props?` | `{surface,frame,ops}` | ✅ |
