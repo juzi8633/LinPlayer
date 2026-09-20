@@ -25,6 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -114,6 +116,7 @@ internal fun RenderNode(n: UiNode, surface: String, app: AppState) {
         "Badge" -> Box(m.clip(RoundedCornerShape(999.dp)).background(Lp.colors.acc).padding(horizontal = 6.dp, vertical = 2.dp)) {
             Text(n.str("label") ?: textOf(n), color = Lp.colors.accFg, fontSize = 11.sp)
         }
+        "Canvas" -> PluginCanvas(n, m)
         "VirtualList", "VirtualGrid" -> VirtualList(n, m, surface, app)
         "ProgressBar" -> androidx.compose.material3.LinearProgressIndicator(
             progress = { (n.num("value") ?: 0.0).toFloat() }, modifier = m.fillMaxWidth(),
@@ -339,3 +342,70 @@ private fun renderTv(n: UiNode, m: Modifier, surface: String, app: AppState): Bo
 
 internal fun textOfNode(n: UiNode): String =
     n.text + n.children.filter { it.type == "#text" }.joinToString("") { it.text }
+
+
+/**
+ * 插件 Canvas(D19 D104 D105):把一帧的指令流照着画出来。
+ *
+ * ☠ 只认**指令名**,不认语义:加一个方法就在下面的 when 里加一行。
+ * 认不出来的指令直接跳过 —— 老宿主遇到新 SDK 时少画一笔,而不是整块崩掉(D319)。
+ */
+@Composable
+private fun PluginCanvas(n: UiNode, m: Modifier) {
+    val cmds = n.props["cmds"] as? kotlinx.serialization.json.JsonArray ?: return
+    val fallback = Lp.colors.fg
+    androidx.compose.foundation.Canvas(m.fillMaxWidth().height((n.style().numOf("height") ?: 120.0).dp)) {
+        /* ☠ 指令里的坐标是**设备无关像素**(SPEC 7.5),而 DrawScope 用的是物理像素 ——
+           不缩放的话同一段指令在高密度屏上画出来只有桌面的三分之一大,而且不报错。 */
+        scale(density, pivot = androidx.compose.ui.geometry.Offset.Zero) {
+        var fill = fallback
+        var stroke = fallback
+        var lineWidth = 1f
+        var alpha = 1f
+        var path = mutableListOf<androidx.compose.ui.geometry.Offset>()
+        for (e in cmds) {
+            val a = e as? kotlinx.serialization.json.JsonArray ?: continue
+            if (a.isEmpty()) continue
+            fun s(i: Int) = (a.getOrNull(i) as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+            fun f(i: Int) = (a.getOrNull(i) as? kotlinx.serialization.json.JsonPrimitive)?.content?.toFloatOrNull() ?: 0f
+            when (s(0)) {
+                "set" -> when (s(1)) {
+                    "fillStyle" -> fill = parseColor(s(2)) ?: fill
+                    "strokeStyle" -> stroke = parseColor(s(2)) ?: stroke
+                    "lineWidth" -> lineWidth = f(2)
+                    "globalAlpha" -> alpha = f(2)
+                }
+                "fillRect" -> drawRect(fill.copy(alpha = fill.alpha * alpha),
+                    androidx.compose.ui.geometry.Offset(f(1), f(2)),
+                    androidx.compose.ui.geometry.Size(f(3), f(4)))
+                "strokeRect" -> drawRect(stroke.copy(alpha = stroke.alpha * alpha),
+                    androidx.compose.ui.geometry.Offset(f(1), f(2)),
+                    androidx.compose.ui.geometry.Size(f(3), f(4)),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(lineWidth))
+                "beginPath" -> path = mutableListOf()
+                "moveTo" -> { path = mutableListOf(androidx.compose.ui.geometry.Offset(f(1), f(2))) }
+                "lineTo" -> path.add(androidx.compose.ui.geometry.Offset(f(1), f(2)))
+                "stroke" -> for (i in 1 until path.size) {
+                    drawLine(stroke.copy(alpha = stroke.alpha * alpha), path[i - 1], path[i], lineWidth)
+                }
+                // fillText 走 nativeCanvas:Compose 的 DrawScope 自己不画文字
+                "fillText" -> drawContext.canvas.nativeCanvas.drawText(
+                    s(1), f(2), f(3),
+                    android.graphics.Paint().apply {
+                        color = android.graphics.Color.argb(
+                            (fill.alpha * alpha * 255).toInt(),
+                            (fill.red * 255).toInt(), (fill.green * 255).toInt(), (fill.blue * 255).toInt())
+                        textSize = 14f
+                        isAntiAlias = true
+                    },
+                )
+                // 认不出来的跳过
+            }
+        }
+        }
+    }
+}
+
+private fun parseColor(v: String): Color? = runCatching {
+    if (v.startsWith("token:")) null else Color(android.graphics.Color.parseColor(v))
+}.getOrNull()

@@ -155,7 +155,11 @@ public sealed class PluginSurface : UserControl
                 case "remove":
                     Remove(Id(op, "id"));
                     break;
-                // canvas 在阶段 ② 的 Canvas 组件里接,这里先不认
+                case "canvas":
+                    if (_nodes.TryGetValue(Id(op, "id"), out var cv) && cv is PluginCanvas pc
+                        && op.TryGetProperty("cmds", out var cmds))
+                        pc.SetCommands(cmds);
+                    break;
             }
         }
         // 一帧里可能增删了窗口内的项,占位要跟着重算
@@ -319,6 +323,7 @@ public sealed class PluginSurface : UserControl
         "ScrollView" => new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled },
         "Text" => new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Tok.Of("Ink") },
         "Image" => new Image { Stretch = Stretch.UniformToFill },
+        "Canvas" => new PluginCanvas(),
         "Divider" => new Border { Height = 1, Background = Tok.Of("Line") },
         "Spinner" => new ProgressBar { IsIndeterminate = true, Height = 3 },
         "Skeleton" => Skeleton(),

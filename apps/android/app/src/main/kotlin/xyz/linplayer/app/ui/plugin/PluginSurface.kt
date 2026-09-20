@@ -102,6 +102,9 @@ internal class SurfaceTree {
                     if (at == null) p.children.add(n) else p.children.add(at, n)
                     n.parent = p
                 }
+                "canvas" -> nodes[o.long("id")?.toInt()]?.let { n ->
+                    n.props["cmds"] = o["cmds"] ?: JsonArray(emptyList())
+                }
                 "remove" -> {
                     val n = nodes[o.long("id")?.toInt()] ?: continue
                     n.parent?.children?.remove(n)

@@ -168,6 +168,12 @@ function makeDom(router) {
   }
 
   function setProp(n, name, value) {
+    // Canvas 的一帧指令流走**专门的 op**(协议 7.3):它不是属性,
+    // 走 props 的话每帧都要和上一帧做一次数组 diff,而它本来就是整帧替换
+    if (name === 'cmds' && n.__lptype === 'Canvas') {
+      emit(n, { op: 'canvas', id: n.__lpid, cmds: value })
+      return
+    }
     if (value === undefined || value === null || value === false) {
       if (!(name in n.__lpprops)) return
       delete n.__lpprops[name]
@@ -459,6 +465,7 @@ function makeRenderer(makeScope, host) {
     // 这两个是**真组件**不是字符串:窗口内的项由 JS 渲染,壳只报可见范围(D134)
     VirtualList: makeVirtualList(preact, hooks, 'VirtualList'),
     VirtualGrid: makeVirtualList(preact, hooks, 'VirtualGrid'),
+    Canvas: makeCanvasComponent(preact, hooks),
     surfaceIds: () => Array.from(surfaces.keys()),
     /** 给测试与基准用:当前挂着多少个回调号。泄漏了这个数会一路涨。 */
     fnCount: () => fns.size,
@@ -508,6 +515,66 @@ function makeVirtualList(preact, hooks, type) {
       },
       kids,
     )
+  }
+}
+
+/**
+ * Canvas(D19 D104 D105):仿 HTML5 Canvas 2D,一帧的绘制调用**录成指令流**一次性发过去。
+ *
+ * ★ 录制而不是每调一次过一次桥:一帧几百条调用,逐条过桥的开销比画本身还大。
+ * ★ 属性赋值录成 ['set', 名字, 值] —— 原生端照着设,不用为每个属性开一个方法名。
+ * ☠ `measureText` 在 JS 这边**量不了**(字体在原生那边):返回一个按字数估的宽度,
+ *   并且这件事要写在文档里 —— 悄悄返回 0 的话插件的居中全会歪。
+ */
+function makeCanvas2D(width, height, cmds) {
+  const props = ['fillStyle', 'strokeStyle', 'lineWidth', 'font', 'textAlign', 'textBaseline', 'globalAlpha']
+  const methods = [
+    'fillRect', 'strokeRect', 'clearRect', 'fillText', 'strokeText',
+    'beginPath', 'closePath', 'moveTo', 'lineTo', 'arc', 'quadraticCurveTo', 'bezierCurveTo',
+    'rect', 'fill', 'stroke', 'clip', 'drawImage', 'save', 'restore',
+    'translate', 'rotate', 'scale', 'setTransform', 'resetTransform',
+  ]
+  const ctx = { width, height }
+  for (const p of props) {
+    let v
+    Object.defineProperty(ctx, p, {
+      get: () => v,
+      set: (x) => {
+        v = x
+        cmds.push(['set', p, x])
+      },
+    })
+  }
+  for (const m of methods) {
+    ctx[m] = function () {
+      cmds.push([m].concat(Array.prototype.slice.call(arguments)))
+    }
+  }
+  // 字体在原生那边,这里只能估:按 CJK 一个字一个全角宽、其余半角
+  ctx.measureText = (text) => {
+    const size = parseFloat(String(ctx.font || '14')) || 14
+    let w = 0
+    for (const ch of String(text)) w += /[　-鿿＀-￯]/.test(ch) ? size : size * 0.55
+    return { width: w }
+  }
+  return ctx
+}
+
+function makeCanvasComponent(preact, hooks) {
+  return function Canvas(props) {
+    const size = { w: props.style && props.style.width, h: props.style && props.style.height }
+    const cmds = []
+    // draw 在**渲染期**跑:它只是往数组里记,不碰任何原生资源
+    if (typeof props.draw === 'function') {
+      const ctx = makeCanvas2D(size.w || 0, size.h || 0, cmds)
+      try {
+        props.draw(ctx, { time: 0, dt: 0 })
+      } catch (e) {
+        // 画崩了只让这一块空着,别把整个 surface 的渲染带走(D136 同一条口径)
+        cmds.length = 0
+      }
+    }
+    return preact.h('Canvas', { style: props.style, cmds })
   }
 }
 

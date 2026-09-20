@@ -7,7 +7,7 @@
  */
 import {
   definePlugin, h, Fragment, useState, useEffect, useViewport, app, ui,
-  View, Column, Text, Button, TextInput, Switch, Divider, Chip, ChipGroup, VirtualList,
+  View, Column, Text, Button, TextInput, Switch, Divider, Chip, ChipGroup, VirtualList, Canvas,
 } from '@linplayer/plugin-sdk'
 
 /** 一行「标签 : 值」。示例页与面板共用,顺便测**组件复用**下的 key 语义。 */
@@ -89,6 +89,30 @@ function Gallery() {
         <Button title="加一" onPress={() => setN((v) => v + 1)} />
         <Button title="连加十次" onPress={() => { for (let i = 0; i < 10; i++) setN((v) => v + 1) }} />
       </View>
+
+      <Divider />
+      <Text style={{ fontSize: 18, fontWeight: 'bold' }}>Canvas</Text>
+      <Canvas
+        style={{ height: 120 }}
+        draw={(ctx) => {
+          // 一帧的调用录成指令流一次性发给原生(D104),这里画的是三端该长一样的东西
+          ctx.fillStyle = '#2b3350'
+          ctx.fillRect(0, 0, 320, 120)
+          for (let i = 0; i < 6; i++) {
+            ctx.fillStyle = i % 2 === 0 ? '#ff8800' : '#4aa3ff'
+            ctx.fillRect(12 + i * 48, 90 - i * 12, 36, 20 + i * 12)
+          }
+          ctx.strokeStyle = '#ffffff'
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          ctx.moveTo(8, 100)
+          ctx.lineTo(312, 100)
+          ctx.stroke()
+          ctx.fillStyle = '#ffffff'
+          ctx.font = '16px sans-serif'
+          ctx.fillText('指令流画的', 12, 28)
+        }}
+      />
 
       <Divider />
       <Text style={{ fontSize: 18, fontWeight: 'bold' }}>输入</Text>

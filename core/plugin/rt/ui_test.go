@@ -412,3 +412,60 @@ func TestUI数字样式不带px(t *testing.T) {
 		t.Errorf("style.direction 被改成了 %#v", style["direction"])
 	}
 }
+
+/*
+Canvas(D19 D104 D105):一帧的绘制调用录成**指令流**,走专门的 `canvas` op。
+
+☠ 两件事一起挡:
+  · 走 props 的话每帧都要和上一帧做一次数组 diff,而它本来就是整帧替换
+  · 属性赋值(fillStyle 这类)要录成 ['set', 名字, 值] —— 漏录的表现是
+    「图形画出来了但全是默认色」,不报错
+*/
+func TestUICanvas录成指令流(t *testing.T) {
+	r, cap := newUI(t, `
+		const { h, Canvas } = __linplayer_sdk;
+		definePlugin({ pages: { p: () => h(Canvas, {
+			style: { width: 200, height: 100 },
+			draw: (ctx) => {
+				ctx.fillStyle = '#ff8800';
+				ctx.fillRect(0, 0, 200, 100);
+				ctx.font = '16px sans-serif';
+				ctx.fillText('画出来了', 10, 30);
+			},
+		}) } })
+	`)
+	if err := r.UIMount("s1", "page", "p", nil); err != nil {
+		t.Fatal(err)
+	}
+	cap.wait(t, func() bool { return hasOp(cap.ops(t), "canvas") })
+
+	var cmds []any
+	for _, o := range cap.ops(t) {
+		if o["op"] == "canvas" {
+			cmds, _ = o["cmds"].([]any)
+		}
+	}
+	if len(cmds) < 4 {
+		t.Fatalf("指令流只有 %d 条:\n%s", len(cmds), cap.dump())
+	}
+	// 第一条应该是 ['set','fillStyle','#ff8800']
+	first, _ := cmds[0].([]any)
+	if len(first) != 3 || first[0] != "set" || first[1] != "fillStyle" || first[2] != "#ff8800" {
+		t.Errorf("属性赋值没录成 ['set',名字,值],第一条是 %v", first)
+	}
+	// 方法调用带参数原样
+	var sawRect bool
+	for _, c := range cmds {
+		a, _ := c.([]any)
+		if len(a) == 5 && a[0] == "fillRect" && a[3] == float64(200) {
+			sawRect = true
+		}
+	}
+	if !sawRect {
+		t.Errorf("fillRect 没录进去或参数丢了:%v", cmds)
+	}
+	// **不许**同时又发一条 cmds 属性:那是整帧数组走 props diff
+	if hasProp(cap.ops(t), "cmds") {
+		t.Error("指令流还走了一遍 props —— 整帧数组每帧 diff 一次,白花的")
+	}
+}

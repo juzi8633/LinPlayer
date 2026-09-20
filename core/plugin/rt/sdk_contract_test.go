@@ -82,7 +82,7 @@ func TestSDK注册名必须在定义源里有(t *testing.T) {
 }
 
 // realComponents 这几个是**真组件**不是字符串:窗口内的项要由 JS 渲染(D134)。
-var realComponents = []string{"VirtualList", "VirtualGrid"}
+var realComponents = []string{"VirtualList", "VirtualGrid", "Canvas"}
 
 // JSX 里 <View> 编译成标识符,SDK 上少一个名字就是 `View is not defined` ——
 // 报在插件那边,看起来像插件写错了。

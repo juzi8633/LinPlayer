@@ -151,6 +151,12 @@ function makeDom(router) {
   }
 
   function setProp(n, name, value) {
+    // Canvas 的一帧指令流走**专门的 op**(协议 7.3):它不是属性,
+    // 走 props 的话每帧都要和上一帧做一次数组 diff,而它本来就是整帧替换
+    if (name === 'cmds' && n.__lptype === 'Canvas') {
+      emit(n, { op: 'canvas', id: n.__lpid, cmds: value })
+      return
+    }
     if (value === undefined || value === null || value === false) {
       if (!(name in n.__lpprops)) return
       delete n.__lpprops[name]

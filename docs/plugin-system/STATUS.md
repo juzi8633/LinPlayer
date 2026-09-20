@@ -107,23 +107,23 @@
 | 2 | SDK 的 Preact / 最小 DOM / JSX | ✅ | `tools/uibundle/` → `rt/uiruntime.js`(embed);41 个组件名 + h/hooks 从定义源生成 |
 | 3 | 桌面渲染器 | ✅ | `Views/PluginUi.cs` + `FlexPanel.cs`;真渲染截图 |
 | 4 | 手机渲染器 | ✅ | `ui/plugin/PluginSurface.kt` + `PluginRender.kt`;模拟器实测 250 条 op |
-| 5 | TV 渲染器(焦点) | ⚠️ 交互元素已换成可聚焦的那一套并有截图;**焦点顺序 / 焦点记忆没有测试** | `PluginRender.kt` `renderTv` |
+| 5 | TV 渲染器(焦点) | ✅ | `PluginRender.kt` `renderTv`;`PluginUiFocusTest` 三条按键驱动断言,先红后绿 |
 | 6 | 官方调试面板插件 | ✅ 三页(面板 / 组件示例 / 一千项) | `plugins/debug-panel/` |
 | 7 | `VirtualList` / `VirtualGrid`(D134) | ✅ | 1000 项首帧只建 24 个节点、127 条 op |
-| 8 | `Canvas`(D104) | ❌ | `canvas` op 两端都没接 |
-| 9 | 安全区 / 视口(D217 D425 D426) | ❌ | `plugin.ui.viewport` 命令没实现 |
+| 8 | `Canvas`(D104) | ✅ | 录制型 2D 上下文 → `canvas` op → 两端自绘;三端画的是同一张图 |
+| 9 | 安全区 / 视口(D217 D425 D426) | ✅ | `plugin.ui.viewport` + `useViewport()`;手机实测拿到 上49 下24 |
 
 ## D543 的四条数字验收
 
 | 验收 | 状态 | 实测 |
 |---|---|---|
 | 调试面板桌面跑通 | ✅ | `docs/images/plugin-ui/desktop-panel.png`、`desktop-gallery.png` |
-| 三端同一组示例页截图**一致** | ⚠️ 三端截图都有且结构一致(布局 / 输入 / 列表 / 错误边界),但**没有自动比对** | `desktop-gallery` / `phone-gallery` / `tv-gallery` |
+| 三端同一组示例页截图**一致** | ⚠️ 三端截图都有,结构一致(布局 / Canvas / 输入 / 列表 / 错误边界),但**没有自动比对** | `desktop-gallery` / `phone-gallery` / `tv-gallery` |
 | TV 1000 项 VirtualList ≥50fps | ⚠️ 核心层这半有证据(一次局部更新 2 条 op,20 项与 1000 项相同;首帧只建 24 个节点);**帧率没在 TV 上量过** | `rt/ui_bench_test.go` |
 | 插件页首帧 < 300ms | ⚠️ 核心层 **7ms**(60 节点示例页);**壳把 ops 变成控件那一段没量** | `TestUI首帧预算` |
 | 错误边界 先红后绿 | ✅ | `TestUI错误边界只崩那一块`;模拟器上真拦住了插件抛的错 |
-| 焦点 先红后绿 | ❌ | TV 分支有,测试没有 |
-| 安全区 先红后绿 | ❌ | 整项没做 |
+| 焦点 先红后绿 | ✅ | `PluginUiFocusTest`:第一次跑就红出「进插件页焦点没有落点」(那个 P0) |
+| 安全区 先红后绿 | ✅ | `TestUI视口与安全区送得到插件手里`:第一次跑红出「订阅挂在 useEffect 里,前 100ms 的变化没人接」 |
 
 ## 这一轮截图逼出来的 bug(都不报错、编译全绿)
 
@@ -136,3 +136,6 @@
 | 安卓永远停在骨架屏 | 首帧在壳订阅之前就发成事件了 |
 | 滑着滑着内容跳回顶部 | 虚拟列表没按 `firstIndex` 垫上方空白 |
 | 开关旁边的文字被挤成一列竖字 | TV 上把 Switch 映射成了整行的 `PanelItem` |
+| 进插件页遥控器整个失灵 | 没有元素认领初始焦点(TvNav 顶上警告的那个 P0) |
+| 安全区永远是 0 | 订阅挂在 `useEffect` 里,而没有 rAF 时 Preact 的 effect 要等 100ms |
+| Canvas 在高密度屏上只有桌面三分之一大 | 指令里的坐标是设备无关像素,而 DrawScope 用物理像素 |

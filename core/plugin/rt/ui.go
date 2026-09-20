@@ -117,7 +117,7 @@ func (r *Runtime) installUI(sdk *goja.Object) error {
 		_ = sdk.Set(n, n)
 	}
 	// 这两个**不是**字符串:窗口内的项要由 JS 渲染,所以它们是真组件(D134)
-	for _, n := range []string{"VirtualList", "VirtualGrid"} {
+	for _, n := range []string{"VirtualList", "VirtualGrid", "Canvas"} {
 		_ = sdk.Set(n, r.ui.Get(n))
 	}
 	return nil
