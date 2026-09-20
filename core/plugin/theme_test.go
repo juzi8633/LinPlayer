@@ -203,3 +203,63 @@ func TestTheme官方示范主题三端各一套(t *testing.T) {
 		})
 	}
 }
+
+/*
+只实现了 `definePlugin({ wallpaper })`、从不调 `wallpaper.set()` 的插件也要画得出来(D441)。
+
+☠ 不问这一下的话,用户选了壁纸界面一点反应都没有、也不报错 ——
+  而插件作者那边同样看不出问题:他按定义源实现了 `wallpaper` 入口,只是没人调。
+*/
+func TestWallpaper只给初始内容的插件也画得出来(t *testing.T) {
+	const extra = `,"main":"main.js","contributes":{"wallpaper":{"id":"bg","title":"示范壁纸"}}`
+	h := installAndRestartWith(t, extra,
+		`definePlugin({ wallpaper: async () => ({ kind: 'image', image: 'bg.webp' }) })`)
+	if err := h.SetActiveWallpaper("alice/demo"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := h.InitialWallpaper(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _ := got.(map[string]any)
+	if m == nil || m["kind"] != "image" {
+		t.Fatalf("没问到插件的初始壁纸:%+v —— 用户选了壁纸界面一点反应都没有", got)
+	}
+	if m["plugin"] != "alice/demo" {
+		t.Errorf("回的内容里没带是谁给的:%+v", m)
+	}
+}
+
+// 没选壁纸时不许去问任何插件。
+func TestWallpaper没选的时候不问(t *testing.T) {
+	const extra = `,"main":"main.js","contributes":{"wallpaper":{"id":"bg"}}`
+	h := installAndRestartWith(t, extra,
+		`definePlugin({ wallpaper: async () => { globalThis.__asked = true; return { kind: 'image', image: 'x' } } })`)
+	got, err := h.InitialWallpaper(context.Background())
+	if err != nil || got != nil {
+		t.Fatalf("没选壁纸却问了插件:%v / %v", got, err)
+	}
+}
+
+// installAndRestartWith 装一个带指定 contributes 与入口的小包再重启。
+func installAndRestartWith(t *testing.T, extra, main string) *Host {
+	t.Helper()
+	paths.SetRoot(t.TempDir())
+	if _, err := config.Load(); err != nil {
+		t.Fatal(err)
+	}
+	h := ResetForTest()
+	h.Start("windows", "2.0.0")
+	pkg := writePkg(t, map[string]string{
+		"manifest.json": manifestJSON("alice/demo", "1.0.0", extra),
+		"main.js":       sdkPrelude + main,
+	})
+	if _, err := h.Install(pkg, "local"); err != nil {
+		t.Fatal(err)
+	}
+	h.markStable()
+	h2 := ResetForTest()
+	h2.Start("windows", "2.0.0")
+	t.Cleanup(h2.Shutdown)
+	return h2
+}

@@ -153,7 +153,22 @@ function makeDom(router) {
     return s
   }
 
+  /* 未知属性:忽略,但**开发者模式下报一次 warn**(D319)。
+     ☠ 只报一次 —— 一个写错的属性在长列表里每行都会触发一次,
+       刷屏之后真正有用的那条会被冲掉。 */
+  const warned = new Set()
+  function warnUnknownProp(type, name) {
+    if (!globalThis.__lpDevMode) return
+    const known = COMPONENT_PROPS[type]
+    if (!known || known.indexOf(name) >= 0) return
+    const key = type + '.' + name
+    if (warned.has(key)) return
+    warned.add(key)
+    console.warn('<' + type + '> 没有 `' + name + '` 这个属性,这一条被忽略了(拼错了?)')
+  }
+
   function setProp(n, name, value) {
+    warnUnknownProp(n.__lptype, name)
     // Canvas 的一帧指令流走**专门的 op**(协议 7.3):它不是属性,
     // 走 props 的话每帧都要和上一帧做一次数组 diff,而它本来就是整帧替换
     if (name === 'cmds' && n.__lptype === 'Canvas') {

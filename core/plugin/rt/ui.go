@@ -51,6 +51,10 @@ func (r *Runtime) SetUISink(s UISink) { r.uiSink = s }
 // 换掉的是一整类「什么时候能用 h」的顺序问题。
 func (r *Runtime) installUI(sdk *goja.Object) error {
 	vm := r.vm
+	// 开发者模式的标记要**先于**运行时设上:最小 DOM 在加载期就会读它(D319 的属性 warn)
+	if err := vm.Set("__lpDevMode", r.opt.Dev || r.opt.Host.App.DevMode); err != nil {
+		return err
+	}
 	if _, err := vm.RunString(uiRuntimeJS); err != nil {
 		return fmt.Errorf("装 UI 运行时失败: %w", err)
 	}

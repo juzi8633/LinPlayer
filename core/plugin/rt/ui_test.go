@@ -71,10 +71,10 @@ func (c *uiCapture) dump() string {
 }
 
 // newUI 起一个带 UI 的运行时;code 里用 h / useState,就像插件 JSX 编译出来的那样。
-func newUI(t testing.TB, code string) (*Runtime, *uiCapture) {
+func newUI(t testing.TB, code string, mod ...func(*Options)) (*Runtime, *uiCapture) {
 	t.Helper()
 	cap := &uiCapture{}
-	r := newRT(t, code)
+	r := newRT(t, code, mod...)
 	r.SetUISink(cap.sink())
 	return r, cap
 }

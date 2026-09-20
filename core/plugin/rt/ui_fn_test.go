@@ -2,6 +2,7 @@ package rt
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -122,4 +123,50 @@ func evalStr(t *testing.T, r *Runtime, code string) string {
 	var s string
 	_ = json.Unmarshal(v, &s)
 	return s
+}
+
+/*
+未知属性:忽略,但开发者模式下报一次 warn(D319)。
+
+☠ 判据要同时钉住三件事,少一件这条 warn 就废了:
+  · 写错的属性**真的报**(不报的话「写了没反应」还是查无可查);
+  · 对的属性**不许报**(骂正确的属性,作者只能选择忽略它,等于没有);
+  · 同一个写错的属性**只报一次**(长列表里每行触发一次,刷屏会把有用的那条冲掉)。
+*/
+func TestUI未知属性在开发者模式下报一次warn(t *testing.T) {
+	r, cap := newUI(t, `
+		const { h } = __linplayer_sdk;
+		definePlugin({ pages: { p: () => h('Column', null,
+			// 三行都写错同一个属性名:报一次就够
+			h('Button', { title: 'a', titel: '写错的' }),
+			h('Button', { title: 'b', titel: '写错的' }),
+			h('Button', { title: 'c', titel: '写错的' })) } })
+	`, func(o *Options) { o.Dev = true })
+	if err := r.UIMount("s1", "page", "p", nil); err != nil {
+		t.Fatal(err)
+	}
+	cap.wait(t, func() bool { return hasProp(cap.ops(t), "title") })
+
+	var warns int
+	var sawRight bool
+	for _, e := range r.Logs() {
+		if e.Level != "warn" {
+			continue
+		}
+		if strings.Contains(e.Msg, "titel") {
+			warns++
+		}
+		if strings.Contains(e.Msg, "`title`") {
+			sawRight = true
+		}
+	}
+	if warns == 0 {
+		t.Fatalf("写错的属性没报 warn —— 插件作者看到的是「写了没反应」。日志:%v", r.Logs())
+	}
+	if warns > 1 {
+		t.Errorf("同一个写错的属性报了 %d 次 —— 长列表里会刷屏", warns)
+	}
+	if sawRight {
+		t.Error("把正确的属性也骂了 —— 作者只能选择忽略这条 warn,等于没有")
+	}
 }

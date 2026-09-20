@@ -34,6 +34,8 @@ const parts = [
   `}).call(scope);`,
   `return scope;`,
   `}`,
+  // 组件属性表由 tools/sdkgen/gen.mjs 从 .d.ts 生成(D319 的未知属性 warn 要用)
+  read('src/props.gen.js'),
   read('src/dom.js'),
   read('src/renderer.js'),
   `g.__lp_ui_init = function (host, sdk) { return makeRenderer(__lp_makeScope, host, sdk); };`,

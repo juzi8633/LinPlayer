@@ -317,6 +317,7 @@ object LinPlayerCommandNames {
         "plugin.themeFailed",
         "plugin.wallpapers",
         "plugin.activeWallpaper",
+        "plugin.initialWallpaper",
         "plugin.setActiveWallpaper",
         "plugin.playerSurfaces",
         "plugin.sidebar",
@@ -836,7 +837,7 @@ suspend fun LinPlayerCommands.syncCalendarLibrary(args: Map<String, Any?>? = nul
 suspend fun LinPlayerCommands.syncCalendarDue(args: Map<String, Any?>? = null): JsonElement =
     call("sync.calendarDue", args)
 
-// ---- 插件 · plugin.* (55 条) ----
+// ---- 插件 · plugin.* (56 条) ----
 suspend fun LinPlayerCommands.pluginList(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.list", args)
 suspend fun LinPlayerCommands.pluginPendingRestart(args: Map<String, Any?>? = null): JsonElement =
@@ -927,6 +928,8 @@ suspend fun LinPlayerCommands.pluginWallpapers(args: Map<String, Any?>? = null):
     call("plugin.wallpapers", args)
 suspend fun LinPlayerCommands.pluginActiveWallpaper(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.activeWallpaper", args)
+suspend fun LinPlayerCommands.pluginInitialWallpaper(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.initialWallpaper", args)
 suspend fun LinPlayerCommands.pluginSetActiveWallpaper(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.setActiveWallpaper", args)
 suspend fun LinPlayerCommands.pluginPlayerSurfaces(args: Map<String, Any?>? = null): JsonElement =

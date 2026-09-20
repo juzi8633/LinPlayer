@@ -327,6 +327,7 @@ public static class LinPlayerCommandNames
         "plugin.themeFailed",
         "plugin.wallpapers",
         "plugin.activeWallpaper",
+        "plugin.initialWallpaper",
         "plugin.setActiveWallpaper",
         "plugin.playerSurfaces",
         "plugin.sidebar",
@@ -848,7 +849,7 @@ public static class LinPlayerCommandsExtensions
     public static Task<JsonElement> SyncCalendarDue(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("sync.calendarDue", args, ct);
 
-    // ---- 插件 · plugin.* (55 条) ----
+    // ---- 插件 · plugin.* (56 条) ----
     public static Task<JsonElement> PluginList(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("plugin.list", args, ct);
     public static Task<JsonElement> PluginPendingRestart(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
@@ -939,6 +940,8 @@ public static class LinPlayerCommandsExtensions
         => c.CallAsync("plugin.wallpapers", args, ct);
     public static Task<JsonElement> PluginActiveWallpaper(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("plugin.activeWallpaper", args, ct);
+    public static Task<JsonElement> PluginInitialWallpaper(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
+        => c.CallAsync("plugin.initialWallpaper", args, ct);
     public static Task<JsonElement> PluginSetActiveWallpaper(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)
         => c.CallAsync("plugin.setActiveWallpaper", args, ct);
     public static Task<JsonElement> PluginPlayerSurfaces(this ILinPlayerCommands c, object? args = null, CancellationToken ct = default)

@@ -15,6 +15,53 @@ var scope = {};
 }).call(scope);
 return scope;
 }
+// 由 tools/sdkgen/gen.mjs 从 api/plugin-sdk.d.ts 生成。**不要手改。**
+// 每个组件自己那一层的属性名(D319:未知属性忽略,开发者模式报 warn)。
+// uiruntime.js 是**拼接**出来的不是打包出来的,所以这里不能用 ESM 导出。
+var COMPONENT_PROPS = {
+  "Badge": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","style","text","tone"],
+  "Button": ["a11yLabel","autoFocus","children","disabled","focusGroup","focusable","icon","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onBlur","onFocus","onLongPress","onPress","style","title","variant"],
+  "Canvas": ["a11yLabel","animate","autoFocus","children","draw","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","style"],
+  "Checkbox": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","label","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onChange","style","value"],
+  "Chip": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","label","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onBlur","onFocus","onLongPress","onPress","selected","style"],
+  "ChipGroup": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","multi","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onChange","options","style","value"],
+  "Column": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","style"],
+  "DetailHeader": ["a11yLabel","actions","autoFocus","children","focusGroup","focusable","item","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","style"],
+  "Divider": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","style"],
+  "EmptyState": ["a11yLabel","action","autoFocus","children","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","style","text"],
+  "EpisodeGrid": ["a11yLabel","autoFocus","children","current","episodes","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onSelect","reversed","style"],
+  "FilterPanel": ["a11yLabel","autoFocus","children","dimensions","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onChange","style","value"],
+  "Icon": ["a11yLabel","autoFocus","children","color","focusGroup","focusable","key","name","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","size","src","style"],
+  "Image": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","placeholder","src","style"],
+  "LineTabs": ["a11yLabel","autoFocus","children","current","focusGroup","focusable","key","lines","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onChange","style"],
+  "Markdown": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","source","style"],
+  "Player": ["a11yLabel","autoFocus","autoplay","children","focusGroup","focusable","headers","item","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","recordKey","style","url"],
+  "PosterCard": ["a11yLabel","autoFocus","children","focusGroup","focusable","item","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onBlur","onFocus","onLongPress","onPress","progress","shape","showRemarks","style"],
+  "PosterGrid": ["a11yLabel","autoFocus","children","focusGroup","focusable","items","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onEndReached","onItemPress","shape","style"],
+  "PosterRow": ["a11yLabel","autoFocus","children","focusGroup","focusable","items","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onEndReached","onItemPress","shape","style","title"],
+  "Pressable": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onBlur","onFocus","onLongPress","onPress","style"],
+  "ProgressBar": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","seekable","style","value"],
+  "RatingList": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","ratings","style"],
+  "Row": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","style"],
+  "ScrollView": ["a11yLabel","autoFocus","children","focusGroup","focusable","horizontal","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onEndReached","onScroll","style"],
+  "Select": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","multi","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onChange","options","style","value"],
+  "ServerCard": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onBlur","onFocus","onLongPress","onPress","server","style"],
+  "SettingsGroup": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","style","title"],
+  "SettingsRow": ["a11yLabel","autoFocus","children","description","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onBlur","onFocus","onLongPress","onPress","style","title","trailing"],
+  "Skeleton": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","shape","style"],
+  "Slider": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","max","min","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onChange","step","style","value"],
+  "Spinner": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","size","style"],
+  "Stack": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","style"],
+  "Switch": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","label","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onChange","style","value"],
+  "Tabs": ["a11yLabel","autoFocus","children","current","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onChange","style","tabs"],
+  "Text": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","selectable","style"],
+  "TextInput": ["a11yLabel","autoFocus","children","defaultValue","focusGroup","focusable","key","live","multiline","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onChangeText","onSubmit","placeholder","secret","style"],
+  "View": ["a11yLabel","autoFocus","children","focusGroup","focusable","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","style"],
+  "VirtualGrid": ["a11yLabel","autoFocus","children","columns","focusGroup","focusable","itemCount","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onEndReached","renderItem","style"],
+  "VirtualList": ["a11yLabel","autoFocus","children","focusGroup","focusable","horizontal","itemCount","itemHeight","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onEndReached","renderItem","style"],
+  "WebView": ["a11yLabel","autoFocus","children","focusGroup","focusable","injectScript","key","nextFocusDown","nextFocusLeft","nextFocusRight","nextFocusUp","onMessage","options","ref","src","style"],
+}
+
 // 最小 DOM(SPEC 7.1):只实现 Preact 真正会碰的那一层,每次变更记成一条 op。
 //
 // ★ 为什么是「假 DOM」而不是「改 Preact」:Preact 的渲染器写死了 DOM,
@@ -170,7 +217,22 @@ function makeDom(router) {
     return s
   }
 
+  /* 未知属性:忽略,但**开发者模式下报一次 warn**(D319)。
+     ☠ 只报一次 —— 一个写错的属性在长列表里每行都会触发一次,
+       刷屏之后真正有用的那条会被冲掉。 */
+  const warned = new Set()
+  function warnUnknownProp(type, name) {
+    if (!globalThis.__lpDevMode) return
+    const known = COMPONENT_PROPS[type]
+    if (!known || known.indexOf(name) >= 0) return
+    const key = type + '.' + name
+    if (warned.has(key)) return
+    warned.add(key)
+    console.warn('<' + type + '> 没有 `' + name + '` 这个属性,这一条被忽略了(拼错了?)')
+  }
+
   function setProp(n, name, value) {
+    warnUnknownProp(n.__lptype, name)
     // Canvas 的一帧指令流走**专门的 op**(协议 7.3):它不是属性,
     // 走 props 的话每帧都要和上一帧做一次数组 diff,而它本来就是整帧替换
     if (name === 'cmds' && n.__lptype === 'Canvas') {

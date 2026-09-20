@@ -14,6 +14,7 @@ package plugin
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"linplayer/core/bus"
@@ -162,6 +163,10 @@ func registerTheme() {
 	bus.Register("plugin.activeWallpaper", func(ctx context.Context, _ int64, a map[string]any) (any, error) {
 		return map[string]any{"id": Default().ActiveWallpaper()}, nil
 	})
+	// 壳在启动与切换壁纸之后问一次:只实现了 `wallpaper` 入口、从不调 set 的插件靠它才画得出来
+	bus.Register("plugin.initialWallpaper", func(ctx context.Context, _ int64, a map[string]any) (any, error) {
+		return Default().InitialWallpaper(ctx)
+	})
 	bus.Register("plugin.setActiveWallpaper", func(ctx context.Context, _ int64, a map[string]any) (any, error) {
 		return nil, Default().SetActiveWallpaper(str(a, "id"))
 	})
@@ -187,4 +192,37 @@ func wallpaperHooks() *rt.WallpaperHooks {
 			return nil
 		},
 	}
+}
+
+/*
+InitialWallpaper 问当前选中的壁纸插件要一份初始内容(`definePlugin({ wallpaper })`,D441)。
+
+☠ 不问的话,`load: startup` 之外的壁纸插件**永远画不出来**:
+  `wallpaper.set()` 是插件主动调的,而一个只实现了 `wallpaper` 入口的插件
+  从头到尾不会调它 —— 用户选了壁纸,界面一点反应都没有,也不报错。
+  壳在启动与切换壁纸之后各问一次。
+*/
+func (h *Host) InitialWallpaper(ctx context.Context) (any, error) {
+	id := h.ActiveWallpaper()
+	if id == "" {
+		return nil, nil
+	}
+	l, err := h.get(id, "wallpaper")
+	if err != nil {
+		return nil, err
+	}
+	if !l.rt.Has("wallpaper") {
+		// 只用 wallpaper.set() 的插件没有这个入口,这不是错
+		return nil, nil
+	}
+	raw, err := l.rt.Invoke(ctx, rt.BudgetData, "wallpaper", nil, map[string]any{})
+	if err != nil {
+		return nil, err
+	}
+	var out map[string]any
+	if json.Unmarshal(raw, &out) != nil || out == nil {
+		return nil, nil
+	}
+	out["plugin"] = id
+	return out, nil
 }

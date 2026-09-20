@@ -396,6 +396,7 @@
 | [x] | `plugin.themeFailed` | **新增** | `id: String, detail: Option<String>` | `—` | ✅ | <!-- 壳加载主题失败时报一次:下次启动直接用官方 -->
 | [x] | `plugin.wallpapers` | **新增** | `—` | `Vec<WallpaperInfo>` | ✅ | <!-- 能选的壁纸接管位(D441) -->
 | [x] | `plugin.activeWallpaper` | **新增** | `—` | `{id}` | ✅ |
+| [x] | `plugin.initialWallpaper` | **新增** | `—` | `Option<WallpaperContent>` | ✅ | <!-- 问当前壁纸插件要初始内容。只实现 definePlugin({wallpaper}) 从不调 set 的插件靠它才画得出来 -->
 | [x] | `plugin.setActiveWallpaper` | **新增** | `id: String` | `—` | ✅ | <!-- 切换即时生效,不重启(D441) -->
 | [x] | `plugin.playerSurfaces` | **新增** | `kind: Option<String>` | `Vec<PlayerSurface>` | ✅ | <!-- 播放页上要挂的插件覆盖层与侧栏页。没有这张表的话壳根本不知道该挂谁 -->
 | [x] | `plugin.sidebar` | **新增** | `—` | `Vec<SidebarEntry>` | ✅ | <!-- 侧栏入口(D158 D305);id 是「插件id:入口id」 -->

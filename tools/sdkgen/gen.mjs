@@ -35,6 +35,36 @@ function membersOf(body) {
 /** 顶层 UI 组件:`export declare function View(p): LpElement`。
  *  JSX 里 <View> 编译成**标识符** View,所以 SDK 上必须有同名的值。 */
 const components = []
+/* componentProps 每个组件**自己那一层**的属性名(D319:未知属性忽略,开发者模式报 warn)。
+   ☠ 只收属性包自己那一层:回调参数里的对象字面量(`onScroll?: (e: {x;y}) => void`)
+     不是组件属性,收进去的话渲染器会把 `x` 当成合法属性,那条 warn 就废了。 */
+const componentProps = {}
+
+function propsOf(fn) {
+  const out = new Set()
+  const p = (fn.parameters || [])[0]
+  if (!p || !p.type) return []
+  const walk = (t) => {
+    if (ts.isTypeLiteralNode(t)) {
+      for (const m of t.members) if (m.name && ts.isIdentifier(m.name)) out.add(m.name.text)
+    } else if (ts.isIntersectionTypeNode(t)) {
+      for (const x of t.types) walk(x)
+    } else if (ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName)) {
+      // BaseProps / PressProps 这类共用属性包:展开它们的成员
+      const decl = src.statements.find(
+        (x) => ts.isInterfaceDeclaration(x) && x.name && x.name.text === t.typeName.text,
+      )
+      if (decl) {
+        for (const m of decl.members) if (m.name && ts.isIdentifier(m.name)) out.add(m.name.text)
+        for (const h of decl.heritageClauses || []) {
+          for (const e of h.types) if (ts.isIdentifier(e.expression)) walk(ts.factory.createTypeReferenceNode(e.expression))
+        }
+      }
+    }
+  }
+  walk(p.type)
+  return [...out].sort()
+}
 
 /** 顶层 hooks:`export declare function useTheme(): ...`。
  * 它们和组件一样挂在 SDK 根上,却一直不在门禁里 —— 于是 .d.ts 声明了五个、
@@ -54,6 +84,7 @@ for (const st of src.statements) {
     st.name.text !== 'h' && st.name.text !== 'Fragment'
   ) {
     components.push(st.name.text)
+    componentProps[st.name.text] = propsOf(st)
   }
   if (
     ts.isFunctionDeclaration(st) && st.name && /^use[A-Z]/.test(st.name.text) &&
@@ -120,4 +151,19 @@ lines.push('var SDKStyleKeys = []string{')
 for (const k of styleKeys.slice().sort()) lines.push(`	${JSON.stringify(k)},`)
 lines.push('}')
 writeFileSync(out, lines.join('\n') + '\n')
+
+/* 渲染器那一份:每个组件认得哪些属性(D319)。
+   ☠ 不能在渲染器里手写一份 —— 手写的那份和定义源分叉时,warn 会开始骂**正确**的属性,
+     而插件作者只能选择忽略它,于是这条 warn 从此等于不存在。 */
+const propsOut = new URL('../uibundle/src/props.gen.js', import.meta.url)
+const pl = ['// 由 tools/sdkgen/gen.mjs 从 api/plugin-sdk.d.ts 生成。**不要手改。**',
+  '// 每个组件自己那一层的属性名(D319:未知属性忽略,开发者模式报 warn)。',
+  '// uiruntime.js 是**拼接**出来的不是打包出来的,所以这里不能用 ESM 导出。',
+  'var COMPONENT_PROPS = {']
+for (const c of components.slice().sort()) {
+  pl.push(`  ${JSON.stringify(c)}: ${JSON.stringify(componentProps[c] || [])},`)
+}
+pl.push('}')
+writeFileSync(propsOut, pl.join('\n') + '\n')
+
 console.log(`✓ ${spec.size} 个命名空间、${components.length} 个组件、${hooks.length} 个 hook、${styleKeys.length} 个样式键 → ${out}`)
