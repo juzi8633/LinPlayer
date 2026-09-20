@@ -73,6 +73,8 @@ class MainActivity : ComponentActivity() {
         // 不能靠 input text —— 焦点落在哪儿不确定,实测一个字符都没进去(PC 端同一条教训)
         intent?.getStringExtra("lp_login")?.let { SelfCheck.login = it }
         intent?.getStringExtra("lp_page")?.let { SelfCheck.page = it }
+        // 自检:先用开发版加载一个本地插件目录(不必先打包再安装)
+        intent?.getStringExtra("lp_devplugin")?.let { SelfCheck.devPlugin = it }
 
         xyz.linplayer.app.data.UiPrefs.load(this)
 
@@ -119,6 +121,8 @@ class MainActivity : ComponentActivity() {
     object SelfCheck {
         @Volatile var login: String? = null
         @Volatile var page: String? = null
+        /** 开发版加载的本地插件目录(`-e lp_devplugin <路径>`)。 */
+        @Volatile var devPlugin: String? = null
     }
 
     private fun handleIntent(i: Intent?) {

@@ -385,6 +385,16 @@ fun PluginDetailPage(nav: NavController, entry: NavBackStackEntry) {
                 val settings = d["settings"].arr().mapNotNull { it.obj() }
                 if (settings.isNotEmpty()) item { H2("设置", Modifier.padding(Sp.x16)) }
                 items(settings, key = { it.str("key") ?: "" }) { s -> SettingRow(app, id, s, vals?.get(s.str("key") ?: "") ?: s["default"]) }
+                // 插件自己画的页面(SPEC 7.2 D84):每一个给一个入口,点了挂一个 page surface
+                val pages = d["manifest"].obj()?.get("contributes").obj()?.get("pages").arr().mapNotNull { it.obj() }
+                if (!pages.isNullOrEmpty()) {
+                    item { H2("页面", Modifier.padding(Sp.x16)) }
+                    items(pages, key = { "pg:" + (it.str("id") ?: "") }) { p ->
+                        val pid = p.str("id") ?: ""
+                        val title = p.str("title")?.takeIf { t -> t.isNotEmpty() } ?: pid
+                        LpCell(title, onClick = { nav.navigate(Route.PluginPage(id, pid, title)) })
+                    }
+                }
                 item {
                     d.strList("contributes").takeIf { it.isNotEmpty() }?.let {
                         H2("它做了什么", Modifier.padding(Sp.x16)); Dim2(it.joinToString("、"), Modifier.padding(horizontal = Sp.x16))
@@ -506,3 +516,22 @@ internal fun copyToCache(ctx: Context, uri: Uri, name: String): String? = runCat
     ctx.contentResolver.openInputStream(uri)!!.use { i -> out.outputStream().use { i.copyTo(it) } }
     out.absolutePath
 }.getOrNull()
+
+
+/**
+ * 插件页的整页容器(SPEC 7.2 的 page surface)。标题是官方的,内容整块交给插件。
+ */
+@Composable
+fun PluginHostPage(nav: NavController, entry: NavBackStackEntry) {
+    val r = entry.toRoute<Route.PluginPage>()
+    LpScaffold(r.title, onBack = { nav.popBackStack() }) { pad ->
+        androidx.compose.foundation.lazy.LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(Sp.x16, Sp.x8, Sp.x16, pad.calculateBottomPadding()),
+        ) {
+            item {
+                xyz.linplayer.app.ui.plugin.PluginSurface(r.id, r.page, "page", modifier = Modifier.fillMaxWidth())
+            }
+        }
+    }
+}

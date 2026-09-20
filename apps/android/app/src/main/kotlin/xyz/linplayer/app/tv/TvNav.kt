@@ -59,6 +59,8 @@ sealed interface TvRoute {
     ) : TvRoute { override val rail = -1 }
     data object Plugins : TvRoute { override val rail = 7 }
     data object Extensions : TvRoute { override val rail = 7 }
+    /** 插件自己画的页面(SPEC 7.2 的 page surface)。 */
+    data class PluginPage(val id: String, val page: String, val title: String) : TvRoute { override val rail = 7 }
     /** 全局观看历史(SPEC 8.7)。导航轨的八格是定死的(§3.1),所以它从收藏页下钻。 */
     data object History : TvRoute { override val rail = 3 }
 }

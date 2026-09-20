@@ -100,6 +100,20 @@ func (c *evCapture) wait(t *testing.T, what string, ok func() bool) {
 	t.Fatalf("等不到 %s;收到 %d 帧、%d 条状态", what, len(c.frames), len(c.states))
 }
 
+/* mountUI 照真实壳的做法挂一块 UI:首帧从 mount 的**返回值**吃进来,
+   后续帧才走事件。测试里也这么做,是为了让这两条路都被走到。 */
+func mountUI(t *testing.T, c *evCapture, args map[string]any) string {
+	t.Helper()
+	r := call(t, "plugin.ui.mount", args)
+	sid, _ := r["surface"].(string)
+	if ops, ok := r["ops"].([]any); ok && len(ops) > 0 {
+		c.mu.Lock()
+		c.frames = append(c.frames, map[string]any{"surface": sid, "frame": 1.0, "ops": ops})
+		c.mu.Unlock()
+	}
+	return sid
+}
+
 func call(t *testing.T, name string, args map[string]any) map[string]any {
 	t.Helper()
 	// 参数过一遍 JSON:真实调用来自壳的 JSON,数字都是 float64
@@ -129,11 +143,10 @@ func TestUI挂载走命令总线(t *testing.T) {
 	registerUI()
 	c := captureUI(t)
 
-	r := call(t, "plugin.ui.mount", map[string]any{
+	sid := mountUI(t, c, map[string]any{
 		"plugin": "alice/demo", "target": "hello", "kind": "page",
 		"props": map[string]any{"who": "世界"},
 	})
-	sid, _ := r["surface"].(string)
 	if sid == "" {
 		t.Fatal("mount 没回 surface id")
 	}
@@ -226,7 +239,7 @@ func TestUI一次交互里的多次setState合成一次提交(t *testing.T) {
 	registerUI()
 	c := captureUI(t)
 
-	sid := call(t, "plugin.ui.mount", map[string]any{"plugin": "alice/demo", "target": "p", "kind": "page"})["surface"].(string)
+	sid := mountUI(t, c, map[string]any{"plugin": "alice/demo", "target": "p", "kind": "page"})
 	c.wait(t, "首帧", func() bool { return len(c.ops()) > 0 })
 	c.mu.Lock()
 	before := len(c.frames)
@@ -263,7 +276,7 @@ func TestUI十六毫秒窗口内的多次提交合成一条(t *testing.T) {
 	registerUI()
 	c := captureUI(t)
 
-	call(t, "plugin.ui.mount", map[string]any{"plugin": "alice/demo", "target": "p", "kind": "page"})
+	mountUI(t, c, map[string]any{"plugin": "alice/demo", "target": "p", "kind": "page"})
 	c.wait(t, "首帧", func() bool { return len(c.ops()) > 0 })
 	time.Sleep(40 * time.Millisecond) // 等首帧那个窗口关掉
 	c.mu.Lock()
@@ -340,9 +353,9 @@ func TestUI调试面板能渲染出来(t *testing.T) {
 	registerUI()
 	c := captureUI(t)
 
-	sid := call(t, "plugin.ui.mount", map[string]any{
+	sid := mountUI(t, c, map[string]any{
 		"plugin": "linplayer/debug-panel", "target": "panel", "kind": "page",
-	})["surface"].(string)
+	})
 	c.wait(t, "首帧", func() bool { return len(c.ops()) > 20 })
 
 	ops := c.ops()
@@ -423,4 +436,50 @@ func repoRoot(t *testing.T) string {
 	}
 	t.Skip("找不到仓库根")
 	return ""
+}
+
+/*
+首帧必须跟着 mount 的返回值走(不是事件)。
+
+☠ 这条挡的是一个只在慢一点的壳上才现形的竞态:首渲染是 mount 里**同步**做完的,
+而壳要拿到 surface id 之后才可能订阅这个 id 的帧 —— 中间那一段发出去的帧没人接。
+桌面上侥幸没事(Go 这边压了 16ms 才发),安卓模拟器上重组慢一点就永远停在骨架屏:
+不报错、不崩、就是不出内容。2026-09-20 截图才看出来。
+*/
+func TestUI首帧跟着mount的返回值(t *testing.T) {
+	h := installAndRestart(t, uiPlugin)
+	registerUI()
+	c := captureUI(t)
+	// **故意不从返回值之外拿**:首帧要是走事件,这条就拿不到任何 op
+	r := call(t, "plugin.ui.mount", map[string]any{
+		"plugin": "alice/demo", "target": "hello", "kind": "page",
+		"props": map[string]any{"who": "世界"},
+	})
+	_ = h
+	ops, _ := r["ops"].([]any)
+	if len(ops) < 5 {
+		t.Fatalf("mount 只回了 %d 条 op —— 首帧没跟着返回值走", len(ops))
+	}
+	/* 首帧不许**再**以事件的形式发一遍(发了就是重复应用)。
+	   ☠ 另半条 —— 「定时器先于 mount 返回把首帧发走」—— 这台机器上复现不出来:
+	   onFrame 是 UIMount 里同步调的,take() 紧跟其后,AfterFunc 的 goroutine
+	   抢不到那个窗口。它的证据是模拟器:没有 surface.started 那道闸时,
+	   安卓端 mount 回的 ops 是 **0 条**,界面永远白屏(2026-09-20 实测日志)。
+	   所以那道闸按「已知会在慢设备上发生」保留,不假装这里能测到它。 */
+	time.Sleep(60 * time.Millisecond)
+	c.mu.Lock()
+	n := len(c.frames)
+	c.mu.Unlock()
+	if n != 0 {
+		t.Errorf("首帧之外还发了 %d 条 plugin.ui 事件 —— 闸没生效", n)
+	}
+	var types []string
+	for _, o := range ops {
+		if m, ok := o.(map[string]any); ok && m["op"] == "create" {
+			types = append(types, m["type"].(string))
+		}
+	}
+	if !has(types, "Column") || !has(types, "Button") {
+		t.Fatalf("mount 回的 ops 不是首帧,建出来的是 %v", types)
+	}
 }

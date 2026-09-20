@@ -68,6 +68,8 @@ public sealed class PluginSurface : UserControl
             var r = await _core.PluginUiMount(new { plugin = _plugin, target = _target, kind = _kind, props = _props });
             _surface = Mi.Str(r, "surface");
             if (_surface.Length > 0) Live[_surface] = this;
+            // 首帧跟着 mount 的返回值来:等事件的话会漏掉它(见 core/plugin/ui.go 那条)
+            Dispatcher.UIThread.Post(() => ApplyFrame(r));
         }
         catch (Exception e)
         {

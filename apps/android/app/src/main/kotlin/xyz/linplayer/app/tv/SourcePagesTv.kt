@@ -493,3 +493,13 @@ fun ExtensionsPageTv() {
         }
     }
 }
+
+
+/** 插件页的整页容器(TV)。标题是官方的,内容整块交给插件。 */
+@Composable
+fun PluginHostPageTv(r: TvRoute.PluginPage) {
+    LazyColumn(Modifier.contentArea(), contentPadding = PaddingValues(bottom = TvSp.x20)) {
+        item { PageHead(r.title) }
+        item { xyz.linplayer.app.ui.plugin.PluginSurface(r.id, r.page, "page", modifier = Modifier.fillMaxWidth()) }
+    }
+}

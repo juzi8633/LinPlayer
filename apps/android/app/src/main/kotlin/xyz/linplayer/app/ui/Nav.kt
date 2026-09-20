@@ -36,6 +36,8 @@ object Route {
     @Serializable data object Downloads                                       // U1.12
     @Serializable data class Plugins(val tab: Int = 0)                        // 插件页四标签(插件 SPEC 14.4)
     @Serializable data class PluginDetail(val id: String)
+    /** 插件自己画的页面(SPEC 7.2 的 page surface)。 */
+    @Serializable data class PluginPage(val id: String, val page: String, val title: String)
     @Serializable data object Extensions                                      // 扩展组件(插件 SPEC 18.5)
     /** 数据源分类页。`cat` 是分类对象的 JSON 原文(带筛选维度与海报比例)。 */
     @Serializable data class SourceCategory(val serverId: String, val cat: String)

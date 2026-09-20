@@ -382,7 +382,7 @@
 | [x] | `plugin.setCapabilities` | **新增** | `webview, spider_jar, spider_py` | `—` | ✅ |
 | [x] | `plugin.shellResult` | **新增** | `id, ok, data?, error?` | `—` | ✅ |
 | [x] | `plugin.setCookies` | **新增** | `plugin_id, jar, url, cookies` | `—` | ✅ |
-| [x] | `plugin.ui.mount` | **新增** | `plugin, target, kind, props?` | `{surface}` | ✅ |
+| [x] | `plugin.ui.mount` | **新增** | `plugin, target, kind, props?` | `{surface,frame,ops}` | ✅ |
 | [x] | `plugin.ui.unmount` | **新增** | `surface` | `—` | ✅ |
 | [x] | `plugin.ui.event` | **新增** | `surface, fn, args?` | `—` | ✅ |
 <!-- END GENERATED -->

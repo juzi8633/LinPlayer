@@ -129,6 +129,10 @@ private fun MainShell() {
        ★ 不能靠 input tap 走到目标页 —— 坐标随字号 / 数据变,而且中间任何一步
          没点中,后面全错位;截图看起来还像是「那一页做坏了」。 */
     LaunchedEffect(Unit) {
+        MainActivity.SelfCheck.devPlugin?.let { dir ->
+            MainActivity.SelfCheck.devPlugin = null
+            runCatching { app.call("plugin.devLoad", xyz.linplayer.app.ui.pages.args("dir" to dir)) }.onFailure { app.report(it) }
+        }
         val p = MainActivity.SelfCheck.page ?: return@LaunchedEffect
         MainActivity.SelfCheck.page = null
         if (p.startsWith("tvbox:")) { xyz.linplayer.app.ui.pages.selfCheckTvbox(app, nav, p.removePrefix("tvbox:")); return@LaunchedEffect }
@@ -144,6 +148,12 @@ private fun MainShell() {
             "extensions" -> nav.navigate(Route.Extensions)
             "srcfav" -> nav.navigate(Route.SourceFavorites)
             "history" -> nav.navigate(Route.History)
+            // pluginpage:<插件id>/<页面id> —— 插件 id 自带一个「/」,页面 id 取最后一段
+            "pluginpage" -> {
+                val raw = p.removePrefix("pluginpage:")
+                val at = raw.lastIndexOf('/')
+                if (at > 0) nav.navigate(Route.PluginPage(raw.substring(0, at), raw.substring(at + 1), "插件页"))
+            }
             "ranking" -> nav.navigate(Route.Ranking)
             "calendar" -> nav.navigate(Route.Calendar)
             "settings" -> nav.navigate(Route.Settings)
@@ -202,6 +212,7 @@ private fun MainShell() {
                 composable<Route.Downloads> { DownloadsPage(nav) }
                 composable<Route.Plugins> { PluginsPage(nav, it) }
                 composable<Route.PluginDetail> { xyz.linplayer.app.ui.pages.PluginDetailPage(nav, it) }
+                composable<Route.PluginPage> { xyz.linplayer.app.ui.pages.PluginHostPage(nav, it) }
                 composable<Route.Extensions> { xyz.linplayer.app.ui.pages.ExtensionsPage(nav) }
                 composable<Route.SourceCategory> { xyz.linplayer.app.ui.pages.SourceCategoryPage(nav, it) }
                 composable<Route.SourceDetail> { xyz.linplayer.app.ui.pages.SourceDetailPage(nav, it) }

@@ -54,13 +54,12 @@ ok "$("$ADB" devices | grep -E 'device$' | head -1)"
 
 # ---- 3. APK -------------------------------------------------------------
 step "编 APK"
-( cd apps/android && ANDROID_HOME="$SDK" ./gradlew --no-daemon assembleDebug -q ) \
-  || { bad "assembleDebug 失败"; exit 1; }
-# ABI 拆包之后每个 ABI 一个 APK。装哪个由**设备**说了算,不是由我们猜
+# ☠ **ABI 要按设备来**,不能用默认的 arm64:x86_64 模拟器上编出 arm64 包,
+#   脚本报的是「APK 没出来」—— 那句话看起来像构建失败,其实是找错了文件名。
+#   核心层那份 so 也要先按同一个 ABI 编:bash scripts/build-core-android.sh x86_64
 ABI="$("$ADB" shell getprop ro.product.cpu.abi 2>/dev/null | tr -d "[:space:]")"
-# ☠ 现在默认只出 arm64-v8a 的包。x86_64 模拟器上跑自检要先自己编那份 ABI:
-#   bash scripts/fetch-libmpv-android.sh x86_64 && bash scripts/build-core-android.sh x86_64
 [ -n "$ABI" ] || ABI=arm64-v8a
+( cd apps/android && ANDROID_HOME="$SDK" ./gradlew --no-daemon assembleDebug -q "-Plp.abis=$ABI" )   || { bad "assembleDebug 失败"; exit 1; }
 APK="$ROOT/apps/android/app/build/outputs/apk/debug/app-$ABI-debug.apk"
 [ -f "$APK" ] || APK="$ROOT/apps/android/app/build/outputs/apk/debug/app-debug.apk"
 [ -f "$APK" ] || { bad "APK 没出来"; exit 1; }
@@ -127,7 +126,8 @@ for p in "${PAGES[@]}"; do
     "$ADB" shell "am start -n $ACT" >/dev/null
   else
     "$ADB" shell am force-stop "$PKG" >/dev/null
-    "$ADB" shell "am start -n $ACT -e lp_page '$p'" >/dev/null
+    # LP_DEVPLUGIN=<设备上的目录> 时先用开发版加载它(插件 UI 那几页要用)
+    "$ADB" shell "am start -n $ACT -e lp_page '$p'${LP_DEVPLUGIN:+ -e lp_devplugin '$LP_DEVPLUGIN'}" >/dev/null
   fi
   sleep 6
   shoot "${p//:/-}"

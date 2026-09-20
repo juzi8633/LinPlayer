@@ -8,7 +8,12 @@ export type SurfaceKind = 'page' | 'block' | 'overlay' | 'globalOverlay' | 'pane
 
 // ───── 壳 → 核心(命令)─────
 
-/** 壳要在某个槽位挂插件 UI。返回 surfaceId。 */
+/**
+ * 壳要在某个槽位挂插件 UI。返回 `{surface, frame, ops}` —— **首帧跟着返回值走**。
+ *
+ * ☠ 首渲染是 mount 里同步完成的,而壳要拿到 surfaceId 之后才可能订阅这个 id 的帧;
+ * 中间那一段发出去的帧没人接,表现是「永远停在骨架屏」,不报错也不崩。
+ */
 export interface MountCmd {
   cmd: 'plugin.ui.mount'
   plugin: string

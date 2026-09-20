@@ -29,6 +29,12 @@ type surface struct {
 	pending []json.RawMessage
 	timer   *time.Timer
 	seq     int
+	/* started = mount 已经把首帧取走了。在那之前**一条事件都不许发** ——
+	   否则首帧会在壳拿到 surface id 之前当成事件飞出去,没人接。
+	   ☠ 光把首帧塞进 mount 的返回值是不够的:16ms 的定时器可能先到,
+	   把首帧发成事件、顺手清空 pending,于是 mount 回的是空数组。
+	   模拟器上必中,本机上看运气 —— 2026-09-20 就是这么表现成「安卓永远白屏」的。 */
+	started bool
 }
 
 type uiState struct {
@@ -78,7 +84,11 @@ func registerUICommands() {
 			h.noteError(id, err)
 			return nil, bus.NewErr(bus.EInternal, "挂载失败: %v", err)
 		}
-		return map[string]any{"surface": s.id}, nil
+		/* ☠ **首帧跟着返回值走,不走事件**。
+		   首渲染是 UIMount 里同步完成的,而壳要拿到 surface id 之后才可能
+		   订阅这个 id 的帧 —— 中间那一段里发出去的帧没人接,
+		   表现是「永远停在骨架屏」:不报错、不崩、就是不出内容。 */
+		return map[string]any{"surface": s.id, "frame": 1, "ops": s.take()}, nil
 	})
 
 	bus.Register("plugin.ui.unmount", func(ctx context.Context, _ int64, a map[string]any) (any, error) {
@@ -172,10 +182,28 @@ func onFrame(f rt.UIFrame) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.pending = append(s.pending, f.Ops...)
-	if s.timer != nil {
+	if !s.started || s.timer != nil {
 		return
 	}
 	s.timer = time.AfterFunc(frameWindow, func() { s.emit() })
+}
+
+// take 把攒着的 ops 取走(首帧随 mount 的返回值走),并开闸让后续帧走事件。
+func (s *surface) take() []json.RawMessage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ops := s.pending
+	s.pending = nil
+	if s.timer != nil {
+		s.timer.Stop()
+		s.timer = nil
+	}
+	s.seq = 1
+	s.started = true
+	if ops == nil {
+		return []json.RawMessage{}
+	}
+	return ops
 }
 
 func (s *surface) emit() {
