@@ -51,6 +51,9 @@
     <PackageReference Include="Avalonia.Desktop" Version="11.3.11" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.11" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.11" />
+    <!-- 插件主题是运行时才拿到的 .axaml(SPEC 11.3),要的是运行期 XAML 解析器。
+         编译期那一套(AvaloniaXamlLoader.Load)只认编进程序集的资源。 -->
+    <PackageReference Include="Avalonia.Markup.Xaml.Loader" Version="11.3.11" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
     <PackageReference Include="Sentry" Version="6.11.0" />
   </ItemGroup>

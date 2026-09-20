@@ -159,6 +159,8 @@ public partial class MainWindow : Window
            挂在页里的话「点了收藏 → 页面刷新 → 提示跟着被销毁」,用户什么都看不到。
            见 Toast.cs 的文件头。 */
         Toast.Host = (Panel)bar.Parent!;
+        // 壁纸垫在最底下(SPEC 11.5);内容由 plugin.wallpaper 事件送来,见 AppJobs
+        if (_core is not null) Wallpaper.Attach(this.FindControl<Panel>("WallpaperLayer")!, _core);
         Shortcuts.Attach(this);
         // 面包屑要跳大区(「媒体库 › 某个库」里点「媒体库」),而它不在返回栈上
         Nav.Top = name => { ShortcutNav(name); };
@@ -172,6 +174,10 @@ public partial class MainWindow : Window
         {
             Perf.Log("窗口 Opened");
             Report.Trail("窗口已打开");
+            /* 主题加载失败的提示只能等到这里 —— 它发生在建窗口之前,那时候还没有 Toast 宿主。
+               详情在设置页「主题与壁纸」那张卡里可复制(D372)。 */
+            if (PluginTheme.FailedName.Length > 0)
+                Toast.Error($"「{PluginTheme.FailedName}」主题加载失败,已改用官方主题");
             await BootAsync();
             Perf.Log("BootAsync 结束");
             Report.Trail("首屏加载完");

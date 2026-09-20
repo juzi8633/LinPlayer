@@ -18,6 +18,11 @@
   -->
   <Grid Name="RootGrid" RowDefinitions="36,*">
 
+    <!-- 壁纸层(SPEC 11.5)。排在**第一个**子元素 = 画在最底下;跨两行是因为
+         主题可以把侧栏 / 标题栏改成半透明,那时壁纸就该透到那儿去。
+         IsHitTestVisible 在 Wallpaper.Attach 里关掉:背景吃掉一次点击没人查得出来。 -->
+    <Panel Name="WallpaperLayer" Grid.Row="0" Grid.RowSpan="2" />
+
     <!-- ══════ 标题栏 ══════ -->
     <Grid Grid.Row="0" Name="TitleBar" Background="{DynamicResource Panel}"
           ColumnDefinitions="Auto,*,Auto">

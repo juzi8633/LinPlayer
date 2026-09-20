@@ -1206,6 +1206,127 @@ public static class SettingsSections
         });
     }
 
+    // ---------------------------------------------------------------- 主题与壁纸
+
+    /// <summary>插件主题与壁纸(SPEC 11.5~11.6,D69 D441)。主题重启生效,壁纸即时生效。</summary>
+    public static Control ThemeAndWallpaper(CoreClient core)
+    {
+        var hint = Hint();
+        var themes = new ComboBox { MinWidth = 260, MinHeight = 34 };
+        var papers = new ComboBox { MinWidth = 260, MinHeight = 34 };
+        var body = new StackPanel { Spacing = 10 };
+
+        if (FailCard() is { } f) body.Children.Add(f);
+        body.Children.Add(Note("主题换的是整套 token 与组件样式,重启后生效;壁纸切换即时生效。"));
+        body.Children.Add(Field("主题", themes));
+        body.Children.Add(Field("壁纸", papers));
+        body.Children.Add(LookRow("模糊度", Look.Blur, v => Look.Set(v, Look.Dim)));
+        body.Children.Add(LookRow("压暗", Look.Dim, v => Look.Set(Look.Blur, v)));
+        body.Children.Add(hint);
+
+        _ = FillThemePickers(core, themes, papers, hint);
+        return Group("主题与壁纸", body);
+    }
+
+    /// <summary>上次启动主题没加载起来的话,原因摆在这儿并且能复制 —— D372 那条路的出口。</summary>
+    private static Control? FailCard()
+    {
+        if (PluginTheme.FailedName.Length == 0) return null;
+        var copy = new Button { Classes = { "ghost" }, Content = "复制错误" };
+        copy.Click += async (_, _) =>
+        {
+            if (TopLevel.GetTopLevel(copy)?.Clipboard is { } cb) await cb.SetTextAsync(PluginTheme.FailedDetail);
+        };
+        return new Border
+        {
+            CornerRadius = new CornerRadius(10), Padding = new Thickness(14, 10),
+            Background = Tok.Of("DangerBg"), BorderBrush = Tok.Of("Danger"), BorderThickness = new Thickness(1),
+            Child = new StackPanel
+            {
+                Spacing = 6,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = $"「{PluginTheme.FailedName}」加载失败,这次用的是官方主题。",
+                        TextWrapping = TextWrapping.Wrap, Foreground = Tok.Of("DangerInk"),
+                    },
+                    new SelectableTextBlock
+                    {
+                        Text = PluginTheme.FailedDetail, TextWrapping = TextWrapping.Wrap,
+                        Foreground = Tok.Of("DangerInk"), FontSize = 12,
+                    },
+                    Row(copy),
+                },
+            },
+        };
+    }
+
+    /// <summary>一条 0~1 的滑杆。模糊度与压暗都是对任何壁纸生效的官方设置(SPEC 11.5)。</summary>
+    private static Control LookRow(string label, double now, Action<double> set)
+    {
+        var s = new Slider { Width = 260, Minimum = 0, Maximum = 1, Value = now };
+        var pct = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Width = 42 };
+        void Show() => pct.Text = $"{s.Value * 100:0}%";
+        Show();
+        // 拖的过程中就跟着变:壁纸模糊到什么程度只能看着调,松手才生效的话等于盲调
+        s.PropertyChanged += (_, e) => { if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) { Show(); set(s.Value); } };
+        return Field(label, Row(s, pct));
+    }
+
+    /// <summary>两个下拉的内容都是运行期才知道的(装了哪些插件)。</summary>
+    private static async Task FillThemePickers(CoreClient core, ComboBox themes, ComboBox papers, TextBlock hint)
+    {
+        JsonElement ts, ws, aw;
+        try
+        {
+            ts = await core.PluginThemes(new { platform = "desktop" });
+            ws = await core.PluginWallpapers(new { });
+            aw = await core.PluginActiveWallpaper(new { });
+        }
+        catch (Exception e) { Dispatcher.UIThread.Post(() => hint.Text = LibraryPage.Advice(e)); return; }
+
+        // 第一项恒是「官方」:没有它用户就没有退回去的路
+        var tl = new List<(string Id, string Name)> { ("", "官方主题") };
+        if (ts.ValueKind == JsonValueKind.Array)
+            foreach (var t in ts.EnumerateArray()) tl.Add((Str(t, "plugin_id"), Str(t, "name")));
+        var wl = new List<(string Id, string Name)> { ("", "不用壁纸") };
+        if (ws.ValueKind == JsonValueKind.Array)
+            foreach (var w in ws.EnumerateArray())
+                wl.Add((Str(w, "plugin_id"), Str(w, "title") is { Length: > 0 } t2 ? t2 : Str(w, "name")));
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            themes.ItemsSource = tl.Select(x => x.Name).ToList();
+            themes.SelectedIndex = Math.Max(0, tl.FindIndex(x => x.Id == PluginTheme.ActiveId));
+            papers.ItemsSource = wl.Select(x => x.Name).ToList();
+            papers.SelectedIndex = Math.Max(0, wl.FindIndex(x => x.Id == Str(aw, "id")));
+
+            themes.SelectionChanged += async (_, _) =>
+            {
+                var id = tl[Math.Max(0, themes.SelectedIndex)].Id;
+                try
+                {
+                    await core.PluginSetActiveTheme(new { id });
+                    hint.Text = "重启后生效。";
+                }
+                catch (Exception e) { hint.Text = LibraryPage.Advice(e); }
+            };
+            papers.SelectionChanged += async (_, _) =>
+            {
+                var id = wl[Math.Max(0, papers.SelectedIndex)].Id;
+                try
+                {
+                    await core.PluginSetActiveWallpaper(new { id });
+                    // 换人了先清空:新插件下一次 wallpaper.set 之前,留着的还是上一家那张
+                    Wallpaper.Clear();
+                    hint.Text = id.Length == 0 ? "已关掉壁纸。" : "已切换,等这个插件送来第一张。";
+                }
+                catch (Exception e) { hint.Text = LibraryPage.Advice(e); }
+            };
+        });
+    }
+
     // ---------------------------------------------------------------- 小工具
 
     private static Control Group(string title, Control body) => new Border

@@ -594,6 +594,7 @@ public sealed class SettingsPage : PageBase
 
                     // ── 常规:界面长什么样、首页放什么、怎么更新、怎么操作 ──
                     Add(gGeneral, SettingsSections.UiFontSection(core, p));
+                    Add(gGeneral, SettingsSections.ThemeAndWallpaper(core));
                     if (home is { } hm) Add(gGeneral, SettingsSections.Home(core, hm));
                     if (update is { } up) Add(gGeneral, SettingsSections.Update(core, up));
                     Add(gGeneral, SettingsSections.Feedback(core));

@@ -229,6 +229,10 @@ internal static class Program
         try
         {
             Core = new CoreClient(dll, dataDir, Version);
+            /* 壁纸的订阅紧挨着核心层起来那一句。`load: startup` 的壁纸插件在 lp_init 里
+               就 set 完了,而事件不重发、内容也不落盘 —— 挪到窗口里再订就永远收不到
+               第一张(表现是「装了壁纸插件没反应」,一声不吭)。 */
+            Views.Wallpaper.Listen(Core);
             Views.Report.Trail("核心层就绪");
             Views.Report.SendPendingCrashEarly(Core);
         }

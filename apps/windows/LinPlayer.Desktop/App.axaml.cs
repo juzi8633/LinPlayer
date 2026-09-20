@@ -25,6 +25,10 @@ public partial class App : Application
            表现是「设了要重启两次才生效」。 */
         LinPlayer.Desktop.Core.UiFont.ApplyAtStartup(Program.Core);
 
+        // 插件主题同理,而且要**排在官方样式之后**才盖得住(SPEC 11.3)。
+        // 失败了它自己回退官方并报回核心层,这里不用兜
+        Views.PluginTheme.ApplyAtStartup(Program.Core);
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.MainWindow = new MainWindow();
