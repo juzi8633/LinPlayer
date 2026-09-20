@@ -259,6 +259,10 @@ private fun AppearancePanel() {
             else "已换成 " + font.substringAfterLast('/'),
             onClick = { pick.launch(arrayOf("*/*")) },
         )
+        Hairline()
+        ThemePickerCell()
+        Hairline()
+        WallpaperPickerCell()
         // ★ 没换过就不画「恢复默认」—— 一个点了什么都不会发生的按钮
         if (font.isNotBlank()) {
             Hairline()

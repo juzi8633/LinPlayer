@@ -74,7 +74,7 @@
 | D62 | WebView 能力对所有插件开放(不只 TVBox):打开页面抓视频地址、在页面里执行 JS 取值、过盾后拿 Cook… | 05 | plugin-sdk.d.ts |
 | D63 | 插件网络请求的 UA:插件自己设;没设时宿主给一个常见浏览器 UA(不发 UA 会吃 403)。插件请求是 UA 三道里… | 05 | plugin-sdk.d.ts |
 | D64 | 插件可注册快捷键/遥控器按键,可以覆盖官方按键。插件按键与官方按键一起列在快捷键设置里,用户可改可清空;两个插件抢同一键… | 01 06 12 14 | manifest.schema.json plugin-sdk.d.ts |
-| D65 | 播放页覆盖层默认点击穿透(只显示);声明"可交互"时才拦截点击与遥控器焦点 | 06 09 | manifest.schema.json |
+| D65 | 播放页覆盖层默认点击穿透(只显示);声明"可交互"时才拦截点击与遥控器焦点 | 06 09 | examples/player-panel/src/main.tsx manifest.schema.json |
 | D66 | 弹幕:插件可提供弹幕源、代发弹幕;不能替换官方弹幕渲染,也不做弹幕过滤插件(过滤宿主自己就有) | 01 10 | plugin-sdk.d.ts |
 | D67 | 插件接管播放控制栏时,官方把字幕/音轨/倍速/画面增强等菜单做成可调用的子面板,插件 OSD 放个按钮即可打开;没放的用… | 09 | plugin-sdk.d.ts |
 | D68 | 第三方站点登录(如代发弹幕要登 B 站)插件自己做:用 WebView(D62)或自绘表单,凭据存密钥区;官方不做统一账… | 10 | plugin-sdk.d.ts |
@@ -164,7 +164,7 @@
 | D152 | 旧插件系统现在就删(core/plugin、core/plugincmd、core/source/pluginsrc、W… | 02 14 | —(宿主架构内部实现) |
 | D153 | 数据源开放键沿用 plugin:<插件id>/<源id> 形状,插件 id 换成 作者/名字(如 plugin:alic… | 01 02 08 | plugin-sdk.d.ts |
 | D154 | 深链四种:linplayer://plugin/install?url=(打开安装确认,D117)、linplayer:… | 06 12 | manifest.schema.json plugin-sdk.d.ts |
-| D155 | 详情页注入位:标题下方、播放按钮旁、简介下方、页尾;此外插件可自定义插入位置:官方页每个区块有稳定锚点名(如 detai… | 01 06 | manifest.schema.json plugin-sdk.d.ts |
+| D155 | 详情页注入位:标题下方、播放按钮旁、简介下方、页尾;此外插件可自定义插入位置:官方页每个区块有稳定锚点名(如 detai… | 01 06 | examples/detail-anchor/src/main.tsx manifest.schema.json plugin-sdk.d.ts |
 | D156 | 首页栏目:官方栏目与插件栏目在设置里一个列表,用户拖动排序、可隐藏;新装插件的栏目默认追加到末尾 | 06 | manifest.schema.json |
 | D157 | 右键/更多菜单可注入到:影片/剧集卡片、单集、播放页更多菜单、服务器/源列表项 | 06 | manifest.schema.json plugin-sdk.d.ts |
 | D158 | 侧栏入口可排序/隐藏/固定,插件入口超过 2 个的默认收进「更多」;用户可关掉收纳,全部平铺滚动 | 06 20 | manifest.schema.json |
@@ -288,14 +288,14 @@
 | D276 | <Player> 所在页被返回或跳走时停播并记住进度,与离开官方播放页一致;不做悬浮小窗 | 07 | plugin-sdk.d.ts |
 | D277 | 插件可注册导航拦截器:看到目标页名 + 参数,可放行或改跳(如「打开动漫详情改跳番剧页」)。比整页接管(D29)更细 | 01 06 | manifest.schema.json plugin-sdk.d.ts |
 | D278 | 插件可注册列表变换钩子:官方列表(首页各栏、媒体库、搜索结果……)渲染前过钩子,可增删改、重排 | 01 02 06 | manifest.schema.json plugin-sdk.d.ts |
-| D279 | 插件可放全局悬浮层:盖在所有页面上方(含播放页),默认点击穿透,声明可交互才拦截点击与焦点(同 D65) | 06 09 | manifest.schema.json plugin-sdk.d.ts |
+| D279 | 插件可放全局悬浮层:盖在所有页面上方(含播放页),默认点击穿透,声明可交互才拦截点击与焦点(同 D65) | 06 09 | examples/player-panel/src/main.tsx manifest.schema.json plugin-sdk.d.ts |
 | D280 | 多个导航拦截器/列表变换钩子的顺序由用户在设置里拖动排序(与 D76 同一种列表),默认按安装顺序。拦截器:第一个改跳的… | 01 06 | plugin-sdk.d.ts |
 | D281 | 钩子/拦截器出错或超过 300ms 就跳过,当它不存在,原数据/原路由继续;计入 D53 连续报错自动禁用。写坏一个钩子… | 01 02 06 20 | plugin-sdk.d.ts |
 | D282 | 列表变换钩子可插入别处的条目(如往 Emby「最新」混数据源的片):必须是统一结构(D254)并带来源,卡片显示来源角标… | 06 | plugin-sdk.d.ts |
 | D283 | 多个全局悬浮层都显示,按安装顺序叠(后装的在上);用户可在插件详情里单独关掉某插件的悬浮层 | 06 14 | manifest.schema.json |
 | D284 | 插件 KV API 同步:storage.get(k) 直接返回;写入内存立即生效,宿主后台批量落盘。钩子(D281)里… | 05 13 | plugin-sdk.d.ts |
 | D285 | 没开开发者模式时,插件 console.* 每插件在内存保留最近 500 条(不写磁盘);「复制错误详情」(D172)连… | 04 20 | plugin-sdk.d.ts |
-| D286 | 官方设置各页也有稳定锚点(复用 D155 机制),插件可往里插一节,标题标明来自哪个插件;插件自己的设置仍在插件详情(D… | 06 | manifest.schema.json plugin-sdk.d.ts |
+| D286 | 官方设置各页也有稳定锚点(复用 D155 机制),插件可往里插一节,标题标明来自哪个插件;插件自己的设置仍在插件详情(D… | 06 | examples/settings-section/src/main.ts manifest.schema.json plugin-sdk.d.ts |
 | D287 | 服务器信息只给 id + 用户起的显示名 + 类型(id 跨设备稳定:Emby 用 ServerId + UserId … | 03 05 | plugin-sdk.d.ts |
 | D288 | servers.current() 返回当前服务器 id + 类型,配合 D94 的切服事件;拦截器/钩子可按当前服务器… | 05 | plugin-sdk.d.ts |
 | D289 | 插到官方设置页的一节(D286)两种写法都行:manifest 声明设置项(D267,零代码、样式与官方一致),或给一个… | 06 | manifest.schema.json |
@@ -309,7 +309,7 @@
 | D297 | OSD 贡献点声明适用范围:点播 / 直播 / 某个来源 / 自己的 <Player>;每种场景各是一个接管位,用户分别… | 06 09 17 | manifest.schema.json plugin-sdk.d.ts |
 | D298 | 全局只有一条着色器链:官方「画面增强」、插件 A、插件 B 多选一;开一个时提示「开启后将关闭 xx」,用户确认才切 | 06 09 | manifest.schema.json plugin-sdk.d.ts |
 | D299 | 插件改的 mpv 属性一直生效到插件停用,停用时按 D33 还原;不做按集自动还原 | 09 | plugin-sdk.d.ts |
-| D300 | 播放页侧边面板(选集/字幕/音轨那栏)是注入位:插件可加标签页(图标 + 名字 + JSX 内容),如评论、剧情说明、节… | 06 09 | manifest.schema.json plugin-sdk.d.ts |
+| D300 | 播放页侧边面板(选集/字幕/音轨那栏)是注入位:插件可加标签页(图标 + 名字 + JSX 内容),如评论、剧情说明、节… | 06 09 | examples/player-panel/src/main.tsx manifest.schema.json plugin-sdk.d.ts |
 | D301 | 同一 mpv 属性被多方改(插件之间、插件与用户设置)时后写生效;宿主只记「谁改过什么、改之前是多少」,开发者模式可看到… | 09 | plugin-sdk.d.ts |
 | D302 | 插件停用时,它改过的每个属性还原到它改之前的值,不管之后有没有被别人改过(已知:可能冲掉用户后来的手动调整) | 03 09 | plugin-sdk.d.ts |
 | D303 | 插件首页栏目两种写法:返回条目列表(统一结构,官方画成与「最新」一样的海报行,主题自动跟随),或给一个 JSX 区块自己… | 06 | manifest.schema.json plugin-sdk.d.ts |
@@ -450,8 +450,8 @@
 | D438 | 内存看门狗(D141)销毁插件运行时时 Toast 告知「xx 插件内存占用过高,已暂停」;下次用到自动重建,带界面的区… | 02 | —(宿主架构内部实现) |
 | D439 | 启动即加载的插件并行加载,首屏不等;例外:接管首页的插件首页等它(先显示骨架屏 D271),超 3 秒本次回退官方首页 | 04 20 | —(宿主生命周期行为) |
 | D440 | TVBox 字段取舍:changeable 忽略(只看 searchable,D235);style 忽略(海报比例由插… | 17 | —(官方插件内部实现) |
-| D441 | 壁纸是独立贡献点(接管位),可叠在任意主题上:主题自带壁纸(D212)是默认,壁纸插件可覆盖;切换壁纸不用重启(主题才要… | 04 05 06 11 | manifest.schema.json plugin-sdk.d.ts theme-json.schema.json |
-| D442 | 壁纸插件能力:动态切换(按时间/每天/随当前页面或正在看的片变)、在线壁纸源、Canvas/着色器程序生成的动态壁纸、视… | 05 11 18 | plugin-sdk.d.ts |
+| D441 | 壁纸是独立贡献点(接管位),可叠在任意主题上:主题自带壁纸(D212)是默认,壁纸插件可覆盖;切换壁纸不用重启(主题才要… | 04 05 06 11 | examples/wallpaper-dynamic/manifest.json examples/wallpaper-dynamic/src/main.ts manifest.schema.json plugin-sdk.d.ts theme-json.schema.json |
+| D442 | 壁纸插件能力:动态切换(按时间/每天/随当前页面或正在看的片变)、在线壁纸源、Canvas/着色器程序生成的动态壁纸、视… | 05 11 18 | examples/wallpaper-dynamic/manifest.json examples/wallpaper-dynamic/src/main.ts plugin-sdk.d.ts |
 | D443 | 视频壁纸:进播放页 / 应用到后台 / 系统省电时暂停;低分辨率播放,不占播放用的 mpv 实例。各端视频壁纸的实现方式… | 11 | plugin-sdk.d.ts |
 | D444 | 不开放相机扫码、语音输入、振动、独立音频播放这类设备能力 | 01 12 | plugin-sdk.d.ts |
 | D445 | 官方组件带无障碍属性 a11yLabel,映射到 Avalonia AutomationProperties / Com… | 07 | plugin-sdk.d.ts |
@@ -572,5 +572,5 @@
 | D560 | 推翻 D375:不做「下载 GeckoView 动态加载」。GeckoView 主体是原生 libxul.so + 一整… | 05 19 | —(运行时内部行为) |
 | D561 | D268 的前提作废:桌面视频不是独立子窗口(那是已删除的 Rust + Tauri 栈),现在是视觉树里的 OpenG… | 07 11 19 | —(壳/渲染器行为) |
 | D562 | <ProgressBar> 补一个可选的 value(0~1):不给就绑当前播放进度(D161 原意,原生直接读 mpv… | 07 | —(壳/渲染器行为) |
-| D563 | 插件要能收播放器按键:加 player.onKey(cb),回调回 true = 这一下我接走了。没有它的话 SPEC … | 09 | plugin-sdk.d.ts |
+| D563 | 插件要能收播放器按键:加 player.onKey(cb),回调回 true = 这一下我接走了。没有它的话 SPEC … | 09 | examples/player-panel/src/main.tsx plugin-sdk.d.ts |
 | D564 | D443 的 spike 出结论:视频壁纸安卓做、桌面 2.0.0 不做。安卓用已经在依赖里的 ExoPlayer(和 … | 11 19 | —(主题加载与宿主设置) |

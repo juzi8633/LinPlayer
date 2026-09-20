@@ -132,6 +132,8 @@ android {
 
     testOptions.unitTests {
         isIncludeAndroidResources = true
+        // 纯逻辑测试会路过 Logs.w;不给默认值的话 android.util.Log 直接抛「not mocked」
+        isReturnDefaultValues = true
         // ☠ 不加这三个参数,Robolectric 在 SDK 36 + JDK 21 上直接起不来
         //   (Failed to interact with raw FileDescriptor internals),而 Roborazzi 的 README 里没写
         all {

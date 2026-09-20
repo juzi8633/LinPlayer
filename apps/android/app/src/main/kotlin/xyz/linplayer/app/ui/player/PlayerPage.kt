@@ -197,6 +197,14 @@ fun PlayerPage(nav: NavController, entry: NavBackStackEntry) {
     val activity = ctx as? Activity
     val portrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
 
+    /* 壁纸的三个暂停条件之一(D443)。取**页面在不在**而不是插件的
+       `player.start` / `player.end`:那两条事件只在核心层的插件运行时里发,
+       过不了 FFI;而 ExoPlayer 那一路连 `player.status` 都不发。 */
+    DisposableEffect(Unit) {
+        xyz.linplayer.app.ui.plugin.WallpaperGate.set(xyz.linplayer.app.ui.plugin.WallpaperGate.PLAYER, true)
+        onDispose { xyz.linplayer.app.ui.plugin.WallpaperGate.set(xyz.linplayer.app.ui.plugin.WallpaperGate.PLAYER, false) }
+    }
+
     var position by remember { mutableStateOf(0.0) }
     var duration by remember { mutableStateOf(0.0) }
     var paused by remember { mutableStateOf(false) }

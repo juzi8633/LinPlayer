@@ -78,7 +78,10 @@ fun PhoneRoot(app: AppState) {
         val loggedIn by app.loggedIn.collectAsStateWithLifecycle()
         LaunchedEffect(Unit) { app.boot() }
 
-        Box(Modifier.fillMaxSize().background(Lp.colors.bg)) {
+        Box(Modifier.fillMaxSize().background(
+            xyz.linplayer.app.ui.plugin.pageBg(Lp.colors.bg))) {
+            // 壁纸垫在最底下(SPEC 11.5):它在内容之前组合,所以永远画在内容下面
+            xyz.linplayer.app.ui.plugin.WallpaperLayer()
             // 草稿画廊:`am start ... -e lp_page 'drafts:<n>'`。
             // ★ 放在登录判定**之前** —— 草稿不连网,不该被「还没登录」挡住
             val draft = MainActivity.SelfCheck.page?.takeIf { it.startsWith("drafts") }
@@ -93,6 +96,7 @@ fun PhoneRoot(app: AppState) {
             }
             xyz.linplayer.app.ui.plugin.PhonePluginDialog()
             ToastHost()
+            xyz.linplayer.app.ui.theme.ThemeFailedToast()
         }
     }
 }

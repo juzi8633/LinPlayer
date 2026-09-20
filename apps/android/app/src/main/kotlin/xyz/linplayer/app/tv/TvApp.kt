@@ -161,11 +161,15 @@ fun TvFrame(app: AppState, config: ViewConfiguration = LocalViewConfiguration.cu
         xyz.linplayer.app.ui.plugin.LocalPluginTv provides true,
     ) {
         MaterialTheme(colorScheme = darkColorScheme(background = TvC.bg, surface = TvC.surface2, onSurface = TvC.fg)) {
-            Box(Modifier.fillMaxSize().background(TvC.bg)) {
+            Box(Modifier.fillMaxSize().background(
+                xyz.linplayer.app.ui.plugin.pageBg(TvC.bg))) {
+                // 壁纸垫在最底下(SPEC 11.5):它在内容之前组合,所以永远画在内容下面
+                xyz.linplayer.app.ui.plugin.WallpaperLayer()
                 content()
                 // 对话框排在 content 后面:它的 BackHandler 组合得更晚,返回键先给它(§3.4)
                 TvPluginDialog()
                 TvToastHost()
+                xyz.linplayer.app.ui.theme.ThemeFailedToast()
             }
         }
     }
@@ -201,7 +205,7 @@ fun TvShell(nav: TvNav, booting: Boolean = false) {
     val top = nav.top
     val rail = top.route.rail
     val railReq = remember { FocusRequester() }
-    Box(Modifier.fillMaxSize().background(TvC.bg)) {
+    Box(Modifier.fillMaxSize().background(xyz.linplayer.app.ui.plugin.pageBg(TvC.bg))) {
         Box(
             Modifier.fillMaxSize().padding(start = if (rail >= 0) TvDim.railW else 0.dp)
                 // 轨上按 → 回内容区:焦点落回离开时的那个元素(§3.1)

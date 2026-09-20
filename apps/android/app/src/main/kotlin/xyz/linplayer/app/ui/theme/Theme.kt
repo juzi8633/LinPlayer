@@ -49,7 +49,9 @@ data class LpColors(
  *   草稿的核心手法是「分层替代描边」—— 卡片靠一层更亮的膜浮起来,
  *   不靠一圈 1px 边框框住。写成不透明色号的话,叠在取色底上就成了一块死灰补丁。
  */
-private val Dark = LpColors(
+/* 主题 token 是 `var`:插件主题在**第一次组合之前**改它一次(重启生效,D69),
+   之后再没人写 —— 做成状态反而要求全站跟着重组,而那一次重组什么也换不了。 */
+internal var DarkColors = LpColors(
     bg = Color(0xFF100E14),
     s1 = Color(0x0EFFFFFF), s2 = Color(0x1AFFFFFF), s3 = Color(0x26FFFFFF),
     line = Color(0x12FFFFFF), line2 = Color(0x24FFFFFF),
@@ -61,7 +63,7 @@ private val Dark = LpColors(
 )
 
 // 浅色:同一套语义翻个面。**琥珀在白底上要压暗**,#F5A524 放浅底上是看不清的
-private val Light = LpColors(
+internal var LightColors = LpColors(
     bg = Color(0xFFFAF7FC),
     s1 = Color(0x0B000000), s2 = Color(0x13000000), s3 = Color(0x1E000000),
     line = Color(0x0F000000), line2 = Color(0x1F000000),
@@ -73,14 +75,21 @@ private val Light = LpColors(
 
 /** 间距刻度。**允许的值只有这些** */
 object Sp {
-    val x0 = 0.dp; val x2 = 2.dp; val x4 = 4.dp; val x6 = 6.dp; val x8 = 8.dp
-    val x10 = 10.dp; val x12 = 12.dp; val x16 = 16.dp; val x20 = 20.dp
-    val x26 = 26.dp; val x34 = 34.dp; val x48 = 48.dp
+    val x0 = 0.dp
+    var x2 = 2.dp; var x4 = 4.dp; var x6 = 6.dp; var x8 = 8.dp
+    var x10 = 10.dp; var x12 = 12.dp; var x16 = 16.dp; var x20 = 20.dp
+    var x26 = 26.dp; var x34 = 34.dp; var x48 = 48.dp
+
+    /** 主题密度(`layout.density`)。整把尺一起缩放,启动时调一次。 */
+    fun scale(k: Float) {
+        x2 *= k; x4 *= k; x6 *= k; x8 *= k; x10 *= k; x12 *= k
+        x16 *= k; x20 *= k; x26 *= k; x34 *= k; x48 *= k
+    }
 }
 
 /** 圆角刻度。8=小件 · 12=卡片 · 18=弹窗面板 · 999=胶囊 */
 object R {
-    val none = 0.dp; val sm = 8.dp; val md = 12.dp; val lg = 18.dp; val pill = 999.dp
+    val none = 0.dp; var sm = 8.dp; var md = 12.dp; val lg = 18.dp; var pill = 999.dp
 }
 
 /** 固定尺寸。超过 48 的偏移不许写字面数字,抽成这里的具名常量 */
@@ -111,7 +120,7 @@ fun heroHeight(): Dp {
     return (h * 0.62f).dp.coerceIn(380.dp, 620.dp)
 }
 
-val LocalLpColors = staticCompositionLocalOf { Dark }
+val LocalLpColors = staticCompositionLocalOf { DarkColors }
 
 /**
  * 动效倍率。跟随系统的「移除动画」设置(UI_MOBILE.md §2.4)。
@@ -161,7 +170,7 @@ fun LpTheme(
     content: @Composable () -> Unit,
 ) {
     val dark = darkOverride ?: isSystemInDarkTheme()
-    val c = if (dark) Dark else Light
+    val c = if (dark) DarkColors else LightColors
     val ctx = LocalContext.current
     val motion = remember(ctx) { animatorScale(ctx) }
 

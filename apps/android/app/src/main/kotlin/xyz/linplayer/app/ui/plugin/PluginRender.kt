@@ -340,7 +340,8 @@ internal val TOKEN_NUMBER_NAMES = listOf(
 )
 
 /** 数值 token(`radius: 'token:radius.card'`,SPEC 7.5 的原例)。刻度见 UI_MOBILE.md §1.3。 */
-internal fun tokenNumber(name: String): Double? = when (name) {
+internal fun tokenNumber(name: String): Double? =
+    xyz.linplayer.app.ui.theme.PluginTheme.number(name) ?: when (name) {
     "radius.small" -> 6.0; "radius.card" -> 10.0; "radius.pill" -> 999.0
     "space.xs" -> 2.0; "space.sm" -> 6.0; "space.md" -> 10.0; "space.lg" -> 14.0; "space.xl" -> 18.0
     "font.size.body" -> 14.0; "font.size.title" -> 18.0; "font.size.h1" -> 26.0

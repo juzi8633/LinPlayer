@@ -78,7 +78,7 @@ fun LpScaffold(
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val c = Lp.colors
-    Box(m.fillMaxSize().background(c.bg)) {
+    Box(m.fillMaxSize().background(xyz.linplayer.app.ui.plugin.pageBg(c.bg))) {
         Column(Modifier.fillMaxSize()) {
             // ★ 没有标题**不等于没有 topbar**:首页就是「无标题但右上角有入口」。
             LpTopBar(title, subtitle, onBack, scrolled, actions)
@@ -103,7 +103,7 @@ fun LpImmersive(
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val c = Lp.colors
-    Box(m.fillMaxSize().background(c.bg)) {
+    Box(m.fillMaxSize().background(xyz.linplayer.app.ui.plugin.pageBg(c.bg))) {
         content(contentInsets())
         Column(Modifier.fillMaxWidth()) {
             Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))

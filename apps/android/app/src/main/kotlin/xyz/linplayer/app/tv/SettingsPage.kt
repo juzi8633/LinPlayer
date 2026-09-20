@@ -42,6 +42,7 @@ import xyz.linplayer.app.data.LocalApp
 import xyz.linplayer.app.data.ToastKind
 import xyz.linplayer.app.data.UiPrefs
 import xyz.linplayer.app.data.arr
+import xyz.linplayer.app.ui.plugin.Wallpaper
 import xyz.linplayer.app.data.bool
 import xyz.linplayer.app.data.dbl
 import xyz.linplayer.app.data.keepState
@@ -105,7 +106,7 @@ fun SettingsPage() {
                 key(cat) {
                     LazyColumn(contentPadding = PaddingValues(bottom = TvSp.x24)) {
                         when (cat) {
-                            0 -> item { GeneralGroup() }
+                            0 -> item { GeneralGroup(overlay) }
                             1 -> item { PlaybackGroup(overlay) }
                             2 -> item { SkipGroup() }
                             3 -> item { SubAudioGroup(overlay) }
@@ -162,7 +163,7 @@ private fun <T> Overlay.pick(title: String, options: List<Pair<String, T>>, curr
 // ---------------------------------------------------------------- 通用
 
 @Composable
-private fun GeneralGroup() {
+private fun GeneralGroup(overlay: Overlay) {
     val app = LocalApp.current
     val scope = rememberCoroutineScope()
     var cross by remember { mutableStateOf<Boolean?>(null) }
@@ -185,10 +186,78 @@ private fun GeneralGroup() {
             })
             if (on) CompanionBlock(140.dp, horizontal = true)
         } ?: SkelRows(1)
+        Group("外观")
+        AppearanceRows(overlay)
         Group("插件")
         val nav = LocalNav.current
         PanelItem("插件", sub = "启停、从市场安装;重启应用后生效", chevron = true, modifier = Modifier.memo("set.plugins"), onClick = { nav.push(TvRoute.Plugins) })
         PanelItem("扩展组件", sub = "补帧、jar 运行时这类大件,插件用到时才下", chevron = true, modifier = Modifier.memo("set.ext"), onClick = { nav.push(TvRoute.Extensions) })
+    }
+}
+
+/**
+ * 主题与壁纸(SPEC 11)。**主题重启生效、壁纸即时生效** —— 两条提示不一样,
+ * 写反的表现是用户在那儿等一个永远不会当场发生的变化。
+ */
+@Composable
+private fun AppearanceRows(overlay: Overlay) {
+    val app = LocalApp.current
+    val scope = rememberCoroutineScope()
+    var themes by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
+    var theme by remember { mutableStateOf("") }
+    var walls by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
+    var wall by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        themes = runCatching { app.call("plugin.themes", args("platform" to "android_tv")) }
+            .getOrNull().let { it as? JsonArray }?.mapNotNull { e -> e.obj() }.orEmpty()
+        theme = runCatching { app.call("plugin.activeTheme", args("platform" to "android_tv")) }
+            .getOrNull().obj().str("plugin_id").orEmpty()
+        walls = runCatching { app.call("plugin.wallpapers") }
+            .getOrNull().let { it as? JsonArray }?.mapNotNull { e -> e.obj() }.orEmpty()
+        wall = runCatching { app.call("plugin.activeWallpaper") }.getOrNull().obj().str("id").orEmpty()
+    }
+    val themeName = themes.firstOrNull { it.str("plugin_id") == theme }.str("name") ?: "官方主题"
+    PanelItem("界面主题", value = themeName, sub = "插件主题;换了重启应用后生效",
+        modifier = Modifier.memo("set.theme"), onClick = {
+            overlay.pick("界面主题", listOf("官方主题" to "") +
+                themes.map { (it.str("name") ?: it.str("plugin_id").orEmpty()) to it.str("plugin_id").orEmpty() }, theme) { v ->
+                scope.launch {
+                    runCatching { app.call("plugin.setActiveTheme", args("id" to v)) }
+                        .onSuccess { theme = v; app.toast("重启后生效", ToastKind.Ok) }.onFailure { app.report(it) }
+                }
+            }
+        })
+    val wallName = walls.firstOrNull { it.str("plugin_id") == wall }.let { it.str("title") ?: it.str("name") } ?: "无"
+    PanelItem("壁纸", value = wallName, sub = "切换立刻生效",
+        modifier = Modifier.memo("set.wall"), onClick = {
+            overlay.pick("壁纸", listOf("无" to "") +
+                walls.map { (it.str("title") ?: it.str("name") ?: "") to it.str("plugin_id").orEmpty() }, wall) { v ->
+                scope.launch {
+                    runCatching {
+                        app.call("plugin.setActiveWallpaper", args("id" to v))
+                        if (v.isEmpty()) Wallpaper.set(null)
+                        else Wallpaper.set(app.call("plugin.initialWallpaper").obj())
+                    }.onSuccess { wall = v }.onFailure { app.report(it) }
+                }
+            }
+        })
+    // 模糊 / 压暗只在真有壁纸时才画:没壁纸时它们调了什么都不会变
+    if (Wallpaper.content != null) WallpaperLookRows()
+}
+
+@Composable
+private fun WallpaperLookRows() {
+    val ctx = LocalContext.current
+    val rows = if (xyz.linplayer.app.ui.plugin.canBlurWallpaper) listOf("壁纸模糊" to true, "壁纸压暗" to false)
+    else listOf("壁纸压暗" to false)
+    rows.forEach { (label, isBlur) ->
+        val v = if (isBlur) UiPrefs.wallBlur.value else UiPrefs.wallDim.value
+        PanelItem(label, value = "${(v * 100).toInt()}%", step = true,
+            modifier = Modifier.memo("set.wall.$isBlur"), onStep = { d ->
+                val next = (v + d * 0.1f).coerceIn(0f, 1f)
+                if (isBlur) UiPrefs.setWall(ctx, next, UiPrefs.wallDim.value)
+                else UiPrefs.setWall(ctx, UiPrefs.wallBlur.value, next)
+            })
     }
 }
 

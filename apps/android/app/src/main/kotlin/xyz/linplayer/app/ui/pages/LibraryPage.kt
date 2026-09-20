@@ -233,7 +233,7 @@ fun LibraryPage(nav: NavController, entry: NavBackStackEntry) {
                         onAction = if (hasFilter) ({ genre = null; minRating = RATINGS[0] }) else null,
                     )
                 } else LazyVerticalGrid(
-                    GridCells.Fixed(3), Modifier.fillMaxSize(), grid,
+                    GridCells.Fixed(posterColumns()), Modifier.fillMaxSize(), grid,
                     contentPadding = PaddingValues(
                         start = Sp.x16, end = Sp.x16, bottom = pad.calculateBottomPadding()),
                     horizontalArrangement = Arrangement.spacedBy(Sp.x10),
@@ -380,7 +380,7 @@ private fun SectionLabel(t: String) =
 @Composable
 private fun GridSkeleton(pad: PaddingValues) {
     LazyVerticalGrid(
-        GridCells.Fixed(3), Modifier.fillMaxSize(),
+        GridCells.Fixed(posterColumns()), Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = Sp.x16, end = Sp.x16, top = Dim.coverLib,
             bottom = pad.calculateBottomPadding()),
         horizontalArrangement = Arrangement.spacedBy(Sp.x10),
@@ -395,3 +395,8 @@ private fun GridSkeleton(pad: PaddingValues) {
         }
     }
 }
+
+/** 海报列数。插件主题的 `layout.posterColumns` 覆盖官方的 3(SPEC 11.4)。 */
+@Composable
+private fun posterColumns(): Int = xyz.linplayer.app.ui.theme.PluginTheme.posterColumns(
+    androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp, 3)

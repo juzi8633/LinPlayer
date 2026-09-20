@@ -138,6 +138,14 @@ fun TvPlayerPage(r: TvRoute.Player) {
     val overlay = rememberOverlay()
     val mem = LocalFocusMemory.current
     val ui = remember { PlayerUi() }
+
+    /* 壁纸的三个暂停条件之一(D443)。取**页面在不在**而不是插件的
+       `player.start` / `player.end`:那两条事件只在核心层的插件运行时里发,
+       过不了 FFI;而 ExoPlayer 那一路连 `player.status` 都不发。 */
+    DisposableEffect(Unit) {
+        xyz.linplayer.app.ui.plugin.WallpaperGate.set(xyz.linplayer.app.ui.plugin.WallpaperGate.PLAYER, true)
+        onDispose { xyz.linplayer.app.ui.plugin.WallpaperGate.set(xyz.linplayer.app.ui.plugin.WallpaperGate.PLAYER, false) }
+    }
     var target by remember { mutableStateOf(r) }
     var attempt by remember { mutableIntStateOf(0) }
     var autoRetried by remember(target) { mutableStateOf(false) }

@@ -78,6 +78,22 @@ object UiPrefs {
     /** `compact` / `detail`。 */
     val tvEpisodeView = mutableStateOf("compact")
 
+    /**
+     * 壁纸的模糊度与压暗(0~1,官方设置项,对任何壁纸生效,SPEC 11.5)。
+     *
+     * ★ 进这里而不是核心层:`prefs.setPrefs` 是白名单式的,没有这两项 ——
+     *   往它塞等于一个「设了核心层不知道」的开关。糊多少也是这台设备的事。
+     */
+    val wallBlur = mutableStateOf(0f)
+    val wallDim = mutableStateOf(0f)
+
+    fun setWall(ctx: Context, blur: Float, dim: Float) {
+        wallBlur.value = blur.coerceIn(0f, 1f)
+        wallDim.value = dim.coerceIn(0f, 1f)
+        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putFloat("wall_blur", wallBlur.value).putFloat("wall_dim", wallDim.value).apply()
+    }
+
     fun setTv(ctx: Context, key: String, v: Any) {
         val e = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
         when (key) {
@@ -103,6 +119,8 @@ object UiPrefs {
         tvHoldSpeed.value = sp.getFloat("tv_hold_speed", 3f).toDouble()
         tvAutoNext.value = sp.getBoolean("tv_auto_next", true)
         tvEpisodeView.value = sp.getString("tv_episode_view", "compact") ?: "compact"
+        wallBlur.value = sp.getFloat("wall_blur", 0f)
+        wallDim.value = sp.getFloat("wall_dim", 0f)
     }
 
     fun setShotFlag(ctx: Context, key: String, v: Boolean) {

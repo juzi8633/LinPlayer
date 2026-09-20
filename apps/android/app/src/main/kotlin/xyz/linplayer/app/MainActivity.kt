@@ -78,9 +78,14 @@ class MainActivity : ComponentActivity() {
 
         xyz.linplayer.app.data.UiPrefs.load(this)
 
+        /* 插件主题(SPEC 11.4)。**必须在 setContent 之前** —— 组合完再改 token,
+           已经画出来的那一屏拿的还是官方值,表现是「换了主题要重启两次」。 */
+        xyz.linplayer.app.ui.theme.PluginTheme.loadAtStartup(app.core, if (tvShape()) "android_tv" else "android")
+
         setContent {
             LpTheme(darkOverride = when (xyz.linplayer.app.data.UiPrefs.theme.value) {
-                "dark" -> true; "light" -> false; else -> null
+                // 只给一种明暗的主题,系统切到另一种也保持它(D70)
+                "dark" -> true; "light" -> false; else -> xyz.linplayer.app.ui.theme.PluginTheme.forcedDark
             }) {
                 // 主题与「减少动态效果」报给插件宿主。挂在主题里面:切深浅色时这里会重组,
                 // 报的就是切完之后那一套(D558)
@@ -92,7 +97,7 @@ class MainActivity : ComponentActivity() {
                         tvDraft.substringAfter(":", "0").toIntOrNull() ?: 0)
                     // `-e lp_page tv`:在不是电视的设备上强制走 TV 形态,给真机自检用
                     // `-e lp_page tv` 或 `tv:<页>`:在不是电视的设备上强制走 TV 形态
-                    isTelevision() || SelfCheck.page?.startsWith("tv") == true -> xyz.linplayer.app.tv.TvRoot(app)
+                    tvShape() -> xyz.linplayer.app.tv.TvRoot(app)
                     else -> PhoneRoot(app)
                 }
             }
@@ -186,6 +191,9 @@ class MainActivity : ComponentActivity() {
             )
         }
     }
+
+    /** 走 TV 形态吗。主题要在 setContent 之前按端加载,所以这一判要能单独拿出来。 */
+    private fun tvShape(): Boolean = isTelevision() || SelfCheck.page?.startsWith("tv") == true
 
     /** 双形态分流(SPEC §8.2):同一个 APK、同一个 Activity。 */
     private fun isTelevision(): Boolean {

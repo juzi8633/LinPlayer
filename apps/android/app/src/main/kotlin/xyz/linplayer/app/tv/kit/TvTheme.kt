@@ -19,25 +19,25 @@ import androidx.compose.ui.unit.sp
 
 /** §2.1。TV 上**没有半透明 surface**:压在封面和视频上的东西要么全透明,要么不透明块。 */
 object TvC {
-    val bg = Color(0xFF100E14)
-    val rail = Color(0xFF0A090D)
-    val surface1 = Color(0xFF18161D)
-    val surface2 = Color(0xFF211E28)
-    val surface3 = Color(0xFF2C2834)
-    val line = Color(0xFF2E2A36)
-    val fg = Color(0xFFF3EFF8)
-    val fg2 = Color(0xFF9B93AE)
-    val fg3 = Color(0xFF6E6880)
-    val focus = fg
-    val onFocus = Color(0xFF16131B)
-    val acc = Color(0xFFF5A524)
-    val accDim = Color(0x2EF5A524)
-    val onAcc = Color(0xFF20160A)
-    val ok = Color(0xFF5CD6A0)
+    var bg = Color(0xFF100E14)
+    var rail = Color(0xFF0A090D)
+    var surface1 = Color(0xFF18161D)
+    var surface2 = Color(0xFF211E28)
+    var surface3 = Color(0xFF2C2834)
+    var line = Color(0xFF2E2A36)
+    var fg = Color(0xFFF3EFF8)
+    var fg2 = Color(0xFF9B93AE)
+    var fg3 = Color(0xFF6E6880)
+    var focus = fg
+    var onFocus = Color(0xFF16131B)
+    var acc = Color(0xFFF5A524)
+    var accDim = Color(0x2EF5A524)
+    var onAcc = Color(0xFF20160A)
+    var ok = Color(0xFF5CD6A0)
     // 与 acc 分开:「可能匹配」黄标和「当前」琥珀字会出现在同一张版本卡上
-    val warn = Color(0xFFF5C04A)
-    val bad = Color(0xFFFF6B5E)
-    val scrim = Color(0x9E100E14)
+    var warn = Color(0xFFF5C04A)
+    var bad = Color(0xFFFF6B5E)
+    var scrim = Color(0x9E100E14)
 }
 
 /** §1.2 字阶两档。控件高度跟着字阶走,封面尺寸不跟。 */
@@ -62,8 +62,14 @@ object TvW {
 
 /** §2.4 间距。只有这些值。 */
 object TvSp {
-    val x2 = 2.dp; val x4 = 4.dp; val x6 = 6.dp; val x8 = 8.dp; val x12 = 12.dp
-    val x16 = 16.dp; val x20 = 20.dp; val x24 = 24.dp; val x32 = 32.dp; val x48 = 48.dp
+    var x2 = 2.dp; var x4 = 4.dp; var x6 = 6.dp; var x8 = 8.dp; var x12 = 12.dp
+    var x16 = 16.dp; var x20 = 20.dp; var x24 = 24.dp; var x32 = 32.dp; var x48 = 48.dp
+
+    /** 主题密度(`layout.density`)。整把尺一起缩放,启动时调一次。 */
+    fun scale(k: Float) {
+        x2 *= k; x4 *= k; x6 *= k; x8 *= k; x12 *= k
+        x16 *= k; x20 *= k; x24 *= k; x32 *= k; x48 *= k
+    }
 }
 
 /** §2.3 圆角。 */
