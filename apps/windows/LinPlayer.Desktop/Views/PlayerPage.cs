@@ -116,6 +116,12 @@ public sealed class PlayerPage : UserControl
     /* 弹幕层。**画在这棵树里,不交给 mpv**(见 DanmakuLayer 的类注释)。
        它排在 _view 之后、_top 之前:压在画面上、被 OSD 压住。 */
     private readonly DanmakuLayer _dm = new();
+    /* 插件覆盖层那一格(SPEC 9.5)。排在 _dm 之后、_top 之前:压在画面与弹幕上,
+       但压不住官方控制条 —— 覆盖层不是 OSD 接管(那是 osd[] 贡献点),
+       盖住控制条等于把暂停和进度条一起弄没了。 */
+    private readonly Panel _overlays = new();
+    /// <summary>侧栏里的插件标签(<c>playerPanels</c>)。进页拉一次,开选集栏时交给它。</summary>
+    private IReadOnlyList<PlayerSurfaceInfo> _pluginPanels = [];
     /// <summary>进度条。 自绘,不是 Slider —— 理由见 <see cref="PlayerBar"/> 的注释。</summary>
     private readonly PlayerBar _bar = new();
     /// <summary>悬停/拖动时浮在进度条上方的时间气泡。</summary>
@@ -855,7 +861,7 @@ public sealed class PlayerPage : UserControl
             Background = Brushes.Black,
             // 气泡排在 _bottom <b>之后</b> —— 它要画在控制条上面,而不是被压在下面
             // 弹幕搜索排在 _bottom 之后:它是「旁边那扇窗」,不该被控制条压住
-            Children = { _view, _dm, _top, _bottom, _lock, _dmPanel, _skip, _bubble },
+            Children = { _view, _dm, _overlays, _top, _bottom, _lock, _dmPanel, _skip, _bubble },
         };
         _root = root;
         /* 一圈发丝边:窗口化时画面四周是黑的,和桌面、别的黑窗口分不出边界,
@@ -888,6 +894,7 @@ public sealed class PlayerPage : UserControl
                原来只有按 F 进全屏才收 —— 不全屏看片时左边一直杵着导航栏,
                而那上面每一个入口点下去都会把正在放的片子扔掉。 */
             Nav.Immersive?.Invoke(true);
+            _ = LoadPluginSurfaces();
             // 播放页底下是控制条和进度条,轻提示压在上面既挡进度条又会被人去点
             Toast.AtTop = true;
         };
@@ -1142,6 +1149,35 @@ public sealed class PlayerPage : UserControl
         catch { /* 拉不到分集不影响正在放的这一集 */ }
     }
 
+    private bool _pluginSurfacesAsked;
+
+    /// <summary>
+    /// 挂插件的覆盖层、记下侧栏页(SPEC 9.5)。
+    ///
+    /// <para>只拉一次:表只随装/停用插件变,而那两件事都要重启。
+    /// 卸载不在这里 —— <see cref="PluginSurface"/> 自己挂在 attach/detach 上,
+    /// 离开播放页时整棵子树一起摘,换片之后不会留着上一场的层。</para>
+    /// </summary>
+    private async Task LoadPluginSurfaces()
+    {
+        if (_pluginSurfacesAsked) return;
+        _pluginSurfacesAsked = true;
+        var overlays = await PlayerSurfaces.Load(_core, "overlay");
+        var panels = await PlayerSurfaces.Load(_core, "panel");
+        Dispatcher.UIThread.Post(() =>
+        {
+            foreach (var s in overlays)
+                if (PlayerSurfaces.Overlay(_core, s) is { } c) _overlays.Children.Add(c);
+            _pluginPanels = panels;
+            // 侧栏里有插件标签,那一栏就得有路进去 —— 电影没有分集表时这颗按钮本来是藏着的
+            if (panels.Count > 0 && !_pickEp.IsVisible)
+            {
+                _pickEp.IsVisible = true;
+                ToolTip.SetTip(_pickEp, "插件面板(E)");
+            }
+        });
+    }
+
     /// <summary>右侧那一栏(选集 + 章节)。开着时它就是这个;关着是 null。</summary>
     private EpisodeDrawer? _drawer;
 
@@ -1153,11 +1189,11 @@ public sealed class PlayerPage : UserControl
         if (_drawer is not null) { CloseDrawer(); return; }
         var chapters = (_chapters.ItemsSource?.Cast<ChapterOption>() ?? [])
             .Select(c => (c.At, c.Label)).ToList();
-        if (_episodes.Count == 0 && chapters.Count == 0) return;
+        if (_episodes.Count == 0 && chapters.Count == 0 && _pluginPanels.Count == 0) return;
         var d = new EpisodeDrawer(_core, Nav.Session?.server ?? "", _episodes, _itemId, chapters,
             e => { CloseDrawer(); PlayEpisode(e); },
             at => _ = SeekTo(at),
-            CloseDrawer);
+            CloseDrawer, _pluginPanels);
         // 出场先摆在屏外,下一帧再给终值 —— 同一帧里设两次,过渡读不到「变过」
         EpisodeDrawer.Slide(d, false);
         d.Transitions = Fade(OsdInMs);

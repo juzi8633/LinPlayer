@@ -29,7 +29,7 @@ internal sealed class EpisodeDrawer : Border
 
     public EpisodeDrawer(CoreClient core, string server, IReadOnlyList<CardItem> episodes, string currentId,
         IReadOnlyList<(double At, string Label)> chapters, Action<CardItem> onPick, Action<double> onChapter,
-        Action onClose)
+        Action onClose, IReadOnlyList<PlayerSurfaceInfo>? panels = null)
     {
         Width = DrawerWidth;
         HorizontalAlignment = HorizontalAlignment.Right;
@@ -48,9 +48,9 @@ internal sealed class EpisodeDrawer : Border
         close.Click += (_, _) => onClose();
 
         var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        void Tab(string text, Func<Control> make)
+        void Tab(object content, Func<Control> make)
         {
-            var b = new Button { Classes = { "chip" }, Content = text, Focusable = false };
+            var b = new Button { Classes = { "chip" }, Content = content, Focusable = false };
             b.Click += (_, _) =>
             {
                 foreach (var t in _tabs) t.Classes.Set("on", t == b);
@@ -63,6 +63,12 @@ internal sealed class EpisodeDrawer : Border
             Tab($"选集 · {episodes.Count}", () => EpisodeList(core, server, episodes, currentId, onPick));
         if (chapters.Count > 0)
             Tab($"章节 · {chapters.Count}", () => ChapterList(chapters, onChapter));
+        foreach (var p in panels ?? [])
+        {
+            // 造一次留着:make 每次点标签都调,不存的话来回切两下就是两次挂载 + 两次插件重渲染
+            Control? made = null;
+            Tab(TabHead(p), () => made ??= new PluginSurface(core, p.Plugin, p.Target, "panel"));
+        }
 
         var head = new Grid
         {
@@ -74,13 +80,26 @@ internal sealed class EpisodeDrawer : Border
         DockPanel.SetDock(head, Dock.Top);
         Child = new DockPanel { Children = { head, _body } };
 
-        if (_tabs.Count > 0)
+        // 点一下第一颗而不是照抄它的内容:抄的那一版写死了「不是选集就是章节」,
+        // 插件侧栏页成了唯一一颗时会去画一张空的章节表
+        if (_tabs.Count > 0) _tabs[0].RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+    }
+
+    /// <summary>插件侧栏页的标签:manifest 给了 <c>icon</c> 就图标 + 名字(D300)。</summary>
+    private static object TabHead(PlayerSurfaceInfo p)
+    {
+        var title = p.Title.Length > 0 ? p.Title : p.Plugin;
+        if (PluginIcon.GlyphOf(p.Icon) is not { } cp) return title;
+        return new StackPanel
         {
-            _tabs[0].Classes.Add("on");
-            _body.Content = episodes.Count > 0
-                ? EpisodeList(core, server, episodes, currentId, onPick)
-                : ChapterList(chapters, onChapter);
-        }
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            Children =
+            {
+                new TextBlock { Text = cp, FontFamily = Glyph.Font, VerticalAlignment = VerticalAlignment.Center },
+                new TextBlock { Text = title, VerticalAlignment = VerticalAlignment.Center },
+            },
+        };
     }
 
     /// <summary>

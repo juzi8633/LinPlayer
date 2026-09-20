@@ -397,7 +397,8 @@ public static class PluginShell
         // 组合键不是遥控器上的键:Ctrl+S 之类一律不问
         if (mods != KeyModifiers.None) return false;
         if (Program.Core is not { } core || PlayerKeyName(key) is not { } name) return false;
-        if (page.GetVisualDescendants().OfType<PluginSurface>().FirstOrDefault(s => s.IsEffectivelyVisible) is not { } top)
+        // 取最后一个而不是第一个:可视树是深度优先,后挂的层画在上面 —— 归属按「谁在最上面」算
+        if (page.GetVisualDescendants().OfType<PluginSurface>().LastOrDefault(s => s.IsEffectivelyVisible) is not { } top)
             return false;
         _ = Ask(core.PluginPlayerKey(new { key = name, plugin = top.Plugin }), "consumed",
             () => page.KeyFallback(key, mods));

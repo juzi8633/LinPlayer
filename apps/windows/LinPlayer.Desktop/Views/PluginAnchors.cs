@@ -221,3 +221,54 @@ internal static class PluginSettingsSections
         });
     }
 }
+
+/// <summary>播放页上的一块插件面儿:覆盖层或侧栏页(<c>plugin.playerSurfaces</c> 的一行)。</summary>
+internal sealed record PlayerSurfaceInfo(string Plugin, string Target, string Title, string Icon, bool Interactive);
+
+/// <summary>
+/// 播放页的两个插件挂载点(SPEC 9.5,D65 D279 D300)。
+///
+/// <para>这张表在核心层一处算好(启用中的插件 + manifest 的 playerOverlays / playerPanels),
+/// 壳只管挂 —— 自己扫 manifest 的话「停用了插件覆盖层还在」这种错只有用户会发现。</para>
+/// </summary>
+internal static class PlayerSurfaces
+{
+    /// <summary><paramref name="kind"/> 传 <c>overlay</c> 或 <c>panel</c>。拉不到返回空表:插件是增量,播放页照放。</summary>
+    public static async Task<List<PlayerSurfaceInfo>> Load(CoreClient core, string kind)
+    {
+        try
+        {
+            return [.. Mi.ArrOf(await core.PluginPlayerSurfaces(new { kind }))
+                .Select(x => new PlayerSurfaceInfo(
+                    Mi.Str(x, "plugin_id"), Mi.Str(x, "id"), Mi.Str(x, "title"), Mi.Str(x, "icon"),
+                    x.TryGetProperty("interactive", out var i) && i.ValueKind == JsonValueKind.True))
+                .Where(s => s.Plugin.Length > 0 && s.Target.Length > 0)];
+        }
+        catch (Exception e)
+        {
+            Log.W("播放页", $"插件{(kind == "panel" ? "侧栏页" : "覆盖层")}表拉不到,这一场不挂:{e.Message}");
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// 一层覆盖层。<b>点击穿透是默认</b>:没声明 <c>interactive</c> 的层既不吃鼠标也不进 Tab 焦点圈,
+    /// 否则双击全屏、拖进度条会被一层看不见的东西吞掉,而用户只会觉得「播放器坏了」。
+    /// </summary>
+    public static Control? Overlay(CoreClient core, PlayerSurfaceInfo s)
+    {
+        try
+        {
+            var v = new PluginSurface(core, s.Plugin, s.Target, "overlay");
+            v.IsHitTestVisible = s.Interactive;
+            if (!s.Interactive)
+                Avalonia.Input.KeyboardNavigation.SetTabNavigation(v, Avalonia.Input.KeyboardNavigationMode.None);
+            return v;
+        }
+        catch (Exception e)
+        {
+            Log.W("播放页", $"{s.Plugin} 的覆盖层 {s.Target} 挂不上,这一层跳过:{e.Message}");
+            return null;
+        }
+    }
+}

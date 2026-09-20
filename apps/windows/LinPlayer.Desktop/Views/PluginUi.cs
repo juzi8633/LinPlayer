@@ -60,8 +60,9 @@ public sealed class PluginSurface : UserControl
         _props = props;
         _since = PendingNavClock ?? System.Diagnostics.Stopwatch.StartNew();
         PendingNavClock = null;
-        // 首帧之前是官方骨架屏(D271):留白比转圈更像「内容马上就来」
-        _host.Child = Skeleton();
+        // 首帧之前是官方骨架屏(D271):留白比转圈更像「内容马上就来」。
+        // 覆盖层例外:它压在正放着的画面上,灰方块在这里不是「马上就来」而是「谁糊了一块」
+        _host.Child = kind == "overlay" ? null : Skeleton();
         Content = _host;
         AttachedToVisualTree += (_, _) => _ = Mount();
         DetachedFromVisualTree += (_, _) => Unmount();
@@ -466,13 +467,18 @@ public sealed class PluginSurface : UserControl
         Margin = new Thickness(0, 0, 0, 10),
     };
 
-    private void ShowError(string message) => _host.Child = new Border
+    private void ShowError(string message)
     {
-        Padding = new Thickness(14, 10),
-        CornerRadius = new CornerRadius(10),
-        Background = Tok.Of("PanelAlt"),
-        Child = new TextBlock { Text = "这一块出错了:" + message, Foreground = Tok.Of("Ink2"), TextWrapping = TextWrapping.Wrap },
-    };
+        // 覆盖层出错只记一笔:片子正放着,在画面中间糊一块错误卡比少一层覆盖更扰人
+        if (_kind == "overlay") { Log.W("插件UI", $"{_plugin}/{_target} 覆盖层出错,这一层不画:{message}"); return; }
+        _host.Child = new Border
+        {
+            Padding = new Thickness(14, 10),
+            CornerRadius = new CornerRadius(10),
+            Background = Tok.Of("PanelAlt"),
+            Child = new TextBlock { Text = "这一块出错了:" + message, Foreground = Tok.Of("Ink2"), TextWrapping = TextWrapping.Wrap },
+        };
+    }
 
     // ---------------------------------------------------------------- 属性
 
