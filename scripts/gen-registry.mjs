@@ -24,9 +24,14 @@ const checkOnly = process.argv.includes('--check')
 
 // 包发到官方仓库的 Releases,index 里的地址指向**官方副本**(SPEC 15.2 第 4 条)——
 // 作者删仓 / 换包都不影响已上架的版本。仓库地址从环境变量来,不写死。
+//
+// 全部插件共用**一个** Release(D572)。一个插件一个 Release 的话,九个插件就是
+// 九条 Release,往后每发一版再加一条,Release 页很快变成一堵墙,而用户在那页上
+// 找的是「应用的新版本」。资产名带版本号,所以历史版本照样各有各的地址(D450)。
 const REPO = process.env.PLUGIN_REPO_SLUG || 'OWNER/REPO'
+const TAG = process.env.PLUGIN_RELEASE_TAG || 'plugins'
 const assetUrl = (name, ver) =>
-  `https://github.com/${REPO}/releases/download/${name}-v${ver}/${name}-${ver}.lpplugin`
+  `https://github.com/${REPO}/releases/download/${TAG}/${name}-${ver}.lpplugin`
 
 /** manifest 的 contributes → 贡献点摘要(D79 D239)。CI 按它自动分类。 */
 function contribKeys(c) {

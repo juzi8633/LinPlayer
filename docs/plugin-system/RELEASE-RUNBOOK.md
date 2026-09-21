@@ -10,7 +10,7 @@
 | 自有公开域名豁免红线 | ✅ 2026-09-21 裁决豁免(D565)。名单在 `scripts/secrets-allow.txt`,口径写进 `AGENTS.md` §3.1 |
 | `lp` 的许可证(D519 原来的卡点) | ✅ 整仓改 AGPL-3.0-or-later(D566)—— 和主仓库同许可证,不再需要版权人另行授权 |
 | 清空重建官方插件仓库(D149) | ✅ 2026-09-21 已推(**保留历史**,一次提交换内容)。Pages 自定义域名与 `SITE_URL` / `PUBLIC_REPO_URL` 变量都配好了,站点已上线 |
-| 官方插件的 .lpplugin 已发 Release | ✅ 2026-09-21 九个全发,`release-plugins.sh` 发完照索引逐条回验下载体积 |
+| 官方插件的 .lpplugin 已发 Release | ✅ 2026-09-21 九个 + drpy 引擎全在 **`plugins` 这一条** Release 里(D572),`release-plugins.sh` 发完照索引逐条回验下载体积 |
 | 官方市场地址 | ✅ 站点托管 `/registry/index.json`(D567),`LP_PLUGIN_MARKET_URL` 已配。**没配这个 = 构建出来的插件商店是空的,而且不报错** |
 | git 历史里的旧泄漏 | ⏸ 红线原文要求「改写历史或删库重建」,破坏性操作,等你决定。现状见 `docs/lessons/red-line-audit.md` |
 
@@ -66,7 +66,11 @@ PLUGIN_REPO_SLUG=... bash scripts/release-plugins.sh        # 演练:列标签�
 PLUGIN_REPO_SLUG=... bash scripts/release-plugins.sh --yes  # 真发
 ```
 
-标签与资产名必须和 `gen-registry.mjs` 的 `assetUrl()` 完全一致 —— 脚本会逐个对,对不上就不发。
+资产名必须和 `gen-registry.mjs` 的 `assetUrl()` 完全一致 —— 脚本会逐个对,对不上就不发。
+全部资产进 `plugins` 这一条 Release(D572),不要再按插件开 tag。
+
+☠ **换索引地址时:先推索引,后删旧 Release**。反过来的话中间那段时间线上索引
+指着已经删掉的资产,用户点下载全是 404。
 
 ## 5. 推
 
