@@ -10,7 +10,10 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const read = (p) => readFileSync(resolve(here, p), 'utf8')
+// 读进来就把 CRLF 归一成 LF:本打包器是**逐字拼接**,而 Windows 上检出的源码
+// 是 CRLF —— 拼出来的产物和 Linux 上一字不差地不同,门禁报的是
+// 「uiruntime.js 落后于 tools/uibundle/src」,而实际上一个字符都没改。
+const read = (p) => readFileSync(resolve(here, p), 'utf8').split('\r\n').join('\n')
 
 const outArg = process.argv.indexOf('--out')
 const out = outArg > 0 ? resolve(process.argv[outArg + 1]) : resolve(here, '../../core/plugin/rt/uiruntime.js')

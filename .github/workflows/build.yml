@@ -361,6 +361,12 @@ jobs:
         shell: bash
         run: python3 scripts/check-android-args.py
 
+      # 反过来的那一半:UI 读的响应字段,核心层必须真的发。
+      # 写完之后一直没接进 CI —— 没人跑的门禁和不存在的门禁是一回事。
+      - name: 响应字段门禁(UI 读的键核心层必须真的发)
+        shell: bash
+        run: python3 scripts/check-android-fields.py
+
       - name: UI 层单测(JVM,不需要设备)
         shell: bash
         run: cd apps/android && ./gradlew --no-daemon testDebugUnitTest

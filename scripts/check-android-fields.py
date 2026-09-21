@@ -214,6 +214,11 @@ LVAL = re.compile(r'(\w+)\s*=\s*[^=\n]{0,120}$')
 ASSIGN_ANY = re.compile(r'(?:^|[^\w.])(\w+)\s*(?:=[^=]|->)')
 ALIAS = re.compile(r'^\s*(?:val|var)\s+(\w+)\s*=\s*(\w+)\s*$', re.M)
 EVENT_BIND = re.compile(r'\b(?:val|var)\s+(\w+)\s*=\s*\w+\.data\b')
+# `e.hit?.let { h ->` —— h 装的是**别人字段里的对象**,不是本函数哪条命令的响应。
+# 不收的话它会被算到本函数里随便哪条命令头上:实测 DiscoverPage 的 `playable`
+# 被算给 emby.rankingCategories,而它来自 core/sync/library.go 的放送表命中。
+FIELD_LAMBDA = re.compile(
+    r'\b\w+(?:\.\w+)+\s*\??\.(?:let|also|forEach|map|mapNotNull)\s*\{\s*(\w+)\s*->')
 
 
 def bindings(src, spans):
@@ -238,6 +243,9 @@ def bindings(src, spans):
             out.setdefault((key[0], m.group(1)), out[key])
     # 事件数据(`val o = ev.data.obj()`)不是任何命令的响应:绑成 None,读取一律不归给命令
     for m in EVENT_BIND.finditer(src):
+        out[(fn_of(src, m.start()), m.group(1))] = None
+    # 同理:从别人的字段 let / forEach 出来的形参
+    for m in FIELD_LAMBDA.finditer(src):
         out[(fn_of(src, m.start()), m.group(1))] = None
     # ☠ 同名变量在一个函数里被赋值不止一次 = 被 lambda 遮蔽过,这条绑定不能信。
     #   实测 `p` 在详情页既是 prefs.getPrefs 的结果,又是 people 那个 lambda 的形参,
