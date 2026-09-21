@@ -155,6 +155,20 @@ fun SearchPage(nav: NavController, entry: NavBackStackEntry) {
                 if (aggregate && route.viewId == null) xyz.linplayer.app.ui.components.LpButton("搜索", { if (q.isNotBlank()) aggRun++ })
             }
 
+            /* 插件的搜索快捷动作(D242)。摆在搜索框下面、结果上面 —— 结果列表本身不动。
+               一条都没有时整行不画,不在搜索框下面留一条空白。 */
+            val actions = xyz.linplayer.app.ui.plugin.rememberSearchActions(q)
+            if (actions.isNotEmpty()) Row(
+                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = Sp.x16, vertical = Sp.x2),
+                horizontalArrangement = Arrangement.spacedBy(Sp.x8),
+            ) {
+                actions.forEach { a ->
+                    xyz.linplayer.app.ui.components.LpButton(a.str("title") ?: "", {
+                        scope.launch { xyz.linplayer.app.ui.plugin.runSearchAction(app, a) }
+                    })
+                }
+            }
+
             val r = result
             when {
                 aggregate && route.viewId == null -> LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {

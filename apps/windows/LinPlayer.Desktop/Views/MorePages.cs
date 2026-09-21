@@ -88,11 +88,44 @@ public sealed class SearchPage : PageBase
         bar.Children.Add(go);
         bar.Children.Add(everywhere);
 
+        /* 插件的搜索快捷动作(SPEC 6.2,D242):「在豆瓣查看」「导入这个订阅」这类。
+           摆在搜索框下面、结果上面 —— 结果列表本身不动,这是 D242 的原话。
+           一条都没有时整行不占高度:空的 StackPanel 会连 Spacing 一起吃掉 14 像素。 */
+        var actions = new WrapPanel { Margin = new Thickness(0, -4, 0, 0), IsVisible = false };
+
         Content = Scrolled(new StackPanel
         {
             Spacing = 14,
-            Children = { H1("搜索"), bar, status, host },
+            Children = { H1("搜索"), bar, actions, status, host },
         });
+
+        async Task LoadActions(string q, int mine)
+        {
+            JsonElement list;
+            try { list = await core.PluginSearchActions(new { q }); }
+            catch (Exception e) { Log.W("搜索", "取插件快捷动作失败,这一次只画官方结果:" + e.Message); return; }
+            if (mine != _seq || list.ValueKind != JsonValueKind.Array) return;
+            actions.Children.Clear();
+            foreach (var it in list.EnumerateArray())
+            {
+                var title = Mi.Str(it, "title");
+                var pid = Mi.Str(it, "plugin_id");
+                var cmd = Mi.Str(it, "command");
+                if (title.Length == 0 || pid.Length == 0 || cmd.Length == 0) continue;
+                var args = it.TryGetProperty("args", out var av) && av.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined)
+                    ? av.Clone() : (JsonElement?)null;
+                var chip = new Button { Classes = { "chip" }, Content = title, Margin = new Thickness(0, 6, 10, 0) };
+                ToolTip.SetTip(chip, $"{title} · 来自插件 {Mi.Str(it, "name")}");
+                chip.Click += async (_, _) =>
+                {
+                    try { await core.PluginRunCommand(new { plugin_id = pid, command = cmd, args }); }
+                    // 插件自己抛的错要原样给用户看:它写的是中文,而且往往是「先填一下账号」这类
+                    catch (Exception e) { Toast.Error(LibraryPage.Advice(e)); }
+                };
+                actions.Children.Add(chip);
+            }
+            actions.IsVisible = actions.Children.Count > 0;
+        }
 
         async Task Run()
         {
@@ -102,12 +135,16 @@ public sealed class SearchPage : PageBase
                 // 清空输入框 = 回到空态,不是「没搜到」。两者不能混。
                 _seq++;
                 status.Text = "";
+                actions.Children.Clear();
+                actions.IsVisible = false;
                 _ = LoadHistory(core, ShowEmpty);
                 return;
             }
 
             var mine = ++_seq;
             status.Text = $"正在搜「{q}」…";
+            // 和官方结果各走各的:插件慢了不该拖住结果,插件挂了也不该让这一页空着
+            _ = LoadActions(q, mine);
             host.Content = Skeleton.Grid(false, 12);
             var all = everywhere.IsChecked == true;
             try

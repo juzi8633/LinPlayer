@@ -177,6 +177,19 @@ fun SearchPage() {
                     ScopeChips(listOf("包括分集"), if (withEps) 0 else -1,
                         itemModifier = { Modifier.memo("search.eps") }, onSelect = { withEps = !withEps })
                 }
+                /* 插件的搜索快捷动作(D242)。摆在范围筛选下面、结果上面 —— 结果列表本身不动。
+                   一条都没有时整行不画:TV 上多一条空行就多一次方向键要按过去的空档。 */
+                val actions = xyz.linplayer.app.ui.plugin.rememberSearchActions(q)
+                if (actions.isNotEmpty()) {
+                    Spacer(Modifier.height(TvSp.x12))
+                    Row(horizontalArrangement = Arrangement.spacedBy(TvSp.x8)) {
+                        actions.forEach { a ->
+                            TvButton(a.str("title") ?: "",
+                                modifier = Modifier.memo("search.act." + a.str("plugin_id") + "." + a.str("command")),
+                                onClick = { scope.launch { xyz.linplayer.app.ui.plugin.runSearchAction(app, a) } })
+                        }
+                    }
+                }
                 Spacer(Modifier.height(TvSp.x12))
                 if (aggregate) AggregateRows(q.trim(), aggQ, aggRows, aggBusy) { h -> open(h) }
                 else SearchResults(q.trim(), result, overlay, { open(it) }, { retry++ })

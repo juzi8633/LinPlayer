@@ -47,7 +47,8 @@ func MissingImpl(m *Manifest, r Runner) []string {
 				ListTransform *json.RawMessage `json:"listTransform"`
 				CardBadge     bool             `json:"cardBadge"`
 			} `json:"hooks"`
-			NextUp bool `json:"nextUp"`
+			NextUp        bool `json:"nextUp"`
+			SearchActions bool `json:"searchActions"`
 
 			// 下面这几种是阶段 ②~⑤ 加的,原来一个都不在表上
 			PlayerOverlays []struct{ ID string } `json:"playerOverlays"`
@@ -120,6 +121,9 @@ func MissingImpl(m *Manifest, r Runner) []string {
 	}
 	if c.NextUp {
 		need("nextUp")
+	}
+	if c.SearchActions {
+		need("searchActions")
 	}
 
 	// 画在别处的那几块:全部是 blocks.<id>

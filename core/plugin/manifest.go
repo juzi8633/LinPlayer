@@ -125,6 +125,8 @@ type Contributes struct {
 	PlayerPanels   []PlayerPanel   `json:"playerPanels"`
 	Sidebar        []SidebarEntry  `json:"sidebar"`
 	HomeSections   []HomeSection   `json:"homeSections"`
+	// SearchActions 搜索页快捷动作(D242):布尔,实现在 definePlugin 的 searchActions 上。
+	SearchActions bool `json:"searchActions"`
 }
 
 // HomeSection 首页上的一栏(SPEC 6.1,D156 D303)。
@@ -403,13 +405,14 @@ var contribPoints = map[string]contribPoint{
 	"theme":            {label: "主题", where: "plugin.themes"},
 	"wallpaper":        {label: "壁纸", where: "plugin.wallpapers"},
 	"dataSource":       {label: "数据源", where: "source.*"},
+	"searchActions":    {label: "搜索建议", where: "plugin.searchActions"},
 	"pageTakeovers":    {label: "接管官方页面", where: "plugin.pageTakeovers"},
 
 	// —— 只接了一半 ——
 	"hooks": {label: "钩子", where: "数据源的列表变换",
 		note: "只有 listTransform 接了;navigate 与 cardBadge 还没有"},
-	"commands": {label: "命令", where: "datasource 的菜单项",
-		note: "只有数据源列表项的菜单会调命令;还没有命令面板,也没有深链调用"},
+	"commands": {label: "命令", where: "plugin.runCommand",
+		note: "只有数据源列表项的菜单和搜索快捷动作会调命令;还没有命令面板,也没有深链调用"},
 	"menus": {label: "菜单项", where: "datasource 的菜单项",
 		note: "只有数据源列表项那一处;条目卡片 / 单集 / 播放页更多还没有"},
 
@@ -421,7 +424,6 @@ var contribPoints = map[string]contribPoint{
 	"settingsPage":     {label: "设置页"},
 	"globalOverlays":   {label: "全局悬浮层"},
 	"virtualLibraries": {label: "虚拟媒体库"},
-	"searchActions":    {label: "搜索建议"},
 	"keybindings":      {label: "快捷键"},
 	"gestures":         {label: "手势"},
 	"remoteButtons":    {label: "遥控按钮"},

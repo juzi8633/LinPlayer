@@ -13,8 +13,8 @@
 
 **这一版宿主真接了哪些(D585)。** `contributes` 的 35 个键里,端到端通了的是
 `pages` `sidebar` `homeSections` `anchors` `settingsSections` `settings`
-`playerOverlays` `playerPanels` `theme` `wallpaper` `dataSource`;
-`pageTakeovers`(D586);
+`playerOverlays` `playerPanels` `theme` `wallpaper` `dataSource`、
+`pageTakeovers`(D586)、`searchActions`(D587);
 `hooks`(只有 `listTransform`)、`commands` / `menus`(只有数据源列表项那一处)接了一半;
 **其余一行都没接**。
 正本是 `core/plugin/contribPoints`,不是本表 —— 本表讲设计,那张表讲这一版的实情,
@@ -53,7 +53,7 @@
 | 全局悬浮层 | `globalOverlays[]` | 都显示,按安装顺序叠;用户可在插件详情单独关;凭据页自动隐藏 | D279 D283 D407 |
 | 播放页侧栏标签 | `playerPanels[]` | 选集/字幕/音轨那栏多一个标签;插件 OSD 也能打开 | D300 |
 | 虚拟媒体库 | `virtualLibraries[]` | 进媒体库列表,带插件角标,可隐藏 | D473 |
-| 搜索建议/快捷动作 | `searchActions`(布尔) | 官方搜索页结果列表之外 | D242 |
+| 搜索建议/快捷动作 | `searchActions`(布尔) | 官方搜索页搜索框下面、结果上面;结果列表本身不动。2 秒不回当这个插件没给(D587) | D242 D587 |
 | 命令 | `commands[]` | 进命令面板;同名都列出并标插件名;可带参数与补全;可声明外部调用 | D243 D492 D520 D521 |
 | 快捷键/遥控键 | `keybindings[]` | 可覆盖官方键;冲突在快捷键设置里选,未选前先装的生效;停用后归还 | D64 |
 | 手机播放页手势 | `gestures[]` | 同快捷键规则 | D194 D457 |

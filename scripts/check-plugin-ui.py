@@ -4,7 +4,7 @@
 判据只有一条,但它是整章里最容易悄悄失守的一条:
 **SDK 放行的东西,壳不许静默忽略。**
 
-查四件事:
+查六件事:
   1. `plugin-sdk.d.ts` 声明的每个组件,桌面与安卓渲染器都要**认得**。
      认不得的走 D319 的占位块 —— 那是给「老宿主 + 新插件」留的,
      不是给「我们自己还没写」留的。两者在截图上长得一模一样,所以只能靠这里分。
@@ -13,10 +13,14 @@
   3. SPEC 7.6 的 transition / animation:要么两端都实现,要么别在 `.d.ts` 里放行。
   4. `.d.ts` 里的 hooks 要进 SDKHooks 名单,挂载那一侧按名单走(D514 的 hooks 那一半)。
   5. 核心层为贡献点开的**取贡献表命令**(`plugin.anchors` / `plugin.sidebar` …),
-     两个壳都得真去要。要不要得到是运行期的事,这里只查**有没有这条调用** ——
-     不调的表现是「插件声明了入口,界面上一个都看不见」,而三边全绿:
-     manifest 合法、lp check 通过、核心层返回正确。2026-09-21 就是这么漏掉
-     `plugin.sidebar` 的:直播插件装上之后没有任何入口,用户报「甚至不知道哪里打开」。
+     **三个壳**(桌面 / 手机 / TV)都得真去要。要不要得到是运行期的事,这里只查
+     **有没有这条调用** —— 不调的表现是「插件声明了入口,界面上一个都看不见」,
+     而三边全绿:manifest 合法、lp check 通过、核心层返回正确。2026-09-21 就是这么漏掉
+     `plugin.sidebar` 的:直播插件装上之后没有任何入口,用户报「甚至不知道哪里打开」;
+     同一天又漏掉 TV 那一端 —— 安卓一棵树里装着两个壳,合成一个数就看不出来。
+  6. `manifest.schema.json` 的每个贡献点,核心层的 `contribPoints` 都要表态:
+     接了(落点是谁)还是没接。漏一个 = 那个键默认被当成已接,而插件声明了不会有
+     任何反应,安装确认里还替它许了一个不会兑现的愿。
 
 用法:python scripts/check-plugin-ui.py
 退出码非 0 = 有一端把某个组件或属性静默降级了。
@@ -197,11 +201,22 @@ def anchor_commands_wired():
     ☠ 安卓一棵树里装着手机和 TV 两个壳。把它们当成一个数、手机调了就算绿,
     TV 上什么都没画也看不出来 —— homeSections 就是这么漏的(2026-09-21)。
     """
-    src = (ROOT / "core/plugin/anchors.go").read_text(encoding="utf-8")
-    cmds = sorted(set(re.findall(r'bus\.Register\("(plugin\.\w+)"', src)))
+    # 哪些命令归这一关管,由**源文件自己声明**:文件里写下面这行标记就算加入。
+    # 写死文件名的话,新开一个文件注册的命令会悄悄漏出这一关(searchActions 差点就是)。
+    mark = "门禁:三端都要调"
+    cmds = set()
+    marked = []
+    for f in (ROOT / "core/plugin").glob("*.go"):
+        text = f.read_text(encoding="utf-8", errors="replace")
+        if mark not in text:
+            continue
+        marked.append(f.name)
+        cmds |= set(re.findall(r'bus\.Register\("(plugin\.[\w.]+)"', text))
+    cmds = sorted(cmds)
     if len(cmds) < 3:
-        fail.append("从 anchors.go 只读到 %d 条取贡献表的命令 —— 那个文件的写法变了,这一关等于没跑" % len(cmds))
-        return
+        fail.append("只从 %s 读到 %d 条取贡献表的命令 —— 标记或写法变了,这一关等于没跑"
+                    % ("/".join(marked) or "(没有带标记的文件)", len(cmds)))
+        return []
 
     def body(root, ext, skip=()):
         # ☠ 注释里提一句命令名不算「调了」—— 刚加这一关时就是这么差点放过桌面端的:
@@ -245,9 +260,10 @@ def anchor_commands_wired():
                         % (name, len(missing), " ".join(missing)))
         else:
             print("  ✓ %s:%d 条贡献表命令都有人调" % (name, len(cmds)))
+    return cmds
 
 
-def contrib_points_classified():
+def contrib_points_classified(tableCmds):
     """schema 里的每个贡献点,核心层都要表明态度:接了(落点是谁)还是没接。
 
     ☠ 漏一个键 = 那个键默认被当成已接 —— 插件声明了不会有任何反应，
@@ -287,7 +303,25 @@ def contrib_points_classified():
         bad.append("%s → %s" % (key, where))
     if bad:
         fail.append("contribPoints 写的落点在核心层根本没注册过这条命令:\n    %s" % "  ".join(bad))
-    if not missing and not extra and not bad:
+    # 第 5 条靠源文件里的标记决定管哪些命令 —— 标记被删掉的话它只会少查几条、照样全绿。
+    # 这里把两关绑起来:contribPoints 写的落点如果是条 plugin.* 命令,它就得在第 5 条的名单里。
+    notTable = {
+        # 不是「取贡献表」,壳各按各的用法调,不要求三端都有
+        "plugin.ui.mount": "挂一块插件 UI,画在哪由各页自己决定",
+        "plugin.setSetting": "插件详情页写设置项",
+        "plugin.themes": "主题选择器",
+        "plugin.wallpapers": "壁纸选择器",
+    }
+    loose = []
+    for key, where in re.findall(r'^	"(\w+)":\s*\{label: "[^"]*", where: "([^"]*)"', table, re.M):
+        if not where.startswith("plugin.") or where in tableCmds or where in notTable:
+            continue
+        loose.append("%s → %s" % (key, where))
+    if loose:
+        fail.append("这几条落点没被第 5 条守着(多半是源文件里的「门禁:三端都要调」标记丢了):\n    %s"
+                    % "  ".join(loose))
+
+    if not missing and not extra and not bad and not loose:
         print("  ✓ 贡献点:%d 个都表了态,写了落点的都真存在" % len(keys))
 
 
@@ -376,8 +410,7 @@ def main():
         print("  ✓ hooks:%d 个都在 SDKHooks 名单里,挂载按名单走" % len(declared))
 
     # 5. 贡献表命令有没有人调
-    anchor_commands_wired()
-    contrib_points_classified()
+    contrib_points_classified(anchor_commands_wired())
 
     if fail:
         print()

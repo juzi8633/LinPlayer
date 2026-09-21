@@ -403,6 +403,8 @@
 | [x] | `plugin.homeSections` | **新增** | `—` | `Vec<HomeSection>` | ✅ | <!-- 首页栏目(D156 D303);kind=items 由宿主画海报行,custom 挂插件的 block -->
 | [x] | `plugin.homeItems` | **新增** | `plugin_id: String, id: String` | `Vec<MediaItem>` | ✅ | <!-- kind=items 那一栏的数据。壳不直接调插件:预算与连错计数都在 Host.Call 里 -->
 | [x] | `plugin.pageTakeovers` | **新增** | `—` | `Vec<PageTakeover>` | ✅ | <!-- 用户选中的整页接管(D15 D29 D586)。壳画官方页之前问一次;以前只能选不能生效 -->
+| [x] | `plugin.searchActions` | **新增** | `q: String` | `Vec<SearchAction>` | ✅ | <!-- 搜索页快捷动作(D242)。并发问,2 秒不回当这个插件没给 -->
+| [x] | `plugin.runCommand` | **新增** | `plugin_id: String, command: String, args: Option<Json>` | `Json` | ✅ | <!-- 快捷动作点了之后跑插件的命令。只列不跑 = 一排点了没反应的按钮 -->
 | [x] | `plugin.backRequest` | **新增** | `plugin: Option<String>` | `{handled: bool}` | ✅ | <!-- 壳按下返回键时问一次:有插件用 nav.onBack 接走就回 true(D85) -->
 | [x] | `plugin.playerKey` | **新增** | `key: String, repeat: Option<bool>, plugin: Option<String>` | `{consumed: bool}` | ✅ | <!-- 播放器按键问一次:插件的 player.onKey 接走就回 true(D563)。TV 直播换台/数字键靠它 -->
 | [x] | `plugin.setCookies` | **新增** | `plugin_id, jar, url, cookies` | `—` | ✅ |
