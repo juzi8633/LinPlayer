@@ -33,15 +33,25 @@ else {
   if (!rows.some((r) => r.hay.includes('wyl'))) fail.push('搜索索引里没有拼音首字母(wyl)');
 }
 
-// 红线:产物里不许有外部主机名。localhost 是构建期没给 SITE_URL 时的占位
-const ALLOW = /^(localhost(:\d+)?|www\.w3\.org)$/;
+/* 红线:产物里不许有**没打算出现**的外部主机名。
+
+   ☠ 第一版把 SITE_URL 与 PUBLIC_REPO_URL 也算成违规 —— 而那两个正是 CI
+     必须注入的东西(站点绝对地址给 RSS 与 og:image,仓库地址给页脚)。
+     于是这条自检在**它唯一要跑的环境里永远红**,而本地不给变量时又永远绿。
+     判据要挡的是「不知不觉混进来的第三方主机」,不是「自己配的那两个」。 */
+const expected = [process.env.SITE_URL, process.env.PUBLIC_REPO_URL]
+  .filter(Boolean)
+  .map((u) => { try { return new URL(u).host } catch { return '' } })
+  .filter(Boolean);
+const ALLOW = /^(localhost(:\d+)?|www\.w3\.org|github\.com)$/;
 for (const f of fs.readdirSync(dist, { recursive: true })) {
   if (!/\.(html|xml|js|css)$/.test(f)) continue;
   const text = fs.readFileSync(path.join(dist, f), 'utf8');
   for (const [, host] of text.matchAll(/https?:\/\/([a-zA-Z0-9.:-]+)/g)) {
-    if (!ALLOW.test(host)) fail.push(`${f} 里有外部主机 ${host}`);
+    if (ALLOW.test(host) || expected.includes(host)) continue;
+    fail.push(`${f} 里有外部主机 ${host}`);
   }
 }
 
 if (fail.length) { console.error('产物自检不通过:\n  ' + [...new Set(fail)].join('\n  ')); process.exit(1); }
-console.log(`产物自检通过:${slugs.length} 个插件 × (中/英详情页 + og) + 4 个 feed,无外部主机名。`);
+console.log(`产物自检通过:${slugs.length} 个插件 × (中/英详情页 + og) + 4 个 feed,无计划外的外部主机名。`);

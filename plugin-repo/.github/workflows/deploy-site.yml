@@ -1,0 +1,64 @@
+name: 构建并部署 Pages
+
+# 插件墙 + 开发者文档(SPEC 15.6)。合并时立刻重建;定时任务另有一条(D240)。
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'registry/index.json'
+      - '.github/workflows/deploy-site.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只跑一个部署;新提交取消进行中的旧的。
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ☠ runner 上没有中文字体。og:image 是构建期用 sharp 把 SVG 转 PNG 的,
+      #   缺字体时中文会渲成一排方框 —— 而构建**不报错**,要等分享出去才有人发现。
+      - name: 装中文字体(og:image 要用)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-cjk
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: 构建
+        working-directory: site
+        # 自定义域名存在 Pages 设置里(D565 裁决之后仓库里写不写都行,
+        # 但**构建期仍然从变量取** —— 换域名时不用改代码)。没配就用相对路径。
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+          PUBLIC_REPO_URL: ${{ vars.PUBLIC_REPO_URL }}
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
