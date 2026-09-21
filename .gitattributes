@@ -1,0 +1,7 @@
+# 这两个是**生成物**,门禁拿 cmp 逐字节和现场重新生成的结果比。
+# 生成器写 LF,而 Windows 上 core.autocrlf=true 会把检出的文件换成 CRLF ——
+# 于是同一份内容在 Windows runner 上每一行都不一样,报的是「产物落后于定义源」,
+# 而实际上一个字符都没改。钉死 LF。
+core/plugin/rt/sdkspec_gen.go  eol=lf
+core/plugin/rt/uiruntime.js    eol=lf
+tools/uibundle/src/props.gen.js eol=lf
