@@ -1,5 +1,12 @@
+# ☠ `packages:` 不能省。pnpm 10+ 允许只写 allowBuilds,而 pnpm 9 见到没有 packages 的
+#   workspace 文件直接报 `packages field missing or empty` —— 本地(pnpm 12)绿、CI 红,
+#   而报错里一个字都没提 workspace 是哪来的。
+#
 # pnpm 10 起构建脚本要显式放行。sharp 用来生成 og:image,esbuild 是 Astro 的打包器。
 # plugin-repo 将来立 workspace 根的时候,这一段挪上去。
+packages:
+  - .
+
 allowBuilds:
   esbuild: true
   sharp: true
