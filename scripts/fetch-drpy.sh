@@ -34,6 +34,21 @@ fi
 
 sha() { sha256sum "$1" | cut -d' ' -f1; }
 
+# 路径里有中文(js/模板.js)。curl 原样发 UTF-8 字节时 raw.githubusercontent 回 404 ——
+# 看起来像「上游没有这个文件」,而它就在那儿。非 ASCII 字节要自己转成 %XX。
+urlenc() {
+  local s="$1" out="" c
+  local LC_ALL=C
+  for (( i = 0; i < ${#s}; i++ )); do
+    c="${s:i:1}"
+    case "$c" in
+      [a-zA-Z0-9.~_/-]) out+="$c" ;;
+      *) out+="$(printf '%%%02X' "'$c")" ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
 bad=0
 for row in "${FILES[@]}"; do
   IFS='|' read -r dst src want <<<"$row"
@@ -47,7 +62,7 @@ for row in "${FILES[@]}"; do
     continue
   fi
   mkdir -p "$(dirname "$f")"
-  curl -fsSL "$base/$src" -o "$f.tmp"
+  curl -fsSL "$base/$(urlenc "$src")" -o "$f.tmp"
   if [ "$(sha "$f.tmp")" != "$want" ]; then
     rm -f "$f.tmp"
     echo "  ✗ $dst 下载到的内容 sha256 对不上(上游换了版本?)"
