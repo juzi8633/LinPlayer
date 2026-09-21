@@ -501,3 +501,39 @@
 | `media` / `oauth` / `emby` / `download` 等命名空间 | 记在 `rt/sdk_contract_test.go` 的账上,每条带「什么时候做」 |
 | 主题 JSON 的 `components` / `motion` / `icons` / `fonts` | 两端都先解释 `tokens` 与 `layout`,其余跳过并记日志 |
 | 官方仓库的开发者文档(Starlight)与真截图 | `plugin-repo/docs/` 还是空的;索引里的 `screenshots` / `icon` **没有编造** |
+
+---
+
+# 发布 2.0.0(2026-09-21)
+
+## 一、已经做掉的,带证据
+
+| 事 | 证据 |
+|---|---|
+| 官方插件仓库重建并上线 | `33be484`(保留历史,一次提交换内容);站点首页中英、详情页、RSS、og 图各 200 |
+| 九个官方插件发了 Release | `release-plugins.sh --yes` 发完**照索引里的地址逐条真下一遍**,九条体积全对得上 |
+| 官方市场地址可用 | `https://<插件站>/registry/index.json` 返回 200 / 9 条 / `minAppVersion` 全是 `2.0.0`;`LP_PLUGIN_MARKET_URL` 已配进主仓库 Secrets |
+| `VERSION` 1.1.0 → 2.0.0 | 线上最高 `1.1.0-build804`,压得过 |
+| 大版本更新说明 | `RELEASE-2.0.0.md` 重写:第一张表就是「原来在哪 / 现在在哪 / 升级后要做什么」,后面紧跟「没有动的」逐条点名 |
+| Trakt / Bangumi 账号连接回桌面与手机 | `ca1801cf`;两端都编过 |
+| `LP_DRPY_BASE` 配进 Secrets | 地址按 sha256 反查确认(六份文件逐个比对,和本机那份**字节一致**) |
+
+## 二、这一轮新加的判据(都反向注入验过会红)
+
+| 判据 | 注入什么 | 红了吗 |
+|---|---|---|
+| `core/plugin/market_official_test.go` | `minAppVersion` 抬到 9.0.0 / `platforms` 改 `ios` / `size` 改 0 | 三次全红 |
+| 插件站 `check-build.mjs` 的市场端点检查 | 删产物里的 `registry/index.json` / 体积改 0 / 少一条 | 三次全红 |
+| 站点 `registry/index.json.ts` | 把真索引挪走 | 构建直接非零退出(不退回示例) |
+| `release-notes.sh` 的大版本说明闸门 | 把 `RELEASE-2.0.0.md` 挪走 | 红 |
+| `gen-icon-font.py --check` 改看字体产物 | 码位从 `LinIcons.codepoints` 里删掉 | 红 |
+| `check-android-args.py` 放宽跟函数规则后 | 核心层改读 `pluginId` | 仍然红 |
+| `release-plugins.sh` 的发后回验 | —— | 当场抓到真 bug(九个资产名全错、九条地址 404) |
+
+## 三、还要你自己来的
+
+| 项 | 为什么 |
+|---|---|
+| **装上预发布点一次「设置 → 插件 → 市场」** | 包里不带任何插件,市场地址是唯一一条路;它漏注入时**不报错**,只是商店空的 |
+| 公开 IPTV 源真机跑一遍(D544)、实际登录跑通 scrobble(D545) | 要你的网络与账号 |
+| git 历史里的旧泄漏 | 红线原文要求「改写历史或删库重建」,破坏性操作 |

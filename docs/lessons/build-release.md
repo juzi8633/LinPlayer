@@ -983,3 +983,56 @@ Sentry 那条另走 `/sentry/hook`。bot token 只在 CF 环境变量里 —— 
   - CF 改环境变量后对**旧部署** Retry 会跑旧代码 —— 当时线上还是第一版 hook.js,签名一律 401。
 - 本地端到端:Node 包一层真 `report.js` + `_middleware.js`,只把 `api.telegram.org` 打桩落盘;
   `LP_SYNC_PROXY_BASE` 指过去打包。`LP_SELFCHECK_CRASH=1` 后台线程真崩,`=ui` 界面线程抛(被兜住)。
+
+## 发 Release 的资产名不能靠 `#`(2026-09-21,九个下载地址全 404)
+
+`gh release upload 路径#名字` 里的 `#` 设的是**显示标签**,不是资产文件名。
+照那样传,九个包全叫 `<名字>.lpplugin`,而索引里的地址找的是 `<名字>-<版本>.lpplugin` ——
+「发过了」而下载 404,脚本九行全是 ✓。
+
+资产名只能靠**文件本身的名字**定,所以先 `cp` 成目标名再传。
+配套:`scripts/release-plugins.sh` 发完照索引里的地址逐条真下一遍对体积。
+脚本自己说「发成功了」不算数。
+
+☠ 回验时 `read -r url want` 要剥掉 `` —— Windows 上 python 吐的是 `
+`,
+不剥的话数一模一样也比不相等,九条全报红。
+
+## 判据要对着产物,不是对着源表(2026-09-21)
+
+两条同一天撞上的,形状完全一样:
+
+- `gen-icon-font.py --check` 原来问「这个码位在 `MAP` 里吗」。往 MAP 补一行但忘了
+  重跑脚本时,判据绿,而 Linux 上那个图标是豆腐块。改成生成时落一份
+  `LinIcons.codepoints`(真正编进字体的码位),判据读它。
+- 插件站的 `check-build.mjs` 原来恒读 `src/data/index.sample.json` 数插件条数,
+  而站点在有真索引时读的是 `registry/index.json` —— 两边一旦不同,判据数的是另一份数据。
+
+## 官方市场地址:漏注入 = 商店是空的,而且不报错(2026-09-21)
+
+安装包里**不带任何插件**(`pack-win.sh` / `pack-android.sh` 都不打包 `.lpplugin`),
+市场地址是拿到插件的唯一一条路。它是编译期注入的
+(`LP_PLUGIN_MARKET_URL` → `core/cmd/sealsecrets` → `core/plugin.officialMarket`),
+没注入时 `OfficialMarketURL()` 返回空串,界面画的是一个空商店 —— 不报错。
+
+地址指到插件仓库 Pages 站的 `/registry/index.json`(站点构建期原样吐出来的那一份)。
+☠ 那个端点在真索引不在时**必须让构建红**:站点为了能脱离 CI 单独构建会退回
+`index.sample.json`,而市场地址一旦拿到示例,上架插件的下载地址全是假的,构建还全绿。
+
+## CI 上才红的四类(2026-09-21,2.0.0 第一次推,三端全红)
+
+| 症状 | 真因 | 判据本身有没有问题 |
+|---|---|---|
+| `UnicodeEncodeError: 'charmap'` | runner 的 stdout 是 cp1252,脚本每行都带中文 | 有 —— 门禁**自己崩掉**,报的错和判据无关。加 `sys.stdout.reconfigure(encoding='utf-8')` |
+| 「没有 pnpm,这一关跑不了」 | 那两关刚从「警告」改成「算红」(修假绿),而 CI 从没装过 pnpm | 没有,补 `pnpm/action-setup` |
+| `plugin.backRequest 传了 plugin,核心层从不读它` | 注册体只有一句 `h().backRequest(ctx, a)`,跟函数的规则只认 `helper(a)` | 有 —— **假红比没有门禁更坏**,它训练人无视门禁 |
+| `U+E70D ... LinIcons 里没有` | 侧栏用了没编进字体的码位,这一关只在 Linux job 跑 | 没有,真的是豆腐块 |
+
+共同点:**本机全绿**。前两条是环境差异,后两条是这一关本机根本不跑
+(`check-android-args` 要手动跑、图标那关只在 `pack-linux.sh` 里)。
+
+## 上游带中文的路径要自己 percent-encode(2026-09-21)
+
+`curl` 原样发 UTF-8 字节时 raw.githubusercontent 回 **404** —— 看起来像
+「上游少了这个文件」,而它就在那儿。`scripts/fetch-drpy.sh` 六份里唯独
+`js/模板.js` 带中文,所以前五份都拉得下来,拉到第六份才断。
