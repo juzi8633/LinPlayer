@@ -17,7 +17,7 @@ import (
   而它们的表现都是「装了没反应」。
 */
 func TestOfficialPlugins每一个都加载得起来(t *testing.T) {
-	want := []string{"tvbox", "devtools", "sync", "subtitle-translate", "rule-editor", "live"}
+	want := []string{"tvbox", "devtools", "sync", "subtitle-translate", "rule-editor", "live", "uhd"}
 	for _, name := range want {
 		t.Run(name, func(t *testing.T) {
 			dir := filepath.Join(repoRoot(t), "plugins", name)

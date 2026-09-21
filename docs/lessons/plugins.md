@@ -200,7 +200,60 @@
 
 ---
 
-### UHD 求片站 / 测速接口实测
+### UHD 站点接口:2026-09-21 复测,旧插件那份**已经不对了**
+
+重写 UHD 助手时拿真站逐个打了一遍。和旧插件(`com.linplayer.uhdnow`)里写的比:
+
+| | 旧插件写的 | 真站现在 |
+|---|---|---|
+| 全部求片 | `POST media-requests/list` | **404**;换成了话题广场 `POST media-requests/topics/list` |
+| 投票 | `POST/DELETE media-requests/{id}/vote` | **整个没了**(前端那个模块里一条 vote 都不剩) |
+| 提交求片 | `{request_type, media_type, tmdb_id, title, content}` | 只有 **4 个字段**,没有 `title` |
+| 流量 | `{used_bytes, limit_bytes}` | 多了 `display_unlimited_traffic`(不限流量档) |
+| 求片类型 | missing / refresh | missing / refresh / **feedback** |
+
+**照旧代码抄一遍就会交出一个「全部求片点开永远空」的插件**,而且不报错 —— 404 的 HTML
+被当成「解析失败」吞掉。逆向官网前端那条路(见下一节)花了十分钟,比抄快。
+
+拿到的完整表(全部实测 200):
+
+```
+POST /api/v1/auth/login                    {username,password} → {token,expires_at}
+GET  /api/v1/traffic/me                    → {used_bytes, limit_bytes, display_unlimited_traffic}
+GET  /api/v1/users/me                      → {name, balance, invite_code}
+POST /api/v1/media-requests/search         {keyword,request_type,page,page_size}
+POST /api/v1/media-requests                {request_type,media_type,tmdb_id,content} → {topic_id}
+POST /api/v1/media-requests/topics/list    {page,page_size} → {list,total}
+POST /api/v1/media-requests/mine/list      同上
+GET  /api/v1/subscriptions/domains         → [{id,name,description,domain,normalized_host}]
+GET  /api/v1/subscriptions/domains/{id}/resolve → {domain}  ← 动态 CDN 节点,别缓存
+POST {节点}/api/v1/speed-test/session      {parent_domain_id,size_mib} → {session_id,report_token}
+GET  {节点}/api/v1/speed-test/download?size_mb=&session_id=
+POST /api/v1/speed-test/report             {session_id,report_token,average_mbps,peak_mbps,
+                                            elapsed_ms,sample_count,server_downloaded_bytes}
+```
+
+几个只有实测才知道的:
+
+- **token 是裸值**,`Authorization: <token>`,不是 Bearer;前端还同时带一个同名 Cookie。
+- **`resolve` 回来的 domain 前面可能带一个空格**(真站上就有一条)。不 `trim()` 的话拼出来
+  的地址是坏的,而表现只是「这条线路测速失败」。
+- **前 300 毫秒 / 1 MiB 是热身**,官网不把它算进平均。算进去的话测出来的数明显偏低。
+- 提交求片的 `content` 留空 → `{ok:false,msg:"参数验证失败"}`。**这条错误路径可以放心测**,
+  它不会在站点上留下垃圾;成功路径会真的建一条求片,而用户自己删不掉,要服主删。
+
+新宿主的 `fetch` 支持 `res.body.getReader()`,所以测速能**流式计字节**,内存恒定,
+而且能驱动真实进度条 —— 旧栈那条「单次请求拿不到实时百分比,只能用不定态进度条」
+的结论**在新栈上不成立了**。
+
+判据:`core/plugin/uhd_plugin_test.go` + 假站 `core/internal/fakeuhd`。
+假站照真站的怪癖来(裸 token、resolve 的空格、说明必填、下载大小必须等于会话大小),
+四处反向注入逐个验过会红。**其中两处第一次没红**:只断言「页面上出现 Mbps」的话,
+服务端因为大小对不上只回 39 字节、插件照样算得出一个数 —— 把判据改成「下到 1 MiB」才有牙。
+
+---
+
+### UHD 求片站 / 测速接口实测(旧栈时期,部分已过时,见上一节)
 
 > 🔒 原文含真实地址/账号等具体值,已替换为占位符。
 > 这些是第三方站点的事实,与插件系统实现无关;UHD 系列插件(流量 / 线路测速 / 求片)

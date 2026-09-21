@@ -12,6 +12,7 @@
 | 字幕翻译 | `linplayer/subtitle-translate` | 全部 | 2.0.0 | D125 D364 |
 | 调试面板 | `linplayer/devtools` | 桌面 | 2.0.0 | D124 D367 |
 | 规则编辑器 | `linplayer/rule-editor` | 全部 | 2.0.0 | D121 D368 |
+| UHD 助手 | `linplayer/uhd` | 全部 | 2.0.0 | D581 |
 | 去广告 | `linplayer/adblock` | 全部 | 之后 | D124 D517 |
 | 豆瓣元数据/评分、在线字幕、B 站弹幕源、官方主题(各端)、壁纸 | — | — | 之后 | D517 |
 
@@ -135,3 +136,22 @@
 - 一个源码编辑器页(语法高亮用 `<WebView>` 里的编辑器或原生多行输入,插件自定)。
 - 「测试」按钮:在自己的子运行时里跑 home / category / detail / play,显示结果或报错栈。drpy 引擎与依赖库**打包进本插件**(与 TVBox 插件同一份源码,打包时各自带上,D17),不去调 TVBox 插件。
 - 「保存为数据源」:`nav.push('server.add', { type: 'linplayer/tvbox:drpy-rule', prefill: { rule } })` 打开官方「添加服务器」页并预填,由 TVBox 插件的「drpy 规则」服务器类型承载(D120)。没装 TVBox 插件时提示去装。
+
+## 17.7 UHD 助手(`linplayer/uhd`)(D581)
+
+给用 UHD 系站点(自带 `/api/v1` 的订阅制媒体站)的用户:**流量 / 求片 / 测速**三合一。
+旧栈是三个各自独立的插件,同一套网站账密要填三遍、存三份;合成一个之后账号只填一次。
+
+- **站点地址、用户名、密码全在插件设置里**,代码里一个都没有(仓库红线)。密码与登录
+  token 走 `secrets`(系统密钥库),不进普通存储。
+- **不声明 `lan`**:它连的是公网站点,不该有翻本机内网的本事。
+- 端点(2026-09-21 在真站上逐个实测,见 `docs/lessons/plugins.md`):
+  `auth/login`(裸 token,不是 Bearer)· `traffic/me`(带「不限流量」标记)·
+  `users/me` · `media-requests/search|topics/list|mine/list` + 创建(说明必填)·
+  `subscriptions/domains` → `/{id}/resolve` → 线路上的 `speed-test/session|download`
+  → 主站 `speed-test/report`。
+- **旧插件里的「全部求片」`media-requests/list` 现在是 404**,站点换成了话题广场
+  `media-requests/topics/list`;投票接口整个没了 —— 所以这一版没有投票。
+- 测速:大小只收 32/64/100 MiB,`download` 的 `size_mb` 必须等于会话的 `size_mib`
+  (对不上服务端只回几十字节,分段下载就是这么废掉的)。**前 300 毫秒 / 1 MiB 算热身不计平均**,
+  否则测出来的数比真实带宽低一截。界面上**只显示线路名,不显示线路地址**。

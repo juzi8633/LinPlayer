@@ -2,7 +2,7 @@
   "$schema": "../packages/sdk/schema/index.schema.json",
   "schema": 1,
   "name": "LinPlayer 官方插件",
-  "updated": "2026-09-21T04:10:14.542Z",
+  "updated": "2026-09-21T05:24:21.120Z",
   "plugins": [
     {
       "id": "linplayer/devtools",
@@ -262,6 +262,32 @@
           "python"
         ]
       }
+    },
+    {
+      "id": "linplayer/uhd",
+      "name": "UHD 助手",
+      "description": "给 UHD 站点的用户用:看剩余流量、在应用里求片 / 追新 / 反馈、给线路测速。站点地址和账号填一次,三块功能共用。账号只存在这个插件自己的密钥区,别的插件读不到。",
+      "author": "linplayer",
+      "repository": "https://github.com/zzzwannasleep/LinPlayer",
+      "official": true,
+      "addedAt": "2026-09-21T05:24:21.119Z",
+      "contributes": [
+        "pages",
+        "settings",
+        "sidebar"
+      ],
+      "categories": [
+        "tool"
+      ],
+      "versions": [
+        {
+          "version": "0.1.0",
+          "url": "https://github.com/zzzwannasleep/LinplayerPluginsRepository/releases/download/plugins/uhd-0.1.0.lpplugin",
+          "size": 22261,
+          "minAppVersion": "2.0.0",
+          "released": "2026-09-21T05:24:21.120Z"
+        }
+      ]
     }
   ]
 }
