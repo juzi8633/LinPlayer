@@ -14,8 +14,9 @@
 **这一版宿主真接了哪些(D585)。** `contributes` 的 35 个键里,端到端通了的是
 `pages` `sidebar` `homeSections` `anchors` `settingsSections` `settings`
 `playerOverlays` `playerPanels` `theme` `wallpaper` `dataSource`;
-`hooks`(只有 `listTransform`)、`commands` / `menus`(只有数据源列表项那一处)、
-`pageTakeovers`(能选,但没有壳会去画插件那一版)接了一半;**其余一行都没接**。
+`pageTakeovers`(D586);
+`hooks`(只有 `listTransform`)、`commands` / `menus`(只有数据源列表项那一处)接了一半;
+**其余一行都没接**。
 正本是 `core/plugin/contribPoints`,不是本表 —— 本表讲设计,那张表讲这一版的实情,
 `check-plugin-ui.py` 第 6 条拿 schema 对账,漏一个键就红。声明了没接的点,
 `lp check` 会当场警告,安装确认里也标「(这一版还不支持)」。
@@ -24,7 +25,7 @@
 
 | 接管位 | manifest 键 | 说明 | 出处 |
 |---|---|---|---|
-| 任意官方页面整页 | `pageTakeovers[]`(`target` = 官方路由名) | 首页、详情页、媒体库、搜索、设置各页、排行榜页…;**插件管理页与凭据页不可接管**;被接管后命令面板里仍能打开官方版 | D29 D75 D320 D407 |
+| 任意官方页面整页 | `pageTakeovers[]`(`target` = 官方路由名) | 首页、详情页、媒体库、搜索、设置各页、排行榜页…;**插件管理页与凭据页不可接管**;想回官方版在插件页「接管位」标签里选「官方」(D586 —— 这一版没有命令面板) | D29 D75 D320 D407 D586 |
 | 被替换/隐藏的锚点区块 | `anchors[]` 中 `mode: replace/hide` | 同一锚点多个插件抢 = 接管位 | D159 |
 | 播放控制栏(OSD) | `osd[]`(`scope`:`vod` / `live` / 某个来源 / `embedded`) | 每个 scope 各是一个接管位 | D14 D297 |
 | 主题 | `theme` | 分端,切换重启生效 | D69 D210 |
@@ -65,8 +66,7 @@
 
 首页栏目的落点(D583):核心层 `plugin.homeSections` 取表、`plugin.homeItems` 取 `kind=items`
 那一栏的数据;桌面画在首页最后,手机同。`kind=items` 由壳画成官方轨道的样子(主题自动跟随),
-`kind=custom` 整块交给插件的 block;TV 同(D584),`custom` 那块必须套 `LocalPluginTv`,
-不套的话插件的按钮不可聚焦、遥控器进不去那一行。**官方首页提前返回时照画** —— 账号不是 Emby 的那一屏
+`kind=custom` 整块交给插件的 block;TV 同(D584)。**官方首页提前返回时照画** —— 账号不是 Emby 的那一屏
 本来就只有一行说明,插件栏目正该在那时候出现。
 
 **贡献点的表,壳必须真去要(D580 D584)。** `core/plugin/anchors.go` 里每条 `plugin.*`

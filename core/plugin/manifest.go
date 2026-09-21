@@ -403,6 +403,7 @@ var contribPoints = map[string]contribPoint{
 	"theme":            {label: "主题", where: "plugin.themes"},
 	"wallpaper":        {label: "壁纸", where: "plugin.wallpapers"},
 	"dataSource":       {label: "数据源", where: "source.*"},
+	"pageTakeovers":    {label: "接管官方页面", where: "plugin.pageTakeovers"},
 
 	// —— 只接了一半 ——
 	"hooks": {label: "钩子", where: "数据源的列表变换",
@@ -411,8 +412,6 @@ var contribPoints = map[string]contribPoint{
 		note: "只有数据源列表项的菜单会调命令;还没有命令面板,也没有深链调用"},
 	"menus": {label: "菜单项", where: "datasource 的菜单项",
 		note: "只有数据源列表项那一处;条目卡片 / 单集 / 播放页更多还没有"},
-	"pageTakeovers": {label: "接管官方页面", where: "plugin.takeovers",
-		note: "插件页的「接管位」标签能列出来也能选,但**选了之后没有任何一个壳会去画插件那一版**"},
 
 	// —— 一行都没接 ——
 	"osd":              {label: "播放控制栏"},

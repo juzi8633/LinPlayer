@@ -323,6 +323,7 @@ object LinPlayerCommandNames {
         "plugin.sidebar",
         "plugin.homeSections",
         "plugin.homeItems",
+        "plugin.pageTakeovers",
         "plugin.backRequest",
         "plugin.playerKey",
         "plugin.setCookies",
@@ -839,7 +840,7 @@ suspend fun LinPlayerCommands.syncCalendarLibrary(args: Map<String, Any?>? = nul
 suspend fun LinPlayerCommands.syncCalendarDue(args: Map<String, Any?>? = null): JsonElement =
     call("sync.calendarDue", args)
 
-// ---- 插件 · plugin.* (58 条) ----
+// ---- 插件 · plugin.* (59 条) ----
 suspend fun LinPlayerCommands.pluginList(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.list", args)
 suspend fun LinPlayerCommands.pluginPendingRestart(args: Map<String, Any?>? = null): JsonElement =
@@ -942,6 +943,8 @@ suspend fun LinPlayerCommands.pluginHomeSections(args: Map<String, Any?>? = null
     call("plugin.homeSections", args)
 suspend fun LinPlayerCommands.pluginHomeItems(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.homeItems", args)
+suspend fun LinPlayerCommands.pluginPageTakeovers(args: Map<String, Any?>? = null): JsonElement =
+    call("plugin.pageTakeovers", args)
 suspend fun LinPlayerCommands.pluginBackRequest(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.backRequest", args)
 suspend fun LinPlayerCommands.pluginPlayerKey(args: Map<String, Any?>? = null): JsonElement =

@@ -160,6 +160,7 @@ fun TvFrame(app: AppState, config: ViewConfiguration = LocalViewConfiguration.cu
         LocalApp provides app, LocalTvType provides TypeB, LocalViewConfiguration provides config,
         xyz.linplayer.app.ui.plugin.LocalPluginTv provides true,
     ) {
+        xyz.linplayer.app.ui.plugin.LoadTakeovers()
         MaterialTheme(colorScheme = darkColorScheme(background = TvC.bg, surface = TvC.surface2, onSurface = TvC.fg)) {
             Box(Modifier.fillMaxSize().background(
                 xyz.linplayer.app.ui.plugin.pageBg(TvC.bg))) {
@@ -226,8 +227,30 @@ fun TvShell(nav: TvNav, booting: Boolean = false) {
     if (!booting) UpdateCheck()
 }
 
+/**
+ * 这一页的官方路由名(SPEC 20.3)。接管位按它认;接管不了的页回空串。
+ *
+ * 凭据页、插件页、播放页接不了 —— 那道闸在 manifest.schema.json 上(D407),
+ * 声明了就装不进来,所以这里不用再判一遍。
+ */
+private fun officialName(r: TvRoute): String = when (r) {
+    TvRoute.Home -> "home"
+    TvRoute.Search -> "search"
+    is TvRoute.Library -> "library"
+    TvRoute.Favorites -> "favorites"
+    TvRoute.Discover -> "aggregate"
+    TvRoute.Downloads -> "downloads"
+    TvRoute.Servers -> "servers"
+    TvRoute.Settings -> "settings"
+    TvRoute.History -> "history"
+    is TvRoute.Detail -> "detail"
+    else -> ""
+}
+
 @Composable
 private fun TvPage(r: TvRoute) {
+    // 被插件整页接管的官方页(D15 D29 D586)。没人接管时原样画官方的
+    xyz.linplayer.app.ui.plugin.Takeover(officialName(r)) {
     when (r) {
         TvRoute.Home -> {
             // 当前是插件数据源:首页换成数据源首页(D167)
@@ -255,6 +278,7 @@ private fun TvPage(r: TvRoute) {
         TvRoute.Extensions -> ExtensionsPageTv()
         is TvRoute.PluginPage -> PluginHostPageTv(r)
         TvRoute.History -> HistoryPageTv()
+    }
     }
 }
 

@@ -99,6 +99,13 @@ func registerAnchors() {
 	bus.Register("plugin.homeSections", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
 		return Default().HomeSections(), nil
 	})
+	/* 用户选中的整页接管(D15 D29 D586)。
+	   ☠ 这一条以前不存在:插件页的「接管位」标签能列、能选、选完还弹「重启后生效」,
+	     而**没有任何一个壳去问过谁接管了哪一页** —— 三层 UI 都写了,只差最后一段,
+	     表现是「选了接管,重启,一点变化没有」。 */
+	bus.Register("plugin.pageTakeovers", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
+		return Default().PageTakeovers(), nil
+	})
 	/* kind=items 那一栏的数据。**壳不直接调插件**:预算、连错计数、
 	   「最后在跑的插件」这些都在 Host.Call 里,绕过去的话一个跑飞的插件
 	   会把首页一起拖住,而崩了也不会被记账。 */

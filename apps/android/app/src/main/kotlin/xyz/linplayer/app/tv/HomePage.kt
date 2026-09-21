@@ -202,13 +202,11 @@ private fun LazyListScope.pluginRow(sec: JsonObject) {
     }
 }
 
-/** ☠ 插件自画的那块必须套 [LocalPluginTv]:不套的话插件的按钮不可聚焦,遥控器**进不去这一行**。 */
+/** 插件自画的那一块。可聚焦那套控件由 `TvFrame` 整个壳统一给(`LocalPluginTv`),这里不用再套。 */
 @Composable
 private fun PluginBlock(pid: String, block: String) {
-    androidx.compose.runtime.CompositionLocalProvider(xyz.linplayer.app.ui.plugin.LocalPluginTv provides true) {
-        Box(Modifier.padding(start = TvSp.x32, end = TvDim.safeH)) {
-            xyz.linplayer.app.ui.plugin.PluginSurface(pid, block, "block", modifier = Modifier.fillMaxWidth())
-        }
+    Box(Modifier.padding(start = TvSp.x32, end = TvDim.safeH)) {
+        xyz.linplayer.app.ui.plugin.PluginSurface(pid, block, "block", modifier = Modifier.fillMaxWidth())
     }
 }
 

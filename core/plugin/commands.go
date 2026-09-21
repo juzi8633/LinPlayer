@@ -255,6 +255,44 @@ func (h *Host) Takeovers() []Slot {
 	return out
 }
 
+// PageTakeover 一页被谁接管了。壳画官方页之前问一次(D15 D29)。
+type PageTakeover struct {
+	Target   string `json:"target"`
+	PluginID string `json:"plugin_id"`
+	Name     string `json:"name"`
+	Page     string `json:"page"`
+}
+
+// PageTakeovers 用户**选中**的整页接管;没人接管时为空。
+//
+// 只列启用中的插件,和锚点那边同一条理由:停用的插件还在 manifest 里,
+// 列出来的话壳会去挂一个永远起不来的页,表现是整页空白骨架屏。
+// 凭据页与插件页接不了,那道闸在 manifest.schema.json 上(D407),装不进来。
+func (h *Host) PageTakeovers() []PageTakeover {
+	h.mu.Lock()
+	chosen := map[string]string{}
+	for k, v := range h.st.Takeovers {
+		chosen[k] = v
+	}
+	h.mu.Unlock()
+
+	out := []PageTakeover{}
+	for _, id := range h.Enabled() {
+		m, err := h.Manifest(id)
+		if err != nil {
+			continue
+		}
+		for _, t := range m.Contributes.PageTakeovers {
+			if chosen["page:"+t.Target] != id {
+				continue
+			}
+			out = append(out, PageTakeover{Target: t.Target, PluginID: id, Name: m.Name, Page: t.Page})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Target < out[j].Target })
+	return out
+}
+
 // SetTakeover 选某个接管位由谁接管(空 = 官方)。
 func (h *Host) SetTakeover(slot, pluginID string) {
 	h.mu.Lock()

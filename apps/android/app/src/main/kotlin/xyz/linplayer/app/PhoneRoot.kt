@@ -190,6 +190,7 @@ private fun MainShell() {
         xyz.linplayer.app.ui.components.LocalTabClearance provides
             if (tab >= 0) xyz.linplayer.app.ui.theme.Dim.tabClearance else 0.dp
     ) {
+    xyz.linplayer.app.ui.plugin.LoadTakeovers()
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize()) {
             NavHost(
@@ -208,24 +209,24 @@ private fun MainShell() {
                 },
             ) {
                 // 当前是插件数据源:首页换成数据源首页(D167),Emby 那一套它一样都没有
-                composable<Route.Home> {
+                composable<Route.Home> { xyz.linplayer.app.ui.plugin.Takeover("home") {
                     val src by app.activeSource.collectAsStateWithLifecycle()
                     src?.let { xyz.linplayer.app.ui.pages.SourceHomePage(nav, it.id, it.name) } ?: HomePage(nav)
-                }
-                composable<Route.Aggregate> { AggregatePage(nav) }
-                composable<Route.Servers> { ServersPage(nav) }
-                composable<Route.Library> { LibraryPage(nav, it) }
-                composable<Route.Detail> { DetailPage(nav, it) }
-                composable<Route.Search> { SearchPage(nav, it) }
-                composable<Route.Favorites> {
+                } }
+                composable<Route.Aggregate> { xyz.linplayer.app.ui.plugin.Takeover("aggregate") { AggregatePage(nav) } }
+                composable<Route.Servers> { xyz.linplayer.app.ui.plugin.Takeover("servers") { ServersPage(nav) } }
+                composable<Route.Library> { xyz.linplayer.app.ui.plugin.Takeover("library") { LibraryPage(nav, it) } }
+                composable<Route.Detail> { xyz.linplayer.app.ui.plugin.Takeover("detail") { DetailPage(nav, it) } }
+                composable<Route.Search> { xyz.linplayer.app.ui.plugin.Takeover("search") { SearchPage(nav, it) } }
+                composable<Route.Favorites> { xyz.linplayer.app.ui.plugin.Takeover("favorites") {
                     val src by app.activeSource.collectAsStateWithLifecycle()
                     if (src != null) xyz.linplayer.app.ui.pages.SourceFavoritesPage(nav) else FavoritesPage(nav)
-                }
-                composable<Route.History> { xyz.linplayer.app.ui.pages.HistoryPage(nav) }
+                } }
+                composable<Route.History> { xyz.linplayer.app.ui.plugin.Takeover("history") { xyz.linplayer.app.ui.pages.HistoryPage(nav) } }
                 composable<Route.Facet> { FacetPage(nav, it) }
                 composable<Route.Lines> { LinesPage(nav, it) }
-                composable<Route.Browse> { BrowsePage(nav) }
-                composable<Route.Downloads> { DownloadsPage(nav) }
+                composable<Route.Browse> { xyz.linplayer.app.ui.plugin.Takeover("browse") { BrowsePage(nav) } }
+                composable<Route.Downloads> { xyz.linplayer.app.ui.plugin.Takeover("downloads") { DownloadsPage(nav) } }
                 composable<Route.Plugins> { PluginsPage(nav, it) }
                 composable<Route.PluginDetail> { xyz.linplayer.app.ui.pages.PluginDetailPage(nav, it) }
                 composable<Route.PluginPage> { xyz.linplayer.app.ui.pages.PluginHostPage(nav, it) }
@@ -233,9 +234,9 @@ private fun MainShell() {
                 composable<Route.SourceCategory> { xyz.linplayer.app.ui.pages.SourceCategoryPage(nav, it) }
                 composable<Route.SourceDetail> { xyz.linplayer.app.ui.pages.SourceDetailPage(nav, it) }
                 composable<Route.SourceFavorites> { xyz.linplayer.app.ui.pages.SourceFavoritesPage(nav) }
-                composable<Route.Ranking> { RankingPage(nav) }
-                composable<Route.Calendar> { CalendarPage(nav) }
-                composable<Route.Settings> { SettingsPage(nav) }
+                composable<Route.Ranking> { xyz.linplayer.app.ui.plugin.Takeover("ranking") { RankingPage(nav) } }
+                composable<Route.Calendar> { xyz.linplayer.app.ui.plugin.Takeover("calendar") { CalendarPage(nav) } }
+                composable<Route.Settings> { xyz.linplayer.app.ui.plugin.Takeover("settings") { SettingsPage(nav) } }
                 composable<Route.SettingsSub> { SettingsSubPage(nav, it) }
                 /* ☠ 加完服务器**必须重取一次会话**。只 popBackStack 的话:
                    `emby.login` 已经在核心层把活动服务器换成了新加的这台,

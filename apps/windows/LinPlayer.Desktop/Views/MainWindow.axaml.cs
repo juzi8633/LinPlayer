@@ -74,38 +74,38 @@ public partial class MainWindow : Window
         SizeChanged += (_, _) => ApplyResponsive();
         // 需要 Emby 会话的页面统一走 Emby():账号是网盘 / 局域网源时 Nav.Session 是 null,
         // 页面里直接解引用会抛在 Task 里 —— 没提示、不崩、就是永远停在「加载中」。
-        this.FindControl<RadioButton>("NavHome")!.Checked += (_, _) => Nav.Root(Home(), Home);
+        this.FindControl<RadioButton>("NavHome")!.Checked += (_, _) => NavRoot("home", Home);
         /* 「文件浏览」只在当前账号是**浏览型源**时才出现。
            Emby 账号下亮着它,点进去只会拿到一句「当前没有已登录的文件源」——
            那不是功能,那是一个专门用来报错的入口。 */
         this.FindControl<RadioButton>("NavBrowse")!.Checked += (_, _) =>
-            Nav.Root(new BrowsePage(_core!, _sourceName), () => new BrowsePage(_core!, _sourceName));
-        this.FindControl<RadioButton>("NavLibrary")!.Checked += (_, _) => Emby("媒体库", () => new LibraryPage(_core!));
+            NavRoot("browse", () => new BrowsePage(_core!, _sourceName));
+        this.FindControl<RadioButton>("NavLibrary")!.Checked += (_, _) => Emby("library", "媒体库", () => new LibraryPage(_core!));
         // 插件数据源没有 Emby 会话:搜索只走聚合,收藏看全部数据源的
         this.FindControl<RadioButton>("NavSearch")!.Checked += (_, _) =>
         {
-            if (_pluginServer is not null) Nav.Root(new SearchPage(_core!), () => new SearchPage(_core!));
-            else Emby("搜索", () => new SearchPage(_core!));
+            if (_pluginServer is not null) NavRoot("search", () => new SearchPage(_core!));
+            else Emby("search", "搜索", () => new SearchPage(_core!));
         };
         this.FindControl<RadioButton>("NavFavorites")!.Checked += (_, _) =>
         {
-            if (_pluginServer is not null) Nav.Root(new SourceFavoritesPage(_core!), () => new SourceFavoritesPage(_core!));
-            else Emby("收藏", () => new FavoritesPage(_core!));
+            if (_pluginServer is not null) NavRoot("favorites", () => new SourceFavoritesPage(_core!));
+            else Emby("favorites", "收藏", () => new FavoritesPage(_core!));
         };
         // 聚合视界和观看历史**不需要**当前会话:前者自己遍历账号表,后者读的是本地库
-        this.FindControl<RadioButton>("NavAggregate")!.Checked += (_, _) => Nav.Root(new AggregatePage(_core!), () => new AggregatePage(_core!));
-        this.FindControl<RadioButton>("NavHistory")!.Checked += (_, _) => Nav.Root(new HistoryPage(_core!), () => new HistoryPage(_core!));
+        this.FindControl<RadioButton>("NavAggregate")!.Checked += (_, _) => NavRoot("aggregate", () => new AggregatePage(_core!));
+        this.FindControl<RadioButton>("NavHistory")!.Checked += (_, _) => NavRoot("history", () => new HistoryPage(_core!));
         // 下载页不要求 Emby 会话:列表读的是本地索引,网盘用户也看得到自己的历史任务
         this.FindControl<RadioButton>("NavDownload")!.Checked += (_, _) =>
         {
-            var dl = new DownloadPage(_core!);
-            Nav.Root(dl, () => new DownloadPage(_core!));
-            dl.SelfCheck();          // LP_DL=1 才做事,平时是一句 return
+            NavRoot("downloads", () => new DownloadPage(_core!));
+            // LP_DL=1 才做事,平时是一句 return;被插件接管时栈顶不是它,自然不自检
+            (Nav.Current as DownloadPage)?.SelfCheck();
         };
         // 排行榜 / 追剧日历**不要套 Emby()**:它们打的是弹弹Play / TMDB / Bangumi / Trakt,
         // 套上之后非 Emby 用户会被挡在「请先登录服务器」上,和实际前提不符
-        this.FindControl<RadioButton>("NavRanking")!.Checked += (_, _) => Nav.Root(new RankingPage(_core!), () => new RankingPage(_core!));
-        this.FindControl<RadioButton>("NavCalendar")!.Checked += (_, _) => Nav.Root(new CalendarPage(_core!), () => new CalendarPage(_core!));
+        this.FindControl<RadioButton>("NavRanking")!.Checked += (_, _) => NavRoot("ranking", () => new RankingPage(_core!));
+        this.FindControl<RadioButton>("NavCalendar")!.Checked += (_, _) => NavRoot("calendar", () => new CalendarPage(_core!));
         this.FindControl<RadioButton>("NavSettings")!.Checked += (_, _) =>
         {
             /* 闸口下**压栈**不是换根。换根会清掉返回栈,而闸口那一页正是用户
@@ -113,7 +113,7 @@ public partial class MainWindow : Window
                设置在闸口下留着是有理由的:代理配错了就连不上任何服务器,
                那恰恰是首登时真的要改的东西。 */
             if (_gated) Nav.Push(new SettingsPage(_core!));
-            else Nav.Root(new SettingsPage(_core!), () => new SettingsPage(_core!));
+            else NavRoot("settings", () => new SettingsPage(_core!));
         };
 
         /* 基础流程之外的入口在这里统一藏掉。表在 Features.cs —— **只有那一处**。
@@ -1566,12 +1566,50 @@ public partial class MainWindow : Window
     }
 
     /// <summary>需要 Emby 会话的页面。没会话就落到防崩页,别让它自己去解引用 null。</summary>
-    private void Emby(string name, Func<Control> make)
+    private void Emby(string route, string name, Func<Control> make)
     {
         // 造法要连「没有会话」这一支一起记下 —— 只记 make 的话,刷新一次
         // 就会绕过这道守卫,而那正是它存在的理由
-        Control Build() => Nav.Session is null ? new NoSessionPage(name) : make();
+        NavRoot(route, () => Nav.Session is null ? new NoSessionPage(name) : make());
+    }
+
+    /// <summary>
+    /// 被插件整页接管的官方页(SPEC 6.1,D15 D29 D586)。重启时取一次 ——
+    /// 「接管位」标签改完弹的就是「重启应用后生效」。
+    /// </summary>
+    private readonly Dictionary<string, (string Plugin, string Page, string Name)> _takeovers = new();
+
+    /// <summary>
+    /// 换根,但先看这一页有没有被插件接管。
+    ///
+    /// <para>接管位这条路以前**只差最后这一段**:插件页的「接管位」标签能列、能选、
+    /// 选完还弹「重启应用后生效」—— 而没有任何一个壳去问过谁接管了哪一页,
+    /// 表现是「选了接管,重启,一点变化没有」。摆着不生效的控件比没有更糟。</para>
+    ///
+    /// <para>接管之后想回官方版:插件页「接管位」标签里选「官方」。</para>
+    /// </summary>
+    private void NavRoot(string route, Func<Control> make)
+    {
+        Control Build() => _takeovers.TryGetValue(route, out var t)
+            ? new PluginPageHost(_core!, t.Plugin, t.Page, t.Name)
+            : make();
         Nav.Root(Build(), Build);
+    }
+
+    private async Task LoadTakeovers()
+    {
+        _takeovers.Clear();
+        JsonElement list;
+        try { list = await _core!.PluginPageTakeovers(new { }); }
+        catch (Exception e) { Log.W("接管位", "取整页接管失败,这一轮都画官方版:" + e.Message); return; }
+        if (list.ValueKind != JsonValueKind.Array) return;
+        foreach (var it in list.EnumerateArray())
+        {
+            var target = Mi.Str(it, "target");
+            var page = Mi.Str(it, "page");
+            if (target.Length == 0 || page.Length == 0) continue;
+            _takeovers[target] = (Mi.Str(it, "plugin_id"), page, Mi.Str(it, "name"));
+        }
     }
 
     /// <summary>侧栏那条「＋ 添加服务器」。选中态跟着当前页走,见 <see cref="Show"/>。</summary>
@@ -1627,6 +1665,8 @@ public partial class MainWindow : Window
         PluginShell.ReportEnv(_core);
         ActualThemeVariantChanged += (_, _) => PluginShell.ReportEnv(_core);
         AppJobs.Start(_core);
+        // 接管位要在画第一页**之前**问完,否则首页那一次换根拿的是空表
+        await LoadTakeovers();
 
         try
         {
