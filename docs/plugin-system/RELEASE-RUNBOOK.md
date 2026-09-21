@@ -3,14 +3,15 @@
 > 「一条命令就能发」的那条命令是 **第 2 步**。前面一步和后面几步是人要做的判断,
 > 不该自动化 —— 它们每一条都不可撤回。
 
-## 0. 先决条件(**这些还没做,要你点头**)
+## 0. 先决条件
 
-| 事 | 为什么要你决定 | 在哪 |
-|---|---|---|
-| **清空重建官方插件仓库**(D149) | 破坏性:仓库里现有的东西会没。清空时**不要动 Pages 设置**(D395) | 内容已备在 `plugin-repo/`,推法见第 4 步 |
-| **自有公开域名是否豁免红线** | 红线原文写的是「任何域名」,而 SPEC 15.6 明写「仓库文件与提交里不出现域名」。现在站点自定义域名还在 3 个已跟踪文件里 | `docs/lessons/red-line-audit.md`「等裁决的那一件」 |
-| **git 历史里的旧泄漏怎么处理** | 红线原文要求「改写历史或删库重建」,两条都是破坏性操作 | 同上 |
-| **`lp` 以 MIT 发布的授权**(D519) | `lp` 复用主仓库宿主代码;主仓库相关代码若有他人贡献,要先确认 | `plugin-repo/README.md` |
+| 事 | 状态 |
+|---|---|
+| 自有公开域名豁免红线 | ✅ 2026-09-21 裁决豁免(D565)。名单在 `scripts/secrets-allow.txt`,口径写进 `AGENTS.md` §3.1 |
+| `lp` 的许可证(D519 原来的卡点) | ✅ 整仓改 AGPL-3.0-or-later(D566)—— 和主仓库同许可证,不再需要版权人另行授权 |
+| 清空重建官方插件仓库(D149) | ✅ 2026-09-21 已推(**保留历史**,一次提交换内容)。Pages 自定义域名与 `SITE_URL` / `PUBLIC_REPO_URL` 变量都配好了,站点已上线 |
+| **官方插件的 .lpplugin 还没发 Release** | ⏸ 索引里的下载地址现在指向 404。包已打好在 `build/lpplugin/`,发法见第 4 步 |
+| git 历史里的旧泄漏 | ⏸ 红线原文要求「改写历史或删库重建」,破坏性操作,等你决定。现状见 `docs/lessons/red-line-audit.md` |
 
 ## 1. 版本号
 
@@ -44,13 +45,24 @@ bash scripts/publish-sdk.sh --yes    # 确认清单没问题之后再发
 
 ## 4. 官方插件仓库
 
+仓库本身已经重建并上线。要更新内容(改了官方插件、SDK 类型、站点)时:
+
 ```bash
-bash scripts/sync-plugin-repo.sh   # 把 .d.ts / schema / 官方插件 / 示例同步进 plugin-repo/
-bash scripts/check-secrets.sh      # 推之前扫一遍
+bash scripts/check-secrets.sh                                      # 先扫红线
+for d in plugins/*/; do (cd core && go run ./cmd/lp pack "../$d"   -o "../build/lpplugin/$(basename $d).lpplugin"); done            # 打包(索引要真实体积)
+PLUGIN_REPO_SLUG=... MAIN_REPO_URL=... node scripts/gen-registry.mjs
+PLUGIN_REPO_SLUG=... bash scripts/push-plugin-repo.sh              # 演练
+PLUGIN_REPO_SLUG=... bash scripts/push-plugin-repo.sh --yes        # 真推
 ```
 
-`plugin-repo/` 是**准备好的内容**,脚本不碰远端。清空重建那一步要你点头(见第 0 步)。
-站点的自定义域名存在 GitHub 的 Pages 设置里,仓库文件里不写。
+**把包发上去**(索引里的地址指向官方副本,发完才不是 404):
+
+```bash
+PLUGIN_REPO_SLUG=... bash scripts/release-plugins.sh        # 演练:列标签与资产名
+PLUGIN_REPO_SLUG=... bash scripts/release-plugins.sh --yes  # 真发
+```
+
+标签与资产名必须和 `gen-registry.mjs` 的 `assetUrl()` 完全一致 —— 脚本会逐个对,对不上就不发。
 
 ## 5. 推
 
