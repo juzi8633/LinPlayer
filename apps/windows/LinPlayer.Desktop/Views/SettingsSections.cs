@@ -1327,6 +1327,129 @@ public static class SettingsSections
         });
     }
 
+    // ---------------------------------------------------------------- Trakt / Bangumi 账号
+
+    /// <summary>
+    /// 连 Trakt / Bangumi 账号。<b>只管「连上」</b> —— 记进度、标看完、管收藏
+    /// 都在「Trakt / Bangumi 同步」插件里(SPEC 19.1 阶段 ③)。
+    ///
+    /// <para>账号连接留在宿主是因为 token 不能交给插件:插件经
+    /// <c>sync.traktRequest</c> / <c>sync.bangumiRequest</c> 代发,拿不到 token 本身。
+    /// 少了这一格,插件里那句「到设置里的账号页连一次」就指向一个不存在的地方。</para>
+    /// </summary>
+    public static Control SyncAccounts(CoreClient core)
+    {
+        var body = new StackPanel { Spacing = 10 };
+        var hint = Note("");
+        var box = new StackPanel { Spacing = 10 };
+        body.Children.Add(Note("连上之后,装了「Trakt / Bangumi 同步」插件就会自动记录观看进度。" +
+                               "只连账号不装插件也行 —— 追剧日历用的是同一个账号。"));
+        body.Children.Add(box);
+        body.Children.Add(hint);
+
+        // Trakt 设备码轮询的取消闩:换页/重连时要停掉,否则两个循环一起打限流
+        CancellationTokenSource? poll = null;
+
+        async void Reload()
+        {
+            box.Children.Clear();
+            box.Children.Add(new TextBlock { Classes = { "dim" }, Text = "查询已连接的账号…" });
+            JsonElement trakt = default, bgm = default;
+            // 两个都静默:没连过账号时核心层本来就报错,那不是异常,是「未连接」这个状态本身。
+            // 真出错时下面画的也是「连接 X」按钮,用户点一次就会看到真正的原因。
+            try { trakt = await core.SyncTraktAccount(); } catch { }
+            try { bgm = await core.SyncBangumiAccount(); } catch { }
+            box.Children.Clear();
+            box.Children.Add(Account("Trakt", trakt, ConnectTrakt, () => core.SyncTraktLogout(), Reload, hint));
+            box.Children.Add(Account("Bangumi", bgm, ConnectBangumi, () => core.SyncBangumiLogout(), Reload, hint));
+        }
+
+        // 设备码流程:电视/桌面都不方便打字,出一个短码让用户在手机上输
+        async void ConnectTrakt()
+        {
+            poll?.Cancel();
+            var cts = new CancellationTokenSource();
+            poll = cts;
+            JsonElement d;
+            try { d = await core.SyncTraktDeviceCode(); }
+            catch (Exception e) { hint.Text = LibraryPage.Advice(e); return; }
+
+            var url = Str(d, "verification_url");
+            var code = Str(d, "user_code");
+            hint.Text = $"在手机上打开 {url},输入 {code}";
+            // 间隔听服务端的 interval:自己拍更短会被限流,表现是「码是对的但一直连不上」
+            var interval = Math.Max(1, (int)Num(d, "interval")) * 1000;
+            while (!cts.IsCancellationRequested)
+            {
+                try { await Task.Delay(interval, cts.Token); } catch { return; }
+                JsonElement r;
+                try { r = await core.SyncTraktPoll(new { device_code = Str(d, "device_code") }); }
+                catch (Exception e) { hint.Text = LibraryPage.Advice(e); return; }
+                switch (Str(r, "state"))
+                {
+                    case "pending": continue;
+                    case "slowDown": interval += 5000; continue;
+                    case "authorized": hint.Text = "Trakt 已连接"; Reload(); return;
+                    case "expired": hint.Text = "设备码过期了,再点一次连接"; return;
+                    case "denied": hint.Text = "在手机上被拒绝了"; return;
+                    default: hint.Text = "Trakt 连接失败"; return;
+                }
+            }
+        }
+
+        // Bangumi 没有设备码:出授权链接,用户拿回 Access Token 粘进来
+        async void ConnectBangumi()
+        {
+            var url = "";
+            try
+            {
+                var r = await core.SyncBangumiAuthorizeUrl();
+                url = r.ValueKind == JsonValueKind.String ? r.GetString() ?? "" : Str(r, "url");
+            }
+            catch (Exception e) { hint.Text = LibraryPage.Advice(e); return; }
+
+            var input = new TextBox { Width = 300, Watermark = "Access Token" };
+            var ok = new Button { Content = "连接" };
+            ok.Click += async (_, _) =>
+            {
+                var tok = (input.Text ?? "").Trim();
+                if (tok == "") return;
+                try { await core.SyncBangumiLoginToken(new { token = tok }); hint.Text = "Bangumi 已连接"; Reload(); }
+                catch (Exception e) { hint.Text = LibraryPage.Advice(e); }
+            };
+            // 链接常驻显示,不用 Toast:几十上百字符,3 秒没了抄不完
+            box.Children.Add(new StackPanel
+            {
+                Spacing = 6,
+                Children = { Note($"打开 {url} 授权,把拿到的 Access Token 粘到下面。"), Row(input, ok) },
+            });
+        }
+
+        Reload();
+        return Group("Trakt / Bangumi 账号", body);
+    }
+
+    private static Control Account(string name, JsonElement acc, Action connect,
+        Func<Task<JsonElement>> logout, Action reload, TextBlock hint)
+    {
+        var connected = acc.ValueKind == JsonValueKind.Object && acc.EnumerateObject().Any();
+        if (!connected)
+        {
+            var btn = new Button { Content = $"连接 {name}" };
+            btn.Click += (_, _) => connect();
+            return Field(name, btn);
+        }
+        var who = new TextBlock { Classes = { "dim" }, VerticalAlignment = VerticalAlignment.Center, Text = Str(acc, "username") is { Length: > 0 } u ? u : "已连接" };
+        var off = new Button { Classes = { "ghost" }, Content = "断开" };
+        // 断开之后必须重画:不重画的话「断开」按钮还在,再点一次报「未登录」
+        off.Click += async (_, _) =>
+        {
+            try { await logout(); reload(); }
+            catch (Exception e) { hint.Text = LibraryPage.Advice(e); }
+        };
+        return Field(name, Row(who, off));
+    }
+
     // ---------------------------------------------------------------- 小工具
 
     private static Control Group(string title, Control body) => new Border

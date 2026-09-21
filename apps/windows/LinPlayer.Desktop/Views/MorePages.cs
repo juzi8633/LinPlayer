@@ -597,6 +597,8 @@ public sealed class SettingsPage : PageBase
                     Add(gGeneral, SettingsSections.ThemeAndWallpaper(core));
                     if (home is { } hm) Add(gGeneral, SettingsSections.Home(core, hm));
                     if (update is { } up) Add(gGeneral, SettingsSections.Update(core, up));
+                    // 账号连接留在宿主(token 不给插件),记进度那部分在同步插件里
+                    Add(gGeneral, SettingsSections.SyncAccounts(core));
                     Add(gGeneral, SettingsSections.Feedback(core));
                     Add(gGeneral, Shortcut(core));
                     // 快捷键不挂 Features 开关:它是操作方式,不是一块可下线的功能

@@ -136,6 +136,11 @@ fun SettingsPage(nav: NavController) {
                         nav.navigate(Route.SettingsSub("backup"))
                     }
                     Hairline()
+                    // 账号连接留在宿主(token 不给插件);记进度那部分在同步插件里
+                    LpCell("Trakt / Bangumi 账号", icon = LpIcons.version) {
+                        nav.navigate(Route.SettingsSub("sync"))
+                    }
+                    Hairline()
                     LpCell("插件", icon = LpIcons.plugin) { nav.navigate(Route.Plugins()) }
                     Hairline()
                     LpCell("扩展组件", icon = LpIcons.plugin) { nav.navigate(Route.Extensions) }
@@ -178,6 +183,7 @@ fun SettingsSubPage(nav: NavController, entry: NavBackStackEntry) {
         "backup" -> "备份与还原"
         "prefetch" -> "多线程加载"
         "blocked" -> "已屏蔽的内容"; "storage" -> "存储与数据目录"
+        "sync" -> "Trakt / Bangumi 账号"
         "update" -> "更新"; else -> "关于"
     }
 
@@ -195,6 +201,7 @@ fun SettingsSubPage(nav: NavController, entry: NavBackStackEntry) {
                     "prefetch" -> PrefetchPanel()
                     "blocked" -> BlockedPanel()
                     "storage" -> StoragePanel()
+                    "sync" -> SyncAccountsPanel()
                     "update" -> UpdatePanel()
                     else -> AboutPanel()
                 }
@@ -1224,4 +1231,128 @@ internal suspend fun autoCheckUpdate(app: AppState): JsonObject? {
     // 查不动就安静走开:这不是用户点出来的动作,不该弹错
     val r = runCatching { app.call("system.checkUpdate") }.getOrNull().obj()
     return if (r.bool("has_update")) r?.get("update").obj() else null
+}
+
+// ---------------------------------------------------------------- Trakt / Bangumi 账号
+
+/**
+ * 连 Trakt / Bangumi 账号。**只管「连上」** —— 记进度、标看完、管收藏都在
+ * 「Trakt / Bangumi 同步」插件里。
+ *
+ * token 不交给插件:插件经 `sync.traktRequest` / `sync.bangumiRequest` 代发。
+ * 少了这一页,插件里那句「到设置里的账号页连一次」就指向一个不存在的地方。
+ */
+@Composable
+private fun SyncAccountsPanel() {
+    val app = LocalApp.current
+    val scope = rememberCoroutineScope()
+    // null = 还没问到。画成「未连接」的话每次进页都闪一下
+    var trakt by remember { mutableStateOf<JsonObject?>(null) }
+    var bangumi by remember { mutableStateOf<JsonObject?>(null) }
+    var loaded by remember { mutableStateOf(false) }
+    var reload by remember { mutableStateOf(0) }
+    var device by remember { mutableStateOf<JsonObject?>(null) }
+    var bgmUrl by remember { mutableStateOf("") }
+    var bgmToken by remember { mutableStateOf("") }
+
+    LaunchedEffect(reload) {
+        loaded = false
+        // 同一面板里的多个请求必须并发
+        launch { trakt = runCatching { app.call("sync.traktAccount") }.getOrNull().obj() }
+        launch { bangumi = runCatching { app.call("sync.bangumiAccount") }.getOrNull().obj() }
+        launch {
+            bgmUrl = runCatching { app.call("sync.bangumiAuthorizeUrl") }.getOrNull().let {
+                (it as? JsonPrimitive)?.content ?: it.obj().str("url")
+            } ?: ""
+        }
+        loaded = true
+    }
+
+    // Trakt 设备码轮询:间隔听服务端的 interval,自己拍更短会被限流
+    // ——表现是「码是对的但一直连不上」
+    LaunchedEffect(device) {
+        val d = device ?: return@LaunchedEffect
+        var interval = (d.long("interval") ?: 5L) * 1000
+        while (true) {
+            delay(interval)
+            val r = runCatching {
+                app.call("sync.traktPoll", args("device_code" to (d.str("device_code") ?: "")))
+            }.getOrNull().obj()
+            when (r.str("state")) {
+                "pending" -> Unit
+                "slowDown" -> interval += 5000
+                "authorized" -> { device = null; reload++; app.toast("Trakt 已连接", ToastKind.Ok); return@LaunchedEffect }
+                "expired" -> { device = null; app.toast("设备码过期了,再点一次连接", ToastKind.Error); return@LaunchedEffect }
+                "denied" -> { device = null; app.toast("在手机上被拒绝了", ToastKind.Error); return@LaunchedEffect }
+                else -> { device = null; app.toast("Trakt 连接失败", ToastKind.Error); return@LaunchedEffect }
+            }
+        }
+    }
+
+    Column(Modifier.padding(Sp.x16)) {
+        Dim3("连上之后,装了「Trakt / Bangumi 同步」插件就会自动记录观看进度。" +
+            "只连账号不装插件也行 —— 追剧日历用的是同一个账号。")
+        Spacer(Modifier.height(Sp.x12))
+        Panel {
+            val tr = trakt
+            if (!loaded) LpCell("Trakt", value = "查询中…", arrow = false)
+            else if (tr != null && tr.isNotEmpty()) {
+                LpCell("Trakt", value = tr.str("username") ?: "已连接", arrow = false)
+                Hairline()
+                LpCell("断开 Trakt", arrow = false, onClick = {
+                    scope.launch {
+                        runCatching { app.call("sync.traktLogout") }
+                            .onSuccess { reload++ }.onFailure { app.report(it) }
+                    }
+                })
+            } else {
+                LpCell("连接 Trakt", sub = "出一个码,在浏览器里输", onClick = {
+                    scope.launch {
+                        runCatching { app.call("sync.traktDeviceCode") }
+                            .onSuccess { device = it.obj() }.onFailure { app.report(it) }
+                    }
+                })
+                device?.let { d ->
+                    Hairline()
+                    Column(Modifier.padding(Sp.x16)) {
+                        Dim2("打开 ${d.str("verification_url") ?: ""}")
+                        Spacer(Modifier.height(Sp.x6))
+                        Text((d.str("user_code") ?: ""), color = Lp.colors.acc, fontSize = 22.sp)
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(Sp.x12))
+        Panel {
+            val bg = bangumi
+            if (!loaded) LpCell("Bangumi", value = "查询中…", arrow = false)
+            else if (bg != null && bg.isNotEmpty()) {
+                LpCell("Bangumi", value = bg.str("username") ?: "已连接", arrow = false)
+                Hairline()
+                LpCell("断开 Bangumi", arrow = false, onClick = {
+                    scope.launch {
+                        runCatching { app.call("sync.bangumiLogout") }
+                            .onSuccess { reload++ }.onFailure { app.report(it) }
+                    }
+                })
+            } else {
+                Column(Modifier.padding(Sp.x16)) {
+                    // 授权链接常驻显示,不用 toast:几十上百字符,3 秒没了抄不完
+                    if (bgmUrl.isNotBlank()) Dim3("打开 $bgmUrl 授权,把拿到的 Access Token 粘到下面。")
+                    Spacer(Modifier.height(Sp.x10))
+                    LpField(bgmToken, { bgmToken = it }, "Access Token")
+                    Spacer(Modifier.height(Sp.x10))
+                    LpButton("连接 Bangumi", {
+                        val tok = bgmToken.trim()
+                        if (tok.isBlank()) return@LpButton
+                        scope.launch {
+                            runCatching { app.call("sync.bangumiLoginToken", args("token" to tok)) }
+                                .onSuccess { bgmToken = ""; reload++; app.toast("Bangumi 已连接", ToastKind.Ok) }
+                                .onFailure { app.report(it) }
+                        }
+                    })
+                }
+            }
+        }
+    }
 }
