@@ -548,3 +548,49 @@
 | **装上预发布点一次「设置 → 插件 → 市场」** | 包里不带任何插件,市场地址是唯一一条路;它漏注入时**不报错**,只是商店空的 |
 | 公开 IPTV 源真机跑一遍(D544)、实际登录跑通 scrobble(D545) | 要你的网络与账号 |
 | git 历史里的旧泄漏 | 红线原文要求「改写历史或删库重建」,破坏性操作 |
+
+---
+
+# 贡献点对账(2026-09-21 下午)
+
+起因是一句话:「插件不是写了就行的,还要写好」。查下来最大的问题不在插件那一头 ——
+**`contributes` 的 35 个键,宿主这一版真接了的只有 13 个**,而安装确认、插件详情、
+市场分类把 35 个一视同仁地列成中文名。声明了没接的表现是:装上、点开、什么都不多,
+**一条错也没有**。
+
+## 一、接通了的(带判据)
+
+| 贡献点 | 落点 | 反向注入 |
+|---|---|---|
+| `homeSections`(TV 那一端,D584) | TV 首页官方栏目之后 | 换掉 TV 的 `plugin.homeSections` → 门禁红;改名 `rememberPlayerSurfaces` → 门禁红 |
+| `pageTakeovers`(D586) | `plugin.pageTakeovers`,三个壳画官方页之前问一次 | 去掉「只认选中的那个」→ 单测红 |
+| `searchActions`(D587) | `plugin.searchActions`,三个壳画在搜索框下面 | 摘掉门禁标记 → 红;TV 不画 → 红;不筛掉缺标题的 → 单测红 |
+
+## 二、没接的不再装作接了(D585)
+
+- 核心层一张 `contribPoints`:每个键写清 `label` + 落点(空 = 没接)+ 只接了一半时接的是哪一半
+- 贡献点清单给没接的加「(这一版还不支持)」
+- `lp check` 多打一行警告。实跑一个声明了 `trayMenu` / `virtualLibraries` 的包:
+
+```
+  ✓ 声明的贡献点都有实现
+  ! trayMenu:宿主这一版还没接「托盘菜单」,装上去不会有任何反应
+  ! virtualLibraries:宿主这一版还没接「虚拟媒体库」,装上去不会有任何反应
+  ! menus:只有数据源列表项那一处;条目卡片 / 单集 / 播放页更多还没有
+```
+
+## 三、门禁自己的两个洞(这一轮堵上)
+
+| 洞 | 后果 | 堵法 |
+|---|---|---|
+| 安卓一棵树里装着手机和 TV 两个壳,门禁当成**一个**数 | 手机调了就算绿,TV 上一行没画也看不出来 —— 自己加的门禁第二天就被自己漏过去 | 拆成「手机 = 安卓树去掉 `tv/`」「TV = 只看 `tv/`」分别算 |
+| 门禁管哪些命令写死在 `anchors.go` 一个文件名上 | 新开一个文件注册的命令悄悄漏出这一关 | 改成**源文件自己声明**(文件里写「门禁:三端都要调」);再把第 6 条和它绑起来,标记被删也会红 |
+
+## 四、仍然没接的(声明了不会有任何反应)
+
+`osd` `launchTargets` `nextUp` `shaders` `settingsPage` `globalOverlays`
+`virtualLibraries` `keybindings` `gestures` `remoteButtons` `windows` `trayMenu`
+`android` `deepLinks` `externalInputs` `providers` `m3u8Filters` `registry` `background`。
+
+这些不再需要靠记忆维护 —— 正本是 `core/plugin/contribPoints`,`check-plugin-ui.py`
+第 6 条拿 `manifest.schema.json` 对账,漏一个键就红。
