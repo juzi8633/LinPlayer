@@ -11,6 +11,8 @@
 - 条目要点:`id` `name` `description` `i18n` `repository` `icon` `screenshots` `readme`(官方仓库 CI 生成的静态副本地址)`paid` `platforms` `requires` `contributes`(贡献点摘要,用于分类与清单)`stars`(官方仓库 CI 抓,第三方仓库没写就不显示)`downloads` `versions[]`(每版 `version` `url` `size` `minAppVersion` `released` `changelog` 摘要)。
 - 多个仓库里同 id 的插件合并成一条(显示最高版本,官方来源优先),展开看各来源;已装的仍只认安装来源(D48)。
 - 客户端不直连 GitHub API(未认证 60 次/小时/IP)。
+- `minAppVersion` 写的是**这个包真能跑起来的最低版本**,不是「上架时的当前版本」(D568)。
+  官方插件用 2.0.0 的插件系统,写 `1.1.0` 等于让老版本看见一个装了必坏的插件。
 
 ## 14.3 下载与离线(D370 D371)
 

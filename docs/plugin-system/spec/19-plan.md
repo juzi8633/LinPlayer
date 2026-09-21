@@ -9,7 +9,7 @@
 | ③ | Trakt/Bangumi 同步插件、字幕翻译插件(先补回老功能) | 规则编辑器插件 |
 | ④ | 直播插件 | — |
 | ⑤ | 主题与壁纸 | 各端官方示范主题 |
-| 发布 | 2.0.0 | GitHub Release 说明 + Pages 介绍文章(D415);官方仓库清空重建前再确认(D149) |
+| 发布 | 2.0.0 | GitHub Release 说明 + Pages 介绍文章(D415);官方仓库清空重建前再确认(D149)。大版本的 Release 正文**必须**带 `docs/plugin-system/RELEASE-<VERSION>.md`(加了什么 / 删了什么 / 挪去哪了),`scripts/release-notes.sh` 少了它直接红(D570)—— 只有提交清单的话,用户读完不知道这版删了什么 |
 
 **三端推进**:每个阶段桌面先打通(有 `scripts/selfcheck-win.sh` 自检),Android 手机/TV 紧跟;**2.0.0 要求三端齐**(D314)。
 

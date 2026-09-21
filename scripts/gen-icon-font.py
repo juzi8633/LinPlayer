@@ -18,6 +18,7 @@ import urllib.request
 COMMIT = "9cf8af0f95a555918a60b8147a2f33a6a1248442"
 BASE = f"https://raw.githubusercontent.com/microsoft/fluentui-system-icons/{COMMIT}/fonts/"
 OUT = pathlib.Path(__file__).resolve().parent.parent / "apps/windows/LinPlayer.Desktop/Assets/LinIcons.ttf"
+STAMP = OUT.with_suffix(".codepoints")
 
 # MDL2 码位 → Fluent 图标名(不带 ic_fluent_ 前缀)
 MAP = {
@@ -43,6 +44,7 @@ MAP = {
     0xE785: "lock_open_24_regular",          # 播放页 解锁界面
     0xE768: "play_24_regular",
     0xE769: "pause_24_regular",
+    0xE70D: "chevron_down_24_regular",       # 侧栏分组展开
     0xE76B: "chevron_left_24_regular",
     0xE76C: "chevron_right_24_regular",
     0xE774: "globe_24_regular",              # 聚合视界 / 线路
@@ -146,11 +148,14 @@ def main():
         name.setName(value, nid, 3, 1, 0x409)
         name.setName(value, nid, 1, 0, 0)
     out.save(OUT)
+    # 真正编进去的码位落一份盘。判据要对着**字体里有什么**,不是 MAP 里写了什么 ——
+    # 往 MAP 补一行但忘了重跑本脚本时,Linux 上照样是豆腐块,而只看 MAP 的判据是绿的。
+    STAMP.write_text("".join(f"{cp:04X}\n" for cp in sorted(picked)), encoding="utf-8")
     print(f"{OUT}  {OUT.stat().st_size} 字节,{len(picked)} 个码位")
 
 
 def check():
-    """界面代码里用到的码位必须都在 MAP 里。不联网,给 check-style.sh 调。"""
+    """界面代码里用到的码位必须真的编进了 LinIcons.ttf。不联网,给 pack-linux.sh 调。"""
     import re
     import sys
     app = OUT.parent.parent
@@ -161,7 +166,11 @@ def check():
         text = p.read_text(encoding="utf-8-sig")
         used |= {int(h, 16) for h in re.findall(r"(?:\\u|&#x)([Ee][0-9A-Fa-f]{3})", text)}
         used |= {ord(c) for c in text if 0xE000 <= ord(c) <= 0xF8FF}
-    missing = sorted(used - set(MAP))
+    if not STAMP.exists():
+        print(f"  {STAMP.name} 不在 —— 跑一次 scripts/gen-icon-font.py 生成它")
+        sys.exit(1)
+    have = {int(h, 16) for h in STAMP.read_text(encoding="utf-8").split()}
+    missing = sorted(used - have)
     for cp in missing:
         print(f"  U+{cp:04X} 在界面里用了,LinIcons 里没有 —— Linux 上是豆腐块。补进 scripts/gen-icon-font.py 的 MAP 再跑一次")
     sys.exit(1 if missing else 0)

@@ -117,6 +117,15 @@ jobs:
           Write-Host "libmpv-2.dll size: $size"
           if ($size -lt 60MB) { throw "libmpv-2.dll 只有 $size 字节,不是完整版" }
 
+      # check-core 第 7/8 关要 pnpm(SDK 生成物、UI 运行时产物是否最新)。
+      # 没有 pnpm 那两关**直接算红**(不是跳过)—— 所以这一步不能省。
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Core gate (go vet / test / FFI 契约 / 差分对账)
         shell: bash
         # TVBox 全链路测试要用插件内置的 drpy 引擎:不入库,check-core 里按 sha256 现拉(上游地址放 Secret)

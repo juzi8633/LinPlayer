@@ -83,10 +83,13 @@ def go_commands():
                             nxt = hsrc.find('\nfunc ', fm.end())
                             body += hsrc[fm.end(): nxt if nxt > 0 else len(hsrc)]
                             break
-                # `x := helper(a)` —— 参数在同包的 helper 里读(player.play 的 resumeArg)。跟过去一起读
-                for h in set(re.findall(r'\b(\w+)\(\s*a\s*\)', body)):
+                # `x := helper(a)` / `return h().foo(ctx, a)` —— 参数在同包的另一个函数
+                # 或**方法**里读。方法这一种 2026-09-21 之前是盲区:plugin.backRequest 的
+                # 注册体只有一句转发,判成「一个参数都没读」,壳传的 plugin 就被报成假红。
+                for h in set(re.findall(r'\b(\w+)\(\s*(?:ctx\s*,\s*)?a\s*\)', body)):
                     for hsrc in pkg_sources(base):
-                        hm = re.search(r'\nfunc ' + re.escape(h) + r'\(\s*a\s+map\[string\]any', hsrc)
+                        hm = re.search(r'\nfunc (?:\([^)]*\) )?' + re.escape(h) +
+                                       r'\((?:[^)]*?,\s*)?a\s+map\[string\]any', hsrc)
                         if hm:
                             nxt = hsrc.find('\nfunc ', hm.end())
                             body += hsrc[hm.end(): nxt if nxt > 0 else len(hsrc)]

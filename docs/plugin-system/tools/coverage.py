@@ -8,6 +8,12 @@ import os
 import re
 import sys
 
+# Windows 的控制台默认不是 UTF-8(本机 GBK、GitHub runner 上是 cp1252),
+# 而这里要打的每一行都带中文与 ✓ —— 不改编码的话门禁**自己崩掉**,
+# 报出来的是 UnicodeEncodeError,和判据本身一点关系都没有。
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REF = re.compile(r'D(\d{1,3})(?!\d)')
 RANGE = re.compile(r'D(\d+)\s*~\s*D(\d+)')
