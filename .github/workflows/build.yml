@@ -128,9 +128,9 @@ jobs:
 
       - name: Core gate (go vet / test / FFI 契约 / 差分对账)
         shell: bash
-        # TVBox 全链路测试要用插件内置的 drpy 引擎:不入库,check-core 里按 sha256 现拉(上游地址放 Secret)
-        env:
-          LP_DRPY_BASE: ${{ secrets.LP_DRPY_BASE }}
+        # TVBox 全链路测试要用插件内置的 drpy 引擎:文件不入库(里面有第三方服务的域名与
+        # 样例私钥),check-core 里按 sha256 现拉。上游地址写在脚本里 —— 公开开源项目的
+        # raw 地址,藏进 Secret 只会让漏配的那次静默失灵(D571)
         run: bash scripts/check-core.sh
 
       - name: Bindings gate (COMMANDS.md ↔ Go ↔ C# ↔ Kotlin)

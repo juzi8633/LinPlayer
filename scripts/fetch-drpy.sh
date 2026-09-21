@@ -4,15 +4,20 @@
 #   bash scripts/fetch-drpy.sh           # 缺哪份拉哪份,已有的校验 sha256
 #   bash scripts/fetch-drpy.sh --check   # 只校验不下载(门禁用)
 #
-# ★ 为什么不入库:上游 drpy2.js 的**可执行代码**里写着第三方 OCR 服务的域名与端口,
+# ★ 为什么文件本身不入库:上游 drpy2.js 的**可执行代码**里写着第三方 OCR 服务的域名与端口,
 #   注释里还有私网 IP 和样例私钥 —— 原样提交就踩「任何 IP/域名/端口/密钥不进提交」的红线。
-#   上游地址同理不进仓库:放被忽略的 scripts/drpy-source.local(模板见 .example),或环境变量 LP_DRPY_BASE。
+#   **地址不一样**:它是一个公开开源项目的 raw 地址,谁都查得到,拿去也只能下到同一份
+#   开源代码。写死在这儿(D571),不走 Secret —— 藏一个人人可见的地址只会让 CI 少配一个
+#   变量就静默失灵。
 # ★ 版本就是 docs/research/plugins-v2/08-runtime-benchmark.md 实测的那一份(3.9.49beta40);
 #   换版本要重跑 core/datasource 的 TVBox 全链路测试再改这里的 sha256。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="$ROOT/plugins/tvbox/assets/drpy"
+
+# 钉住提交:main 上的文件会变,不钉的话 sha256 明天就对不上了
+BASE_DEFAULT="https://raw.githubusercontent.com/hjdhnx/dr_py/321a6426a598bd4b4526ee7b7b297841457873dc"
 
 # 目标路径 | 上游相对路径 | sha256
 FILES=(
@@ -27,10 +32,8 @@ FILES=(
 check_only=0
 [ "${1:-}" = --check ] && check_only=1
 
-base="${LP_DRPY_BASE:-}"
-if [ -z "$base" ] && [ -f "$ROOT/scripts/drpy-source.local" ]; then
-  base="$(tr -d '[:space:]' < "$ROOT/scripts/drpy-source.local")"
-fi
+# 换镜像时可以用 LP_DRPY_BASE 顶掉(sha256 照验,顶错了下不出东西)
+base="${LP_DRPY_BASE:-$BASE_DEFAULT}"
 
 sha() { sha256sum "$1" | cut -d' ' -f1; }
 
@@ -56,8 +59,8 @@ for row in "${FILES[@]}"; do
   if [ -f "$f" ] && [ "$(sha "$f")" = "$want" ]; then
     continue
   fi
-  if [ $check_only = 1 ] || [ -z "$base" ]; then
-    echo "  ✗ $dst 缺失或版本不对(先跑 bash scripts/fetch-drpy.sh;上游地址配在 scripts/drpy-source.local)"
+  if [ $check_only = 1 ]; then
+    echo "  ✗ $dst 缺失或版本不对(跑一次 bash scripts/fetch-drpy.sh)"
     bad=$((bad + 1))
     continue
   fi
