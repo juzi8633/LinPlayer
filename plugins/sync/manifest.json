@@ -4,7 +4,7 @@
   "name": "Trakt / Bangumi 同步",
   "version": "0.1.0",
   "description": "把看过的进度同步到 Trakt 与 Bangumi:播放时 scrobble、看完标记、详情页显示同步状态、收藏与集数进度管理。账号在宿主里连,插件只借用不接触 token。",
-  "minAppVersion": "1.1.0",
+  "minAppVersion": "2.0.0",
   "license": "AGPL-3.0",
   "activation": { "load": "startup", "lifetime": "resident" },
   "contributes": {

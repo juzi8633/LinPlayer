@@ -4,8 +4,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const dist = path.resolve(import.meta.dirname, '../dist');
+// ☠ 判据要对着**站点实际构建用的那份**索引。原来恒读 sample,而站点在有真索引时
+//   读的是 ../registry/index.json —— 两边一旦不同,自检数的是另一份数据,永远绿。
+const real = path.resolve(import.meta.dirname, '../../registry/index.json');
 const idx = JSON.parse(fs.readFileSync(
-  path.resolve(import.meta.dirname, '../src/data/index.sample.json'), 'utf8'));
+  fs.existsSync(real) ? real : path.resolve(import.meta.dirname, '../src/data/index.sample.json'), 'utf8'));
 const slugs = idx.plugins.map((p) => p.id.replace(/\//g, '-'));
 const fail = [];
 const need = (p) => { if (!fs.existsSync(path.join(dist, p))) fail.push(`缺 ${p}`); };
@@ -50,6 +53,19 @@ for (const f of fs.readdirSync(dist, { recursive: true })) {
   for (const [, host] of text.matchAll(/https?:\/\/([a-zA-Z0-9.:-]+)/g)) {
     if (ALLOW.test(host) || expected.includes(host)) continue;
     fail.push(`${f} 里有外部主机 ${host}`);
+  }
+}
+
+/* 客户端的官方市场地址(LP_PLUGIN_MARKET_URL)指的就是产物里这一份。
+   它不在 / 是假的,表现是「插件商店空的」而不是报错 —— 所以在这儿挡。 */
+const mk = path.join(dist, 'registry/index.json');
+if (!fs.existsSync(mk)) fail.push('缺 registry/index.json —— 客户端的官方市场地址会 404');
+else {
+  const m2 = JSON.parse(fs.readFileSync(mk, 'utf8'));
+  if (m2.plugins?.length !== slugs.length) fail.push(`registry/index.json 有 ${m2.plugins?.length} 条,应为 ${slugs.length}`);
+  for (const p of m2.plugins ?? []) for (const v of p.versions ?? []) {
+    if (!/^https:\/\//.test(v.url)) fail.push(`${p.id} ${v.version} 的下载地址不是 https:${v.url}`);
+    if (!(v.size > 0)) fail.push(`${p.id} ${v.version} 没有体积`);
   }
 }
 

@@ -4,7 +4,7 @@
   "name": "字幕翻译",
   "version": "0.1.0",
   "description": "把当前字幕翻成你看得懂的语言:支持 OpenAI 兼容接口、Anthropic、百度翻译(用你自己的 key)。没有字幕时可以先用 Whisper 转写。结果按「源字幕 + 引擎 + 语言 + 排版」缓存,同一集看第二遍不再花额度。",
-  "minAppVersion": "1.1.0",
+  "minAppVersion": "2.0.0",
   "license": "AGPL-3.0",
   "activation": { "load": "lazy", "lifetime": "idle" },
   "requires": { "components": ["whisper", "ffmpeg"] },

@@ -4,7 +4,7 @@
   "name": "直播",
   "version": "0.1.0",
   "description": "看直播:贴一条 m3u / txt 地址就能用,装了 TVBox 插件的话它配置里的直播源也会自动出现。同名频道合并成「源 1/2/3」,播不动自动换下一条并记住能用的那条;XMLTV 节目单、回看/时移、收藏与自定义频道号;TV 上按 TVBox 的习惯操作(上下换台、数字键输号、确认呼出列表)。",
-  "minAppVersion": "1.1.0",
+  "minAppVersion": "2.0.0",
   "license": "AGPL-3.0",
   "lan": true,
   "activation": { "load": "lazy", "lifetime": "idle" },

@@ -72,21 +72,13 @@ if [ -z "$GO" ]; then
   echo "  确认没问题之后:PLUGIN_REPO_SLUG=$SLUG bash scripts/push-plugin-repo.sh --yes"
   exit 0
 fi
-# 用本机配好的身份提交,和主仓库的提交是同一个人
-git commit -q -F - <<'MSG'
-重建:2.0.0 插件系统
-
-原来的内容是旧插件系统(com.linplayer.* 的 id 与旧 schema),和 2.0.0 的新格式
-不兼容 —— 新系统从零重做,id 是「作者/名字」,索引是 index.schema.json 那一份。
-
-这一版有:官方插件源码、市场索引、@linplayer/plugin-sdk 与 @linplayer/cli、
-Astro 插件墙与开发者站、上架 PR 的校验与自动合并工作流、每个扩展点一个最小示例。
-
-整仓 AGPL-3.0-or-later,和 LinPlayer 主体一致。
+# 用本机配好的身份提交,和主仓库的提交是同一个人。
+# 提交说明按次给:整仓重建只发生一次,之后每次都是内容更新,复用同一句话等于没写。
+git commit -q -F - <<MSG
+${PLUGIN_REPO_MSG:-同步:官方插件与市场索引}
 MSG
 git push origin HEAD:main
 echo
 echo "推完了。接下来要人做的:"
-echo "  · 官方插件的 .lpplugin 还没发 Release —— 索引里的下载地址现在指向 404。"
-echo "    包已经打好在 build/lpplugin/,发法见 docs/plugin-system/RELEASE-RUNBOOK.md。"
-echo "  · 仓库 Settings → Variables 配 SITE_URL 与 PUBLIC_REPO_URL,Pages 站才建得出绝对地址。"
+echo "  · 官方插件的 .lpplugin 改了就要重发 Release(脚本发完会照索引回验一遍):"
+echo "    PLUGIN_REPO_SLUG=$SLUG bash scripts/release-plugins.sh --yes"

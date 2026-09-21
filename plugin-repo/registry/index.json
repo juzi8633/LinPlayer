@@ -2,7 +2,7 @@
   "$schema": "../packages/sdk/schema/index.schema.json",
   "schema": 1,
   "name": "LinPlayer 官方插件",
-  "updated": "2026-09-21T00:30:37.402Z",
+  "updated": "2026-09-21T00:55:46.419Z",
   "plugins": [
     {
       "id": "linplayer/devtools",
@@ -11,7 +11,7 @@
       "author": "linplayer",
       "repository": "https://github.com/zzzwannasleep/LinPlayer",
       "official": true,
-      "addedAt": "2026-09-21T00:30:37.399Z",
+      "addedAt": "2026-09-21T00:55:46.416Z",
       "contributes": [
         "pages",
         "sidebar"
@@ -23,9 +23,9 @@
         {
           "version": "0.1.0",
           "url": "https://github.com/zzzwannasleep/LinplayerPluginsRepository/releases/download/devtools-v0.1.0/devtools-0.1.0.lpplugin",
-          "size": 17033,
-          "minAppVersion": "1.1.0",
-          "released": "2026-09-21T00:30:37.400Z"
+          "size": 17034,
+          "minAppVersion": "2.0.0",
+          "released": "2026-09-21T00:55:46.417Z"
         }
       ]
     },
@@ -36,7 +36,7 @@
       "author": "linplayer",
       "repository": "https://github.com/zzzwannasleep/LinPlayer",
       "official": true,
-      "addedAt": "2026-09-21T00:30:37.400Z",
+      "addedAt": "2026-09-21T00:55:46.418Z",
       "contributes": [
         "commands",
         "pages",
@@ -52,9 +52,9 @@
         {
           "version": "0.1.0",
           "url": "https://github.com/zzzwannasleep/LinplayerPluginsRepository/releases/download/live-v0.1.0/live-0.1.0.lpplugin",
-          "size": 38273,
-          "minAppVersion": "1.1.0",
-          "released": "2026-09-21T00:30:37.400Z"
+          "size": 38275,
+          "minAppVersion": "2.0.0",
+          "released": "2026-09-21T00:55:46.418Z"
         }
       ],
       "lan": true
@@ -66,7 +66,7 @@
       "author": "linplayer",
       "repository": "https://github.com/zzzwannasleep/LinPlayer",
       "official": true,
-      "addedAt": "2026-09-21T00:30:37.401Z",
+      "addedAt": "2026-09-21T00:55:46.418Z",
       "contributes": [
         "pages",
         "sidebar"
@@ -78,9 +78,9 @@
         {
           "version": "0.1.0",
           "url": "https://github.com/zzzwannasleep/LinplayerPluginsRepository/releases/download/rule-editor-v0.1.0/rule-editor-0.1.0.lpplugin",
-          "size": 250641,
-          "minAppVersion": "1.1.0",
-          "released": "2026-09-21T00:30:37.401Z"
+          "size": 250640,
+          "minAppVersion": "2.0.0",
+          "released": "2026-09-21T00:55:46.418Z"
         }
       ]
     },
@@ -91,7 +91,7 @@
       "author": "linplayer",
       "repository": "https://github.com/zzzwannasleep/LinPlayer",
       "official": true,
-      "addedAt": "2026-09-21T00:30:37.401Z",
+      "addedAt": "2026-09-21T00:55:46.418Z",
       "contributes": [
         "commands",
         "playerOverlays",
@@ -106,9 +106,9 @@
         {
           "version": "0.1.0",
           "url": "https://github.com/zzzwannasleep/LinplayerPluginsRepository/releases/download/subtitle-translate-v0.1.0/subtitle-translate-0.1.0.lpplugin",
-          "size": 21043,
-          "minAppVersion": "1.1.0",
-          "released": "2026-09-21T00:30:37.401Z"
+          "size": 21044,
+          "minAppVersion": "2.0.0",
+          "released": "2026-09-21T00:55:46.418Z"
         }
       ],
       "requires": {
@@ -125,7 +125,7 @@
       "author": "linplayer",
       "repository": "https://github.com/zzzwannasleep/LinPlayer",
       "official": true,
-      "addedAt": "2026-09-21T00:30:37.401Z",
+      "addedAt": "2026-09-21T00:55:46.418Z",
       "contributes": [
         "anchors",
         "pages",
@@ -139,9 +139,9 @@
         {
           "version": "0.1.0",
           "url": "https://github.com/zzzwannasleep/LinplayerPluginsRepository/releases/download/sync-v0.1.0/sync-0.1.0.lpplugin",
-          "size": 13147,
-          "minAppVersion": "1.1.0",
-          "released": "2026-09-21T00:30:37.401Z"
+          "size": 13148,
+          "minAppVersion": "2.0.0",
+          "released": "2026-09-21T00:55:46.418Z"
         }
       ]
     },
@@ -152,7 +152,7 @@
       "author": "linplayer",
       "repository": "https://github.com/zzzwannasleep/LinPlayer",
       "official": true,
-      "addedAt": "2026-09-21T00:30:37.401Z",
+      "addedAt": "2026-09-21T00:55:46.419Z",
       "contributes": [
         "theme"
       ],
@@ -163,9 +163,9 @@
         {
           "version": "0.1.0",
           "url": "https://github.com/zzzwannasleep/LinplayerPluginsRepository/releases/download/theme-midnight-v0.1.0/theme-midnight-0.1.0.lpplugin",
-          "size": 1825,
-          "minAppVersion": "1.1.0",
-          "released": "2026-09-21T00:30:37.401Z",
+          "size": 1827,
+          "minAppVersion": "2.0.0",
+          "released": "2026-09-21T00:55:46.419Z",
           "platforms": [
             "windows",
             "linux"
@@ -180,7 +180,7 @@
       "author": "linplayer",
       "repository": "https://github.com/zzzwannasleep/LinPlayer",
       "official": true,
-      "addedAt": "2026-09-21T00:30:37.402Z",
+      "addedAt": "2026-09-21T00:55:46.419Z",
       "contributes": [
         "theme"
       ],
@@ -191,9 +191,9 @@
         {
           "version": "0.1.0",
           "url": "https://github.com/zzzwannasleep/LinplayerPluginsRepository/releases/download/theme-midnight-phone-v0.1.0/theme-midnight-phone-0.1.0.lpplugin",
-          "size": 1507,
-          "minAppVersion": "1.1.0",
-          "released": "2026-09-21T00:30:37.402Z",
+          "size": 1508,
+          "minAppVersion": "2.0.0",
+          "released": "2026-09-21T00:55:46.419Z",
           "platforms": [
             "android"
           ]
@@ -207,7 +207,7 @@
       "author": "linplayer",
       "repository": "https://github.com/zzzwannasleep/LinPlayer",
       "official": true,
-      "addedAt": "2026-09-21T00:30:37.402Z",
+      "addedAt": "2026-09-21T00:55:46.419Z",
       "contributes": [
         "theme"
       ],
@@ -218,9 +218,9 @@
         {
           "version": "0.1.0",
           "url": "https://github.com/zzzwannasleep/LinplayerPluginsRepository/releases/download/theme-midnight-tv-v0.1.0/theme-midnight-tv-0.1.0.lpplugin",
-          "size": 1531,
-          "minAppVersion": "1.1.0",
-          "released": "2026-09-21T00:30:37.402Z",
+          "size": 1530,
+          "minAppVersion": "2.0.0",
+          "released": "2026-09-21T00:55:46.419Z",
           "platforms": [
             "android_tv"
           ]
@@ -234,7 +234,7 @@
       "author": "linplayer",
       "repository": "https://github.com/zzzwannasleep/LinPlayer",
       "official": true,
-      "addedAt": "2026-09-21T00:30:37.402Z",
+      "addedAt": "2026-09-21T00:55:46.419Z",
       "contributes": [
         "commands",
         "dataSource",
@@ -250,9 +250,9 @@
         {
           "version": "0.1.0",
           "url": "https://github.com/zzzwannasleep/LinplayerPluginsRepository/releases/download/tvbox-v0.1.0/tvbox-0.1.0.lpplugin",
-          "size": 282200,
-          "minAppVersion": "1.1.0",
-          "released": "2026-09-21T00:30:37.402Z"
+          "size": 282202,
+          "minAppVersion": "2.0.0",
+          "released": "2026-09-21T00:55:46.419Z"
         }
       ],
       "lan": true,

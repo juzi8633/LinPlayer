@@ -4,7 +4,7 @@
   "name": "开发者工具",
   "version": "0.1.0",
   "description": "官方开发者工具:日志、网络请求、UI 树、性能与存储四块调试面板,外加渲染器的组件示例页与一千项大列表。",
-  "minAppVersion": "1.1.0",
+  "minAppVersion": "2.0.0",
   "license": "AGPL-3.0",
   "activation": { "load": "lazy", "lifetime": "idle" },
   "contributes": {

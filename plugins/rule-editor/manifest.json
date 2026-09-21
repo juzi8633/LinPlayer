@@ -4,7 +4,7 @@
   "name": "drpy 规则编辑器",
   "version": "0.1.0",
   "description": "写 drpy 规则的人用:贴进规则,点「测试」在隔离的子运行时里跑一遍 首页 / 分类 / 详情 / 播放,结果或报错栈当场看;满意了「保存为数据源」。drpy 引擎与依赖库打包在本插件里,不依赖 TVBox 插件。",
-  "minAppVersion": "1.1.0",
+  "minAppVersion": "2.0.0",
   "license": "AGPL-3.0",
   "activation": { "load": "lazy", "lifetime": "idle" },
   "contributes": {

@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "description": "导入 TVBox 配置订阅或 drpy 规则,把里面的站点变成可以浏览、搜索、播放的数据源。插件本身不带任何源,内容由用户自行订阅。",
   "i18n": { "en": { "name": "TVBox compatibility", "description": "Import TVBox subscriptions or drpy rules as data sources." } },
-  "minAppVersion": "1.1.0",
+  "minAppVersion": "2.0.0",
   "license": "AGPL-3.0",
   "lan": true,
   "requires": { "components": ["jar-runtime", "python"] },
