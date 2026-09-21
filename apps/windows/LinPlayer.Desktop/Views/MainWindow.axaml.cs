@@ -2288,8 +2288,12 @@ public partial class MainWindow : Window
             var page = Mi.Str(it, "page");
             var title = Mi.Str(it, "title") is { Length: > 0 } t ? t : page;
             if (page.Length == 0) continue;
-            // 图标缺省给一块「插件」字形:侧栏折叠之后只剩图标,空着就成了一条点不出名堂的横线
-            var row = NavRow(Mi.Str(it, "icon") is { Length: 1 } g ? g : "\ue74c", title, null);
+            /* 图标缺省给「插件」那个字形(E71D = apps):侧栏折叠之后只剩图标,
+               空着就成了一条点不出名堂的横线。
+               字形**必须在 LinIcons 里**(scripts/gen-icon-font.py 的 MAP)——
+               不在的话 Windows 上照样有(系统字体兜底),Linux 上是个豆腐块。
+               第一版随手写了 E74C,Linux 打包那一关当场红。 */
+            var row = NavRow(Mi.Str(it, "icon") is { Length: 1 } g ? g : "\ue71d", title, null);
             ToolTip.SetTip(row, $"{title} · 来自插件 {pluginId}");
             row.Click += (_, _) => Nav.Push(new PluginPageHost(_core!, pluginId, page, title));
             host.Children.Add(row);

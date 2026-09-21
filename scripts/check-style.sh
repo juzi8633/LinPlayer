@@ -7,6 +7,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 D=apps/windows/LinPlayer.Desktop
+ROOT_PY=.
 SUM=${1:-}
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -124,6 +125,18 @@ if [ -s "$T/col" ]; then
   [ "$SUM" = --summary ] || sed 's/^/    /' "$T/col" | head -10
 else pass "没有"; fi
 
+# ---- 7. 界面用的字形都在 LinIcons 里 ----
+# ☠ 这一关原来**只在 Linux 打包时跑**(pack-linux.sh),于是「本机全绿、推上去 CI 红」:
+#   Windows 上系统字体会替补认不得的字形,Linux 上就是一个豆腐块。
+#   2026-09-21 随手给侧栏插件入口写了个 E74C,本机六关全过,CI 的 Linux 打包当场红。
+sect "界面字形都在 LinIcons 里(不在的话 Linux 上是豆腐块)"
+if python "$ROOT_PY/scripts/gen-icon-font.py" --check >"$T/icon" 2>&1; then
+  pass "没有缺的"
+else
+  fail "有字形不在字体里"
+  [ "$SUM" = --summary ] || sed 's/^/    /' "$T/icon" | head -5
+fi
+
 echo
-if [ "$bad" -gt 0 ]; then echo "✗ $bad / 6 项不达标"; exit 1; fi
-echo "✓ 6 项全过"
+if [ "$bad" -gt 0 ]; then echo "✗ $bad / 7 项不达标"; exit 1; fi
+echo "✓ 7 项全过"
