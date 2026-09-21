@@ -54,6 +54,11 @@
 | 深链 | `deepLinks[]`(`linplayer://p/作者/名字/...`) | — | D154 |
 | 外部输入 | `externalInputs[]`(分享 / 拖放 / 文件关联 / 剪贴板) | 多个插件匹配同一输入时让用户选 | D304 |
 
+首页栏目的落点(D583):核心层 `plugin.homeSections` 取表、`plugin.homeItems` 取 `kind=items`
+那一栏的数据;桌面画在首页最后,手机同。`kind=items` 由壳画成官方轨道的样子(主题自动跟随),
+`kind=custom` 整块交给插件的 block。**官方首页提前返回时照画** —— 账号不是 Emby 的那一屏
+本来就只有一行说明,插件栏目正该在那时候出现。
+
 **贡献点的表,壳必须真去要(D580)。** `core/plugin/anchors.go` 里每条 `plugin.*`
 取贡献表的命令(`anchors` / `settingsSections` / `playerSurfaces` / `sidebar`),
 两个壳都得调 —— 不调的表现是「插件声明了入口,界面上一个都看不见」,而三边全绿:

@@ -124,6 +124,21 @@ type Contributes struct {
 	PlayerOverlays []PlayerOverlay `json:"playerOverlays"`
 	PlayerPanels   []PlayerPanel   `json:"playerPanels"`
 	Sidebar        []SidebarEntry  `json:"sidebar"`
+	HomeSections   []HomeSection   `json:"homeSections"`
+}
+
+// HomeSection 首页上的一栏(SPEC 6.1,D156 D303)。
+//
+// kind=items:插件返回条目,宿主画成和官方「最新」一样的海报行(主题自动跟随)。
+// kind=custom:插件自己画一块(轮播、日历、流量这类),block 指向 definePlugin 的 blocks。
+type HomeSection struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Kind  string `json:"kind"`
+	Block string `json:"block,omitempty"`
+	Shape string `json:"shape,omitempty"`
+	// PluginID 由 HomeSections() 填,manifest 里没有这个字段
+	PluginID string `json:"plugin_id,omitempty"`
 }
 
 // PlayerOverlay 盖在播放画面上的一层。默认点击穿透,声明 interactive 才拦截。

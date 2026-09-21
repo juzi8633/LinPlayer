@@ -8,7 +8,7 @@
  */
 import {
   definePlugin, h, useState, useEffect,
-  ui, settings,
+  nav, ui, settings,
   Column, Row, Text, Button, Chip, ChipGroup, Divider, EmptyState, Spinner,
   Image, TextInput, ProgressBar, Pressable,
 } from '@linplayer/plugin-sdk'
@@ -344,6 +344,22 @@ function UhdPage() {
   )
 }
 
+/** 首页上那一块:只有流量,点进去是完整的助手页。 */
+function HomeTraffic() {
+  const configured = String(settings.get('site') ?? '').trim() && String(settings.get('username') ?? '').trim()
+  if (!configured) return null
+  return (
+    <Pressable onPress={() => nav.push('linplayer/uhd:uhd')}>
+      <Column style={{ gap: 6, padding: 10 }}>
+        <TrafficCard />
+      </Column>
+    </Pressable>
+  )
+}
+
 export default definePlugin({
   pages: { uhd: UhdPage },
+  // 首页那一栏(D303 的 custom 写法):没配账号时返回 null —— 首页上不该多出一块
+  // 写着「先去设置」的空卡片,那是用户没要求过的东西
+  blocks: { traffic: HomeTraffic },
 })

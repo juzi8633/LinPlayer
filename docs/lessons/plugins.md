@@ -671,3 +671,29 @@ hhyun    → https://<云播站>/play/<一串 id>   ← 这是个网页
 
 顺带一提「加载不了」这类报障的排查顺序:**先证明数据这条路是通的**(拿真源在门禁里跑一遍),
 再去看入口。反过来查会在解析器里翻半天,而那里根本没有 bug。
+
+## 贡献点「声明了没人画」不止一处(2026-09-21)
+
+修完侧栏入口(`sidebar`)之后顺手点了一遍:核心层为贡献点开的取表命令,
+两个壳到底调了几条。结果 `homeSections`(首页栏目)是同一个病 ——
+**核心层连取它的命令都没有**,插件写了也永远画不出来。
+
+这一类失败的共同形状:
+
+```
+manifest 合法 ✓   lp check 通过 ✓   贡献点清单里列着它 ✓   界面上什么都没有 ✗
+```
+
+四边全绿,没有一处报错。查的时候最容易掉进去的坑是「插件写错了吧」——
+其实插件是对的,断的是宿主那一头。
+
+**判断一个贡献点是不是真的通了,只有一条判据:从 manifest 到屏幕,中间每一段都有人接。**
+现在由 `check-plugin-ui.py` 第 5 条守着 `anchors.go` 里的取表命令
+(`anchors` / `settingsSections` / `playerSurfaces` / `sidebar` / `homeSections` / `homeItems`)。
+它只能证明「壳去要了」,证明不了「要来的东西画对了」—— 后者靠各自的插件验收测试
+(`uhd_plugin_test.go` 的首页流量栏那条就是:列得出来 **且** 挂上去画出真实数字)。
+
+**还没接的**(2026-09-21 记):`externalInputs`(分享/拖放/文件关联/剪贴板)、
+`virtualLibraries`、`searchActions`、`globalOverlays`、`pageTakeovers`、`launchTargets`、
+`trayMenu`、`remoteButtons`、`keybindings`、插件的 `nextUp`。这些在 SPEC 里写着,
+宿主一侧是空的 —— 别照着 SPEC 写插件然后奇怪为什么没反应。

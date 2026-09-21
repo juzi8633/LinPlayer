@@ -3,8 +3,8 @@
 > 由 `tools/coverage.py` 生成,不要手改。每条决定都必须在 SPEC 正文有落点;
 > 需要接口的决定在 `api/` 里有 `@see Dnnn`;没有接口的写明为什么不需要。
 
-- 决定总数:582
-- SPEC 有落点:582
+- 决定总数:583
+- SPEC 有落点:583
 - API 有落点:334
 - 结论:全部通过
 
@@ -592,3 +592,4 @@
 | D580 | 插件的侧栏入口(contributes.sidebar)三个壳都要画。核心层的 plugin.sidebar 从阶段 ②… | 06 | —(宿主对贡献点的调度规则) |
 | D581 | UHD 助手合成一个官方插件(linplayer/uhd,流量 / 求片 / 测速三合一),旧栈那三个独立插件作废。三块… | 17 | —(官方插件内部实现) |
 | D582 | 字形是否在 LinIcons 里,推之前本机就要红:gen-icon-font.py --check 从只挂在 pack… | 19 | —(实施计划与验收) |
+| D583 | 首页栏目(homeSections)接通:核心层加 plugin.homeSections(取表)与 plugin.ho… | 06 | —(宿主对贡献点的调度规则) |

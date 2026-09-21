@@ -309,3 +309,30 @@ func TestUhdPlugin测速(t *testing.T) {
 		t.Fatal("没建过测速会话 —— 那这个数是编的")
 	}
 }
+
+// 首页栏目(SPEC 6.1 D156 D303):声明了就得取得到,而且 custom 那一块要真挂得起来。
+//
+// ☠ 这张表以前**声明了没人画** —— 核心层连取它的命令都没有。
+// 所以这里的判据有两条:`plugin.homeSections` 列得出来,挂上去之后**画出真实数据**。
+func TestUhdPlugin首页流量栏(t *testing.T) {
+	e := newUhdEnv(t, nil)
+	// 直接问 Host:命令注册在 RegisterCommands 里,这个测试没起命令层
+	secs := e.h.HomeSections()
+	var got *HomeSection
+	for i := range secs {
+		if secs[i].PluginID == "linplayer/uhd" && secs[i].ID == "traffic" {
+			got = &secs[i]
+		}
+	}
+	if got == nil {
+		t.Fatalf("HomeSections 里没有 UHD 那一栏: %+v", secs)
+	}
+	if got.Kind != "custom" || got.Block != "traffic" || got.Title != "流量" {
+		t.Fatalf("栏目字段没照 manifest 带出来: %+v", *got)
+	}
+	sid := mountUI(t, e.c, map[string]any{"plugin": "linplayer/uhd", "target": "traffic", "kind": "block"})
+	if sid == "" {
+		t.Fatal("首页那一块没挂上")
+	}
+	e.waitText(t, "剩余 90 GB", "首页流量块")
+}

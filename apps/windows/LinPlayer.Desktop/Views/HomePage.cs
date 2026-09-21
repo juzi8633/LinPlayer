@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -89,8 +89,67 @@ public sealed class HomePage : PageBase
         _rows.LayoutUpdated += (_, _) => PumpLazy();
         SelfCheckHome();
         Content = _sv;
-        if (core is not null) _ = LoadAsync(core);
+        if (core is not null) _ = LoadAllAsync(core);
     }
+
+    /// <summary>
+    /// 官方内容 + 插件栏目。
+    ///
+    /// <para>插件栏目**一律接在最后**(D156:新装的追加到末尾),而且不管官方那边
+    /// 是不是提前返回了 —— 账号不是 Emby 时首页只有一行说明,那正是插件栏目
+    /// 最该出现的时候(比如流量卡)。写在 <see cref="LoadAsync"/> 里面的话,
+    /// 那几条 <c>return</c> 会把它一起跳过。</para>
+    /// </summary>
+    private async Task LoadAllAsync(CoreClient core)
+    {
+        await LoadAsync(core);
+        await PluginHomeSections(core);
+    }
+
+    /// <summary>
+    /// 插件声明的首页栏目(SPEC 6.1,D156 D303)。
+    ///
+    /// <para>☠ 这张表以前**声明了没人画**:插件写了 <c>homeSections</c>,核心层没有取它的
+    /// 命令,壳自然也画不出来 —— 而 manifest 合法、<c>lp check</c> 通过、贡献点清单里还列着它。
+    /// 表现是「装了插件,首页什么都没多出来」。2026-09-21 和侧栏入口一起补上。</para>
+    /// </summary>
+    private async Task PluginHomeSections(CoreClient core)
+    {
+        JsonElement list;
+        try { list = await core.PluginHomeSections(new { }); }
+        catch (Exception e) { Log.W("首页", "取插件栏目失败,这一页只画官方内容:" + e.Message); return; }
+        if (list.ValueKind != JsonValueKind.Array) return;
+        foreach (var it in list.EnumerateArray())
+        {
+            var pid = Mi.Str(it, "plugin_id");
+            var sid = Mi.Str(it, "id");
+            var title = Mi.Str(it, "title") is { Length: > 0 } t ? t : sid;
+            if (pid.Length == 0 || sid.Length == 0) continue;
+            if (Mi.Str(it, "kind") == "custom")
+            {
+                // 自画的一块:标题由官方出,内容整块交给插件(轮播、日历、流量这类)
+                var block = Mi.Str(it, "block") is { Length: > 0 } b ? b : sid;
+                try
+                {
+                    AddRow(new StackPanel
+                    {
+                        Spacing = 10,
+                        Children = { H2(title), new PluginSurface(core, pid, block, "block", null) },
+                    });
+                }
+                catch (Exception e) { Log.W("首页", $"{pid} 的 {block} 挂不上,这一栏跳过:{e.Message}"); }
+                continue;
+            }
+            /* kind=items:插件只给条目,画成和官方轨道一样的海报行(D303 —— 主题自动跟随)。
+               懒加载 + 空了整条不画:插件栏目是锦上添花,不该和「继续观看」抢首屏那次往返,
+               也不该在没内容时留一行空标题。 */
+            AddPluginTrack(core, title, pid, sid, Mi.Str(it, "shape") == "landscape");
+        }
+    }
+
+    private void AddPluginTrack(CoreClient core, string title, string pid, string sid, bool wide) =>
+        _ = Track(title, async () => await Arr(core.PluginHomeItems(new { plugin_id = pid, id = sid })),
+            wide, lazy: true, hideWhenEmpty: true);
 
     private async Task LoadAsync(CoreClient core)
     {

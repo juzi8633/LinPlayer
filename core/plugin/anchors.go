@@ -8,8 +8,10 @@ package plugin
 
 import (
 	"context"
+	"encoding/json"
 
 	"linplayer/core/bus"
+	"linplayer/core/plugin/rt"
 )
 
 // AnchorBlock 壳要画的一块。
@@ -94,14 +96,33 @@ func registerAnchors() {
 	bus.Register("plugin.sidebar", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
 		return Default().SidebarEntries(), nil
 	})
+	bus.Register("plugin.homeSections", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
+		return Default().HomeSections(), nil
+	})
+	/* kind=items 那一栏的数据。**壳不直接调插件**:预算、连错计数、
+	   「最后在跑的插件」这些都在 Host.Call 里,绕过去的话一个跑飞的插件
+	   会把首页一起拖住,而崩了也不会被记账。 */
+	bus.Register("plugin.homeItems", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
+		id, _ := a["plugin_id"].(string)
+		sec, _ := a["id"].(string)
+		if id == "" || sec == "" {
+			return nil, bus.NewErr(bus.EInvalid, "缺少 plugin_id 或 id")
+		}
+		out, err := Default().Call(ctx, id, rt.BudgetData, "homeSections."+sec, []any{}, map[string]any{})
+		if err != nil {
+			return nil, err
+		}
+		return json.RawMessage(out), nil
+	})
 }
 
 /*
 PlayerSurface 播放页上要挂的一块(SPEC 9.5,D65 D279 D300)。
 
 ☠ 这张表在阶段 ④ 之前**根本不存在**,于是两端的壳都没有挂载点:
-  插件声明了 `playerOverlays`,核心层的按键通道也接好了,而那一层永远挂不出来 ——
-  插件那头 `player.onKey` 注册得上、一次都不回调。两个壳各自独立报了这件事。
+
+	插件声明了 `playerOverlays`,核心层的按键通道也接好了,而那一层永远挂不出来 ——
+	插件那头 `player.onKey` 注册得上、一次都不回调。两个壳各自独立报了这件事。
 */
 type PlayerSurface struct {
 	PluginID string `json:"plugin_id"`
@@ -139,6 +160,31 @@ func (h *Host) PlayerSurfaces(kind string) []PlayerSurface {
 					PluginID: i.ID, Name: i.Name, Kind: "panel", ID: o.ID, Title: o.Title, Icon: o.Icon,
 				})
 			}
+		}
+	}
+	return out
+}
+
+/*
+HomeSections 首页栏目(SPEC 6.1,D156 D303)。
+
+☠ 这张表和侧栏入口一样,以前**声明了没人要**:插件写了 homeSections,
+核心层没有取它的命令,两个壳自然也画不出来 —— 而 manifest 合法、lp check 通过、
+贡献点清单里还列着它。表现是「装了插件,首页什么都没多出来」。
+*/
+func (h *Host) HomeSections() []HomeSection {
+	out := []HomeSection{}
+	for _, i := range h.List(nil) {
+		if !i.Enabled {
+			continue
+		}
+		m, err := h.Manifest(i.ID)
+		if err != nil {
+			continue
+		}
+		for _, e := range m.Contributes.HomeSections {
+			e.PluginID = i.ID
+			out = append(out, e)
 		}
 	}
 	return out

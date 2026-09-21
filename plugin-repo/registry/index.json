@@ -2,7 +2,7 @@
   "$schema": "../packages/sdk/schema/index.schema.json",
   "schema": 1,
   "name": "LinPlayer 官方插件",
-  "updated": "2026-09-21T05:24:21.120Z",
+  "updated": "2026-09-21T06:09:53.725Z",
   "plugins": [
     {
       "id": "linplayer/devtools",
@@ -272,6 +272,7 @@
       "official": true,
       "addedAt": "2026-09-21T05:24:21.119Z",
       "contributes": [
+        "homeSections",
         "pages",
         "settings",
         "sidebar"
@@ -281,11 +282,11 @@
       ],
       "versions": [
         {
-          "version": "0.1.0",
-          "url": "https://github.com/zzzwannasleep/LinplayerPluginsRepository/releases/download/plugins/uhd-0.1.0.lpplugin",
-          "size": 22261,
+          "version": "0.2.0",
+          "url": "https://github.com/zzzwannasleep/LinplayerPluginsRepository/releases/download/plugins/uhd-0.2.0.lpplugin",
+          "size": 23832,
           "minAppVersion": "2.0.0",
-          "released": "2026-09-21T05:24:21.120Z"
+          "released": "2026-09-21T06:09:53.724Z"
         }
       ]
     }
