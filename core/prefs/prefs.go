@@ -196,6 +196,12 @@ func RegisterCommands(version string) {
 		   一个「按 X 定制」的开关,必须有一处能看到全部 X 的状态。 */
 		servers := []map[string]any{}
 		for _, acc := range c.AccountList {
+			// ☠ 只列 Emby。这个开关管的是**合集栏** —— 数据源(TVBox 这类采集站)
+			//   根本没有「合集」,也没有首页的概念,把它们摆进这张表等于给用户
+			//   一排点了毫无作用的勾(用户 2026-09-21 报障)。
+			if acc.IsFileBrowse() {
+				continue
+			}
 			servers = append(servers, map[string]any{
 				"server":  acc.Server,
 				"name":    acc.DisplayName(),

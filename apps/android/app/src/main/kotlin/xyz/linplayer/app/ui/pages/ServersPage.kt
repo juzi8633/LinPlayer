@@ -117,7 +117,11 @@ fun ServersPage(nav: NavController) {
     var iconFor by remember { mutableStateOf<Account?>(null) }
     var confirmDelete by remember { mutableStateOf<Account?>(null) }
     var hostFor by remember { mutableStateOf<Account?>(null) }
-    val openGroups = remember { androidx.compose.runtime.mutableStateListOf<String>() }
+    /* 用户手动开合过的订阅分组(true=开)。没记录的按默认走。
+       ☠ 记的是**用户的选择**,不是「当前该不该开」。原来只有一个「开着的」名单,
+       而「在用的源所在的组」被无条件当成开 —— 那一组的折叠按钮点了毫无反应
+       (用户 2026-09-21 报障,三个壳同一个写法,一起改)。 */
+    val groupOpen = remember { androidx.compose.runtime.mutableStateMapOf<String, Boolean>() }
     var reload by remember { mutableStateOf(0) }
 
     LaunchedEffect(reload) {
@@ -192,13 +196,13 @@ fun ServersPage(nav: NavController) {
                     }
                 }
             }
-            // 插件数据源:一个订阅一组,默认折叠;当前在用的那组总是展开(SPEC 8.7 D383)
+            // 插件数据源:一个订阅一组,默认折叠;在用的那组**默认**展开(SPEC 8.7 D383),点过就听用户的
             accounts.filter { it.plugin != null }.groupBy { it.plugin.str("group") ?: "" }.forEach { (group, rows) ->
                 val gname = rows.first().plugin.str("group_name")?.takeIf { it.isNotEmpty() } ?: rows.first().plugin.str("plugin_id") ?: ""
-                val open = group in openGroups || rows.any { it.isActive }
+                val open = groupOpen[group] ?: rows.any { it.isActive }
                 item("g:$group") {
                     SourceGroupHeader(gname, rows.size, open, rows.first().plugin.str("plugin_id") ?: "", group,
-                        onToggle = { if (!openGroups.remove(group)) openGroups.add(group) }) { reload++ }
+                        onToggle = { groupOpen[group] = !open }) { reload++ }
                 }
                 if (open) items(rows, key = { it.id }) { a ->
                     Box {

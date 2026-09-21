@@ -53,6 +53,14 @@
 | Android 快捷方式 / 桌面小组件 / TV 推荐行 / 媒体通知动作 | `android.shortcuts[]` `android.widgets[]` `android.tvChannels[]` `android.mediaActions[]` | 小组件只能用官方模板;媒体通知最多 1~2 个动作 | D505 D506 D511 |
 | 深链 | `deepLinks[]`(`linplayer://p/作者/名字/...`) | — | D154 |
 | 外部输入 | `externalInputs[]`(分享 / 拖放 / 文件关联 / 剪贴板) | 多个插件匹配同一输入时让用户选 | D304 |
+
+**贡献点的表,壳必须真去要(D580)。** `core/plugin/anchors.go` 里每条 `plugin.*`
+取贡献表的命令(`anchors` / `settingsSections` / `playerSurfaces` / `sidebar`),
+两个壳都得调 —— 不调的表现是「插件声明了入口,界面上一个都看不见」,而三边全绿:
+manifest 合法、`lp check` 通过、核心层返回正确。由 `scripts/check-plugin-ui.py` 第 5 条守着。
+
+侧栏入口三端的落点:桌面 = 侧栏(导航项与服务器区之间);手机 = 设置根列表的「插件页面」一组;
+TV = 设置页的「插件」组(导航轨按下标写死,加动态项要整个重排,暂不动)。
 | 服务器类型 | `dataSource.serverTypes[]` | 出现在「添加服务器」页 | D131 D45 |
 | 周期任务 / 常驻服务 | `background.tasks[]` `background.service` | 第 5.11 5.12 节 | D129 D502 |
 | 注册表通道 | `registry.channels[]`(可声明推荐读者) | — | D273 D275 |

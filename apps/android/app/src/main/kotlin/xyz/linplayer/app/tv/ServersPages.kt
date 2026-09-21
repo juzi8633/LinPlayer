@@ -154,7 +154,8 @@ fun ServersPage() {
     val normal = raw.filter { it["plugin"] == null }
     val list = order ?: normal
     val reorder = order != null
-    val openGroups = remember { androidx.compose.runtime.mutableStateListOf<String>() }
+    // 同 ServersPage:记的是用户的选择,不是「当前该不该开」
+    val groupOpen = remember { androidx.compose.runtime.mutableStateMapOf<String, Boolean>() }
 
     if (reorder) BackHandler {
         order = null; moving = -1
@@ -216,11 +217,11 @@ fun ServersPage() {
                 if (!reorder) raw.filter { it["plugin"] != null }.groupBy { it["plugin"].obj().str("group") ?: "" }.forEach { (group, rows) ->
                     val p0 = rows.first()["plugin"].obj()
                     val gname = p0.str("group_name")?.takeIf { it.isNotEmpty() } ?: p0.str("plugin_id") ?: ""
-                    val open = group in openGroups || rows.any { it.bool("active") }
+                    val open = groupOpen[group] ?: rows.any { it.bool("active") }
                     item(key = "g:$group", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                         Row(horizontalArrangement = Arrangement.spacedBy(TvSp.x8), verticalAlignment = Alignment.CenterVertically) {
                             TvButton("${if (open) "▾" else "▸"} $gname(${rows.size})", modifier = Modifier.memo("srv.g.$group")) {
-                                if (!openGroups.remove(group)) openGroups.add(group)
+                                groupOpen[group] = !open
                             }
                             TvButton("管理", modifier = Modifier.memo("srv.gm.$group")) {
                                 overlay.open { SourceGroupPanel(group, gname, p0.str("plugin_id") ?: "", { overlay.close() }) { reload++ } }

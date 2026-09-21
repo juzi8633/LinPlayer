@@ -95,6 +95,16 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun SettingsPage(nav: NavController) {
     val list = rememberLazyListState()
+    /* 插件声明的侧栏入口(contributes.sidebar)。
+       ☠ 这些入口以前**哪个壳都没画**:直播插件装上之后唯一的入口是
+       设置 → 插件 → 详情页 → 「页面」,四层深,用户报的是「甚至不知道哪里打开」
+       (2026-09-21)。手机上没有侧栏,放在设置根列表里 —— 两层就能到。 */
+    val app = LocalApp.current
+    var pluginEntries by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        pluginEntries = runCatching { app.call("plugin.sidebar") }.getOrNull().arr().mapNotNull { it.obj() }
+            .filter { !it.str("page").isNullOrEmpty() }
+    }
     // 截长屏认的就是这个滚动容器(设置里开了才画按钮,见 LongShot)
     LongShotTarget(list)
 
@@ -120,6 +130,24 @@ fun SettingsPage(nav: NavController) {
             item("p2") {
                 Panel(Modifier.padding(horizontal = Sp.x16)) {
                     LpCell("多线程加载", icon = LpIcons.cloud) { nav.navigate(Route.SettingsSub("prefetch")) }
+                }
+            }
+            if (pluginEntries.isNotEmpty()) {
+                item("g-pe") { GroupLabel("插件页面") }
+                item("p-pe") {
+                    Panel(Modifier.padding(horizontal = Sp.x16)) {
+                        pluginEntries.forEachIndexed { i, e ->
+                            if (i > 0) Hairline()
+                            // id 是 `<插件id>:<入口id>`,页面 id 在 page 上
+                            val eid = e.str("id").orEmpty()
+                            val pluginId = eid.substringBeforeLast(':', eid)
+                            val page = e.str("page").orEmpty()
+                            val title = e.str("title")?.takeIf { t -> t.isNotEmpty() } ?: page
+                            LpCell(title, icon = LpIcons.plugin) {
+                                nav.navigate(Route.PluginPage(pluginId, page, title))
+                            }
+                        }
+                    }
                 }
             }
             item("g4") { GroupLabel("其它") }

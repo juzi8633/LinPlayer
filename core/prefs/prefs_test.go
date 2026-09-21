@@ -430,3 +430,38 @@ func TestSetPrefs记住视图版式(t *testing.T) {
 		t.Fatalf("被拒的那次把原值改了,实得 %q", got)
 	}
 }
+
+// 首页栏目那张表**只列 Emby**(用户 2026-09-21:「直接忽略 Vod 源,
+// 他们就没有首页的概念,不该出现在设置里的首页栏目显示列表里面」)。
+//
+// ☠ 这个开关管的是**合集栏**。数据源(TVBox 这类采集站)没有合集、也没有首页,
+// 列进去等于给用户一排点了毫无作用的勾 —— 本仓最讨厌的那种控件。
+func Test首页栏目只列Emby(t *testing.T) {
+	setup(t)
+	c := config.Current()
+	vod := config.Account{Server: "https://vod", UserID: "u", UserName: "采集站"}
+	vod.SetRestValue("source_kind", "plugin:linplayer/tvbox/x")
+	c.AccountList = []config.Account{
+		{Server: "https://a", UserID: "u", UserName: "甲"},
+		vod,
+	}
+	zero := 0
+	c.Active = &zero
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	r := call(t, 601, "prefs.getHomeSettings", map[string]any{})
+	if !r.OK {
+		t.Fatalf("取首页栏目失败: %s %s", r.Code, r.Msg)
+	}
+	b, _ := json.Marshal(r.Data["servers"])
+	var list []struct {
+		Server string `json:"server"`
+	}
+	if err := json.Unmarshal(b, &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].Server != "https://a" {
+		t.Fatalf("只该列出 Emby 那一台,得到 %s", b)
+	}
+}

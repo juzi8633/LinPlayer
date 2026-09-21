@@ -192,6 +192,22 @@ private fun GeneralGroup(overlay: Overlay) {
         val nav = LocalNav.current
         PanelItem("插件", sub = "启停、从市场安装;重启应用后生效", chevron = true, modifier = Modifier.memo("set.plugins"), onClick = { nav.push(TvRoute.Plugins) })
         PanelItem("扩展组件", sub = "补帧、jar 运行时这类大件,插件用到时才下", chevron = true, modifier = Modifier.memo("set.ext"), onClick = { nav.push(TvRoute.Extensions) })
+        /* 插件声明的侧栏入口(contributes.sidebar)。TV 的导航轨是**按下标写死**的一串,
+           往里加动态项要整个重排 —— 先放这儿,两下就能到,而不是留在插件详情页里第四层。 */
+        val app2 = LocalApp.current
+        var entries by remember { mutableStateOf<List<kotlinx.serialization.json.JsonObject>>(emptyList()) }
+        LaunchedEffect(Unit) {
+            entries = runCatching { app2.call("plugin.sidebar") }.getOrNull().arr().mapNotNull { it.obj() }
+                .filter { !it.str("page").isNullOrEmpty() }
+        }
+        entries.forEach { e ->
+            val eid = e.str("id").orEmpty()
+            val pluginId = eid.substringBeforeLast(':', eid)
+            val page = e.str("page").orEmpty()
+            val title = e.str("title")?.takeIf { t -> t.isNotEmpty() } ?: page
+            PanelItem(title, sub = "插件页面", chevron = true, modifier = Modifier.memo("set.pe.$page"),
+                onClick = { nav.push(TvRoute.PluginPage(pluginId, page, title)) })
+        }
     }
 }
 

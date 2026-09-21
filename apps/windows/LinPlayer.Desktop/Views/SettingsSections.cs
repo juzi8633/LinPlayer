@@ -123,7 +123,8 @@ public static class SettingsSections
                 rows.Children.Add(box);
             }
         }
-        if (rows.Children.Count == 0) rows.Children.Add(Note("还没有登录任何服务器。"));
+        // 列表只收 Emby(核心层过滤):数据源没有合集、也没有首页,摆进来就是一排点了没用的勾
+        if (rows.Children.Count == 0) rows.Children.Add(Note("还没有 Emby 服务器。这一栏只对 Emby 有意义 —— 数据源(TVBox 这类采集站)没有合集。"));
 
         /* 自检:把这张表打出来(LP_SELFCHECK_HOMESET=1)。
             判据是**行数和每行的勾选态**,不是截图 —— 这一组排在设置页很靠下的位置,

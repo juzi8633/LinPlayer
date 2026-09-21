@@ -58,7 +58,13 @@ public partial class MainWindow : Window
         // X11 不支持把客户区扩进标题栏,系统标题栏还在 —— 自绘的三颗按钮再画一份就重复了
         Opened += (_, _) => this.FindControl<StackPanel>("CaptionButtons")!.IsVisible = IsExtendedIntoWindowDecorations;
 
-        Nav.Host = Show;
+        Nav.Host = p =>
+        {
+            var wasPlugin = Nav.Current is PluginPage or PluginDetailPage;
+            Show(p);
+            // 只在**离开插件页**时重建:每次导航都拉一遍是白费往返
+            if (wasPlugin && p is not (PluginPage or PluginDetailPage)) RefreshPluginEntries();
+        };
         Nav.Immersive = SetImmersive;
         Nav.Fullscreen = SetFullscreen;
         WireNavReclick();
@@ -1377,7 +1383,8 @@ public partial class MainWindow : Window
         // 服务器区:标题和每行的名字在折叠态下收掉,只留图标
         this.FindControl<TextBlock>("ServerSectionTitle")!.IsVisible = !_collapsed;
         foreach (var row in this.FindControl<StackPanel>("ServerList")!.Children.OfType<Button>()
-                     .Concat(this.FindControl<StackPanel>("SourceGroups")!.Children.OfType<Button>()))
+                     .Concat(this.FindControl<StackPanel>("SourceGroups")!.Children.OfType<Button>())
+                     .Concat(this.FindControl<StackPanel>("PluginEntries")!.Children.OfType<Button>()))
             if (row.Content is StackPanel sp)
             {
                 sp.Spacing = _collapsed ? 0 : 10;
@@ -1647,6 +1654,7 @@ public partial class MainWindow : Window
                 return;
             }
             UpdateServerChip(accounts);
+            await BuildPluginEntries();
             // 会话拉一次存住:命令层迁移期还要显式传 server/token/user_id,
             // 每页各拉一次就是每页多一次往返。
             try { Nav.Session = Sess.From(await _core.EmbyCurrentSession()); } catch { /* 非 Emby 账号没有会话 */ }
@@ -2088,8 +2096,12 @@ public partial class MainWindow : Window
     /// <summary>ServerList 里第 i 行(去掉「添加服务器」)对应账号表的下标。</summary>
     private readonly List<int> _rowAccount = [];
 
-    /// <summary>展开着的订阅分组。订阅组默认折叠(D383),只记本次运行。</summary>
-    private readonly HashSet<string> _openGroups = [];
+    /// <summary>用户手动开合过的订阅分组(true=开)。没记录的按默认走,只记本次运行。</summary>
+    ///
+    /// 记的是**用户的选择**,不是「当前该不该开」。原来只有一个「开着的」集合,
+    /// 而「在用的源所在的组」被无条件当成开 —— 于是那一组的折叠按钮点了毫无反应
+    /// (用户 2026-09-21 报障)。默认值照旧,但用户点过就以用户为准。
+    private readonly Dictionary<string, bool> _groupOpen = [];
 
     /// <summary>「允许聚合」开关(D233),Emby 与数据源通用;勾号表示当前开着。</summary>
     private MenuItem AggregateItem(string server, JsonElement a)
@@ -2113,13 +2125,15 @@ public partial class MainWindow : Window
             var first = g.First().GetProperty("plugin");
             var gname = Str(first, "group_name") is { Length: > 0 } gn ? gn : Str(first, "plugin_id");
             var pluginId = Str(first, "plugin_id");
-            // 当前在用的源所在的组总是展开,不然侧栏上找不到「使用中」那一行
-            var open = _openGroups.Contains(g.Key) || g.Any(r => r.TryGetProperty("active", out var v) && v.ValueKind == JsonValueKind.True);
-            var head = NavRow(open ? "" : "", $"{gname}({g.Count()})", null);
+            // 在用的源所在的组**默认**展开(不然侧栏上找不到「使用中」那一行),
+            // 但用户点过折叠就听用户的 —— 收起时把「使用中」的高亮移到组标题上,信息不丢。
+            var hasActive = g.Any(r => r.TryGetProperty("active", out var v) && v.ValueKind == JsonValueKind.True);
+            var open = _groupOpen.TryGetValue(g.Key, out var want) ? want : hasActive;
+            var head = NavRow(open ? "" : "", $"{gname}({g.Count()})", !open && hasActive ? "on" : null);
             ToolTip.SetTip(head, $"{gname} · 来自插件 {pluginId}");
             head.Click += (_, _) =>
             {
-                if (!_openGroups.Remove(g.Key)) _openGroups.Add(g.Key);
+                _groupOpen[g.Key] = !open;
                 _ = AfterServerChange();
             };
             head.ContextMenu = GroupMenu(g.Key, gname, pluginId);
@@ -2247,6 +2261,42 @@ public partial class MainWindow : Window
     }
 
     /// <summary>侧栏里一行(图标 + 文字)。和导航项同一套版式,但它不是单选项。</summary>
+    /// <summary>
+    /// 插件声明的侧栏入口(<c>contributes.sidebar</c>,SPEC 6.5 D158 D305)。
+    ///
+    /// <para>这一段以前**根本没有**:核心层的 <c>plugin.sidebar</c> 早就在了,
+    /// 两个壳一个都没去要过。于是直播插件装上之后,唯一的入口是
+    /// 设置 → 插件 → 详情页 → 「页面」卡片 —— 四层深,用户报的是「甚至不知道哪里打开」
+    /// (2026-09-21)。声明了贡献点而壳静默忽略,是本仓点名禁止的那类失败。</para>
+    /// </summary>
+    /// <summary>即发即忘地重建一次侧栏入口。</summary>
+    private void RefreshPluginEntries() => _ = BuildPluginEntries();
+
+    private async Task BuildPluginEntries()
+    {
+        var host = this.FindControl<StackPanel>("PluginEntries")!;
+        host.Children.Clear();
+        JsonElement list;
+        try { list = await _core!.PluginSidebar(new { }); }
+        catch (Exception e) { Log.W("侧栏", "取插件侧栏入口失败:" + e.Message); return; }
+        if (list.ValueKind != JsonValueKind.Array) return;
+        foreach (var it in list.EnumerateArray())
+        {
+            // id 是 `<插件id>:<入口id>`,页面 id 在 page 上
+            var id = Mi.Str(it, "id");
+            var pluginId = id.Contains(':') ? id[..id.LastIndexOf(':')] : id;
+            var page = Mi.Str(it, "page");
+            var title = Mi.Str(it, "title") is { Length: > 0 } t ? t : page;
+            if (page.Length == 0) continue;
+            // 图标缺省给一块「插件」字形:侧栏折叠之后只剩图标,空着就成了一条点不出名堂的横线
+            var row = NavRow(Mi.Str(it, "icon") is { Length: 1 } g ? g : "\ue74c", title, null);
+            ToolTip.SetTip(row, $"{title} · 来自插件 {pluginId}");
+            row.Click += (_, _) => Nav.Push(new PluginPageHost(_core!, pluginId, page, title));
+            host.Children.Add(row);
+        }
+        SyncCollapsed();
+    }
+
     private static Button NavRow(string glyph, string text, string? extraClass)
     {
         var sp = new StackPanel

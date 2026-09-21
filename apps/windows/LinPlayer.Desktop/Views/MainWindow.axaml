@@ -107,6 +107,10 @@
             <RadioButton Classes="nav" Name="NavCalendar" GroupName="nav" Content="追剧日历" Tag="&#xE787;" />
           </StackPanel>
 
+          <!-- 插件的侧栏入口(SPEC 6.5 D158 D305)。内容由 C# 填,见 BuildPluginEntries。
+               装了直播插件却在侧栏上找不到「直播」—— 那个插件就等于没装(用户 2026-09-21)。 -->
+          <StackPanel Name="PluginEntries" Spacing="0" Margin="0,6,0,0" />
+
           <!--
             服务器区。
             2026-09-03 用户点名:「侧边栏下面那些位置可以放服务器,

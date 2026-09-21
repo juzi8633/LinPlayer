@@ -12,6 +12,11 @@
      一端认一端不认,表现是「选中的和没选中的长得一样」,不报错。
   3. SPEC 7.6 的 transition / animation:要么两端都实现,要么别在 `.d.ts` 里放行。
   4. `.d.ts` 里的 hooks 要进 SDKHooks 名单,挂载那一侧按名单走(D514 的 hooks 那一半)。
+  5. 核心层为贡献点开的**取贡献表命令**(`plugin.anchors` / `plugin.sidebar` …),
+     两个壳都得真去要。要不要得到是运行期的事,这里只查**有没有这条调用** ——
+     不调的表现是「插件声明了入口,界面上一个都看不见」,而三边全绿:
+     manifest 合法、lp check 通过、核心层返回正确。2026-09-21 就是这么漏掉
+     `plugin.sidebar` 的:直播插件装上之后没有任何入口,用户报「甚至不知道哪里打开」。
 
 用法:python scripts/check-plugin-ui.py
 退出码非 0 = 有一端把某个组件或属性静默降级了。
@@ -185,6 +190,37 @@ def arms(text, pattern):
     return got
 
 
+def anchor_commands_wired():
+    """核心层为贡献点开的取表命令,两个壳都要调。"""
+    src = (ROOT / "core/plugin/anchors.go").read_text(encoding="utf-8")
+    cmds = sorted(set(re.findall(r'bus\.Register\("(plugin\.\w+)"', src)))
+    if len(cmds) < 3:
+        fail.append("从 anchors.go 只读到 %d 条取贡献表的命令 —— 那个文件的写法变了,这一关等于没跑" % len(cmds))
+        return
+    shells = {
+        "桌面": ROOT / "apps/windows/LinPlayer.Desktop",
+        "安卓": ROOT / "apps/android/app/src/main/kotlin",
+    }
+    exts = {"桌面": "*.cs", "安卓": "*.kt"}
+    for name, root in shells.items():
+        # ☠ 注释里提一句命令名不算「调了」—— 刚加这一关时就是这么差点放过桌面端的:
+        #   XML 文档注释里写了 <c>plugin.sidebar</c>,把真调用删掉照样绿。
+        text = "\n".join(strip_comments(f.read_text(encoding="utf-8", errors="replace"))
+                         for f in root.rglob(exts[name]) if "/obj/" not in f.as_posix()
+                         and "/build/" not in f.as_posix())
+        missing = []
+        for c in cmds:
+            # 直接写命令名,或者走生成的绑定(plugin.sidebar → PluginSidebar)
+            binding = "".join(w[:1].upper() + w[1:] for w in c.split("."))
+            if c not in text and binding not in text:
+                missing.append(c)
+        if missing:
+            fail.append("%s壳从来不调这 %d 条取贡献表的命令,插件声明的入口在这一端**一个都不会出现**:\n    %s"
+                        % (name, len(missing), " ".join(missing)))
+        else:
+            print("  ✓ %s:%d 条贡献表命令都有人调" % (name, len(cmds)))
+
+
 def main():
     comps = components()
     if len(comps) < 30:
@@ -268,6 +304,9 @@ def main():
         fail.append("rt/ui.go 不再按 SDKHooks 挂 hook —— 名单和挂载脱钩,少挂一个没人看得见")
     else:
         print("  ✓ hooks:%d 个都在 SDKHooks 名单里,挂载按名单走" % len(declared))
+
+    # 5. 贡献表命令有没有人调
+    anchor_commands_wired()
 
     if fail:
         print()
