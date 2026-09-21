@@ -19,6 +19,15 @@ mkdir -p "$DST/packages/sdk/schema"
 for f in manifest.schema.json index.schema.json theme-json.schema.json; do
   cp "$ROOT/docs/plugin-system/api/$f" "$DST/packages/sdk/schema/$f"
 done
+# 许可证正本在主仓库根:plugin-repo 那份也是同步来的,不另维护一份
+cp "$ROOT/LICENSE" "$DST/LICENSE"
+
+# ☠ 许可证正文要**进包**。npm 只会自动收包目录下的 LICENSE,而它在仓库根 ——
+#   发出去的 tgz 里没有许可证正文,对 AGPL 这种要求随分发提供全文的许可证是硬伤。
+#   这两份是生成物(plugin-repo/.gitignore 里忽略了),正本在仓库根。
+for p in sdk cli; do
+  cp "$DST/LICENSE" "$DST/packages/$p/LICENSE"
+done
 
 echo "== 2/3 官方插件源码 =="
 # plugins/ 在 plugin-repo 里不留副本(见它的 README),推之前才同步过去

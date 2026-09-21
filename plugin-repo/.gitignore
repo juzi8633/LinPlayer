@@ -1,6 +1,8 @@
 # plugins/ 是同步过来的副本,正本在主仓库(见 README)。
 # 在主仓库里不跟踪它,免得同一份源码两处各存一份、迟早对不上。
 plugins/
+# 两个包目录下的 LICENSE 是同步脚本从仓库根拷过去的(npm 只收包目录下的那一份)
+packages/*/LICENSE
 node_modules/
 dist/
 .astro/

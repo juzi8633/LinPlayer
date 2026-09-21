@@ -2,7 +2,7 @@
   "name": "@linplayer/plugin-sdk",
   "version": "2.0.0",
   "description": "LinPlayer 插件 SDK:类型定义与 JSON Schema。运行时由宿主注入,这个包只提供类型。",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "types": "index.d.ts",
   "exports": {
     ".": { "types": "./index.d.ts", "default": "./index.js" },
@@ -10,7 +10,7 @@
     "./index.schema.json": "./schema/index.schema.json",
     "./theme.schema.json": "./schema/theme-json.schema.json"
   },
-  "files": ["index.d.ts", "index.js", "schema/", "README.md"],
+  "files": ["index.d.ts", "index.js", "schema/", "README.md", "LICENSE"],
   "keywords": ["linplayer", "plugin", "sdk"],
   "publishConfig": { "access": "public" }
 }
