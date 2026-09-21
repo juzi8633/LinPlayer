@@ -62,14 +62,19 @@ for row in "${FILES[@]}"; do
     continue
   fi
   mkdir -p "$(dirname "$f")"
-  curl -fsSL "$base/$(urlenc "$src")" -o "$f.tmp"
-  if [ "$(sha "$f.tmp")" != "$want" ]; then
-    rm -f "$f.tmp"
+  # ☠ 落盘路径先用**纯 ASCII 的临时名**,再用 mv 改名。
+  #   curl 是原生 Windows 程序,MSYS 把 UTF-8 路径交给它时按系统 ANSI 代码页转,
+  #   带中文的那份会落在一个乱码名字上 —— 下载是成功的,而 sha256sum 找不到文件,
+  #   报出来的是「上游换了版本?」。mv 是 MSYS 的,和 sha256sum 同一套编码。
+  TMP="$DEST/.fetch.tmp"
+  curl -fsSL "$base/$(urlenc "$src")" -o "$TMP"
+  if [ "$(sha "$TMP")" != "$want" ]; then
+    rm -f "$TMP"
     echo "  ✗ $dst 下载到的内容 sha256 对不上(上游换了版本?)"
     bad=$((bad + 1))
     continue
   fi
-  mv "$f.tmp" "$f"
+  mv "$TMP" "$f"
   echo "  ✓ $dst"
 done
 [ $bad = 0 ] || exit 1
