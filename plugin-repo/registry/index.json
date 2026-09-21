@@ -2,7 +2,7 @@
   "$schema": "../packages/sdk/schema/index.schema.json",
   "schema": 1,
   "name": "LinPlayer 官方插件",
-  "updated": "2026-09-21T03:19:34.780Z",
+  "updated": "2026-09-21T03:42:07.606Z",
   "plugins": [
     {
       "id": "linplayer/devtools",
@@ -248,11 +248,11 @@
       ],
       "versions": [
         {
-          "version": "0.2.0",
-          "url": "https://github.com/zzzwannasleep/LinplayerPluginsRepository/releases/download/plugins/tvbox-0.2.0.lpplugin",
-          "size": 285430,
+          "version": "0.3.0",
+          "url": "https://github.com/zzzwannasleep/LinplayerPluginsRepository/releases/download/plugins/tvbox-0.3.0.lpplugin",
+          "size": 288848,
           "minAppVersion": "2.0.0",
-          "released": "2026-09-21T03:19:34.779Z"
+          "released": "2026-09-21T03:42:07.605Z"
         }
       ],
       "lan": true,

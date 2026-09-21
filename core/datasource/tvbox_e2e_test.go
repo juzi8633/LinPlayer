@@ -528,3 +528,70 @@ func TestTVBoxNonStandardConfigShapes(t *testing.T) {
 		t.Fatalf("空清单应报「这是 ForwardWidget 的小组件清单」: %v", err)
 	}
 }
+
+// 苹果 CMS 的顶级分类是空壳 —— 片子全挂在子分类上(2026-09-21 用户报障:
+// 「分类不会加载 直接显示加载失败」「有些能点但点完只显示几个,明明有很多」)。
+// 实测用户给的 34 个源里能连上的 22 个:13 个站的 class 带 type_pid,
+// 顶级分类直接查回 0~12 条且没有下一页;把子分类 id 用逗号连起来查,变成 2440~5306 条。
+func TestTVBoxParentCategoryHasNoItems(t *testing.T) {
+	e := newEnv(t)
+	base := `[{"name":"树形站","type":1,"api":"` + e.base + `/tree/api.php/provide/vod/"},` +
+		`{"name":"没首页","type":1,"api":"` + e.base + `/nohome/api.php/provide/vod/"},` +
+		`{"name":"停靠页","type":1,"api":"` + e.base + `/dead/api.php/provide/vod/"}]`
+	drafts := e.subscribe(base)
+	if len(drafts) != 3 {
+		t.Fatalf("应解出 3 个源,得到 %d", len(drafts))
+	}
+	key := func(name string) string {
+		for _, d := range drafts {
+			if d.Name == name {
+				return "plugin:linplayer/tvbox/" + d.ID
+			}
+		}
+		t.Fatalf("没有叫 %s 的源", name)
+		return ""
+	}
+
+	// 顶级分类 10 自己一部片都没有(片子的 type 是 1/2),要能自动展开成子分类
+	var pg struct {
+		Items []map[string]any `json:"items"`
+		Next  string           `json:"next"`
+	}
+	json.Unmarshal(e.call("source.category", map[string]any{"server_id": key("树形站"), "category_id": "10"}), &pg)
+	if len(pg.Items) != 20 || pg.Next != "2" {
+		t.Fatalf("顶级分类应展开成子分类:要 20 条 + 下一页,得到 %d 条 next=%q", len(pg.Items), pg.Next)
+	}
+	json.Unmarshal(e.call("source.category", map[string]any{"server_id": key("树形站"), "category_id": "10", "cursor": "2"}), &pg)
+	if len(pg.Items) == 0 {
+		t.Fatal("第二页应还有片 —— 「只显示几个」正是下一页游标没给出来")
+	}
+	// 子分类照常能点
+	json.Unmarshal(e.call("source.category", map[string]any{"server_id": key("树形站"), "category_id": "1"}), &pg)
+	if len(pg.Items) != 20 {
+		t.Fatalf("子分类应正常出 20 条,得到 %d", len(pg.Items))
+	}
+	// 真空的分类(没有子分类可展开)要说人话,不是「加载失败」
+	_, err := e.try("source.category", map[string]any{"server_id": key("树形站"), "category_id": "13"})
+	if err == nil || !strings.Contains(err.Error(), "父分类") {
+		t.Fatalf("空分类要说清楚为什么空: %v", err)
+	}
+
+	// 首页没有推荐的站,退回第一个有内容的分类,而不是空一屏
+	var home struct {
+		Categories  []map[string]any `json:"categories"`
+		Recommended []map[string]any `json:"recommended"`
+	}
+	json.Unmarshal(e.call("source.home", map[string]any{"server_id": key("没首页")}), &home)
+	if len(home.Recommended) == 0 {
+		t.Fatalf("首页没给推荐时应退回分类内容,得到空: %+v", home.Categories)
+	}
+
+	// 域名过期被停靠页接管:要说「返回的是网页」,不要把半屏 HTML 原样糊给用户
+	_, err = e.try("source.home", map[string]any{"server_id": key("停靠页")})
+	if err == nil || !strings.Contains(err.Error(), "返回的是网页") {
+		t.Fatalf("站点回网页时要说清楚: %v", err)
+	}
+	if strings.Contains(err.Error(), "DOCTYPE") {
+		t.Fatalf("别把网页原文糊进报错: %v", err)
+	}
+}

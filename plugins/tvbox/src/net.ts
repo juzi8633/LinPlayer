@@ -59,6 +59,16 @@ export async function fetchJson<T = any>(url: string, o: ReqOpts = {}): Promise<
   try {
     return JSON.parse(text)
   } catch (e) {
+    // ☠ 拿回网页**几乎总是**「这个采集站没了」:域名过期被停靠页接管、
+    //   换了地址、或者填的根本是站点首页而不是接口地址。原来这里把网页的前 200 字
+    //   原样塞进 detail,用户看到的是半屏 `<!DOCTYPE html>…` —— 什么都没说明白。
+    if (/^\s*(<!doctype|<html|<\?xml)/i.test(text)) {
+      const title = /<title[^>]*>([^<]{0,60})/i.exec(text)?.[1]?.trim()
+      throw new PluginError({
+        kind: 'parseFailed',
+        message: '这个地址返回的是网页,不是采集接口 —— 站点多半已经失效或换了地址' + (title ? `(网页标题:${title})` : ''),
+      })
+    }
     throw new PluginError({ kind: 'parseFailed', message: '站点返回的不是 JSON', detail: text.slice(0, 200) })
   }
 }

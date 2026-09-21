@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -124,6 +125,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/a/api.php/provide/vod/", count(func(w http.ResponseWriter, r *http.Request) { s.cmsJSON(w, r, s.sites["a"]) }))
 	mux.HandleFunc("/b/api.php/provide/vod/", count(func(w http.ResponseWriter, r *http.Request) { s.cmsJSON(w, r, s.sites["b"]) }))
 	mux.HandleFunc("/xml/api.php/provide/vod/", count(func(w http.ResponseWriter, r *http.Request) { s.cmsXML(w, r, s.sites["a"]) }))
+	/* 苹果 CMS 的**真实形状**(2026-09-21 实测 22 个真站):顶级分类是空壳,
+	   片子全挂在子分类上,`class` 用 type_pid 表示父子。另外两个:首页不给推荐的站、
+	   域名过期后被停靠页接管的站。 */
+	mux.HandleFunc("/tree/api.php/provide/vod/", count(func(w http.ResponseWriter, r *http.Request) { s.cmsJSONWith(w, r, s.sites["a"], treeClasses, true) }))
+	mux.HandleFunc("/nohome/api.php/provide/vod/", count(func(w http.ResponseWriter, r *http.Request) { s.cmsJSONWith(w, r, s.sites["a"], treeClasses, false) }))
+	mux.HandleFunc("/dead/api.php/provide/vod/", count(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, "<!DOCTYPE html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><title>example.invalid</title>"+
+			"<meta name=\"description\" content=\"Find information here\"></head><body>域名停靠页</body></html>")
+	}))
 	// 「JS 写一个校验 cookie 再刷新」的防护:没带 cookie 回防护页,带了才给 JSON(真实资源站常见)
 	mux.HandleFunc("/jsck/api.php/provide/vod/", count(func(w http.ResponseWriter, r *http.Request) {
 		if c, err := r.Cookie("ge_js_validator_1"); err != nil || c.Value != "ok" {
@@ -318,7 +329,9 @@ func filter(site *Site, q map[string][]string) []Vod {
 		switch {
 		case len(ids) > 0 && !ids[v.ID]:
 			continue
-		case get("t") != "" && v.Type != get("t"):
+		// t 收逗号分隔的多个分类 id —— 真服务器就是这样(实测 13 个站全支持),
+		// 顶级分类要靠它把子分类合并起来查
+		case get("t") != "" && !slices.Contains(strings.Split(get("t"), ","), v.Type):
 			continue
 		case get("wd") != "" && !strings.Contains(v.Name, get("wd")):
 			continue
@@ -346,17 +359,39 @@ func paginate(vods []Vod, pg int, size int) ([]Vod, int) {
 	return vods[lo:hi], pages
 }
 
+// treeClasses 顶级分类 10 是**空壳**(片子的 type 是 1 / 2,挂在它下面),13 则是
+// 一个真的没有内容、也没有子分类的分类 —— 两种「点进去空空如也」要分得开。
+func treeClasses() []map[string]any {
+	return []map[string]any{
+		{"type_id": "10", "type_pid": "0", "type_name": "影视"},
+		{"type_id": "1", "type_pid": "10", "type_name": "电影"},
+		{"type_id": "2", "type_pid": "10", "type_name": "剧集"},
+		{"type_id": "13", "type_pid": "0", "type_name": "空分类"},
+	}
+}
+
+func flatClasses() []map[string]any {
+	return []map[string]any{{"type_id": "1", "type_name": "电影"}, {"type_id": "2", "type_name": "剧集"}}
+}
+
 func (s *Server) cmsJSON(w http.ResponseWriter, r *http.Request, site *Site) {
+	s.cmsJSONWith(w, r, site, flatClasses, true)
+}
+
+// cmsJSONWith 苹果CMS JSON 接口。classes 给分类表,recommend=false 的站首页不给推荐列表。
+func (s *Server) cmsJSONWith(w http.ResponseWriter, r *http.Request, site *Site, classes func() []map[string]any, recommend bool) {
 	q := r.URL.Query()
 	pg, _ := strconv.Atoi(q.Get("pg"))
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	if q.Get("ac") == "" {
 		// 首页:分类 + 最近更新
 		list := []map[string]any{}
-		for _, v := range site.Vods[:3] {
-			list = append(list, s.vodJSON(site, v, false))
+		if recommend {
+			for _, v := range site.Vods[:3] {
+				list = append(list, s.vodJSON(site, v, false))
+			}
 		}
-		json.NewEncoder(w).Encode(map[string]any{"code": 1, "class": []map[string]any{{"type_id": "1", "type_name": "电影"}, {"type_id": "2", "type_name": "剧集"}}, "list": list})
+		json.NewEncoder(w).Encode(map[string]any{"code": 1, "class": classes(), "list": list})
 		return
 	}
 	vods := filter(site, q)
