@@ -118,7 +118,7 @@ public sealed class SearchPage : PageBase
                 ToolTip.SetTip(chip, $"{title} · 来自插件 {Mi.Str(it, "name")}");
                 chip.Click += async (_, _) =>
                 {
-                    try { await core.PluginRunCommand(new { plugin_id = pid, command = cmd, args }); }
+                    try { await core.SourceRunCommand(new { plugin_id = pid, command = cmd, args }); }
                     // 插件自己抛的错要原样给用户看:它写的是中文,而且往往是「先填一下账号」这类
                     catch (Exception e) { Toast.Error(LibraryPage.Advice(e)); }
                 };

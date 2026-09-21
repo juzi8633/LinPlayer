@@ -45,7 +45,8 @@ definePlugin({
 		t.Errorf("点了要知道找谁跑哪条命令: %+v", got[0])
 	}
 
-	// 另一半:点了要能跑。只接「列出来」的话,搜索页上是一排点了没反应的按钮
+	// 另一半:点了要能跑(壳走已有的 source.runCommand)。只接「列出来」的话,
+	// 搜索页上是一排点了没反应的按钮
 	out, err := h.Call(context.Background(), "alice/demo", time.Second, "commands.open",
 		[]any{map[string]any{"q": "三体"}}, map[string]any{})
 	if err != nil || !strings.Contains(string(out), "三体") {

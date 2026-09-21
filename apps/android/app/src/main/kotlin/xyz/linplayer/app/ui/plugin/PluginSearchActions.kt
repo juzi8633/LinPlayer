@@ -39,7 +39,7 @@ fun rememberSearchActions(query: String): List<JsonObject> {
     return rows
 }
 
-/** 点了就跑插件自己的命令。抛出来的错原样给用户看:插件写的是中文。 */
+/** 点了就跑插件自己的命令(走已有的 `source.runCommand`)。抛出来的错原样给用户看:插件写的是中文。 */
 suspend fun runSearchAction(app: AppState, row: JsonObject) {
     val pid = row.str("plugin_id") ?: return
     val cmd = row.str("command") ?: return
@@ -49,6 +49,6 @@ suspend fun runSearchAction(app: AppState, row: JsonObject) {
         // args 可有可无;给个空串的话核心层会当成一个真参数传给插件
         row["args"]?.takeIf { it !is kotlinx.serialization.json.JsonNull }?.let { put("args", it) }
     }
-    runCatching { app.call("plugin.runCommand", args(*a.toList().toTypedArray())) }
+    runCatching { app.call("source.runCommand", args(*a.toList().toTypedArray())) }
         .onFailure { app.report(it) }
 }

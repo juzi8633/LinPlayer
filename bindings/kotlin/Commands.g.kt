@@ -325,7 +325,6 @@ object LinPlayerCommandNames {
         "plugin.homeItems",
         "plugin.pageTakeovers",
         "plugin.searchActions",
-        "plugin.runCommand",
         "plugin.backRequest",
         "plugin.playerKey",
         "plugin.setCookies",
@@ -842,7 +841,7 @@ suspend fun LinPlayerCommands.syncCalendarLibrary(args: Map<String, Any?>? = nul
 suspend fun LinPlayerCommands.syncCalendarDue(args: Map<String, Any?>? = null): JsonElement =
     call("sync.calendarDue", args)
 
-// ---- 插件 · plugin.* (61 条) ----
+// ---- 插件 · plugin.* (60 条) ----
 suspend fun LinPlayerCommands.pluginList(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.list", args)
 suspend fun LinPlayerCommands.pluginPendingRestart(args: Map<String, Any?>? = null): JsonElement =
@@ -949,8 +948,6 @@ suspend fun LinPlayerCommands.pluginPageTakeovers(args: Map<String, Any?>? = nul
     call("plugin.pageTakeovers", args)
 suspend fun LinPlayerCommands.pluginSearchActions(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.searchActions", args)
-suspend fun LinPlayerCommands.pluginRunCommand(args: Map<String, Any?>? = null): JsonElement =
-    call("plugin.runCommand", args)
 suspend fun LinPlayerCommands.pluginBackRequest(args: Map<String, Any?>? = null): JsonElement =
     call("plugin.backRequest", args)
 suspend fun LinPlayerCommands.pluginPlayerKey(args: Map<String, Any?>? = null): JsonElement =

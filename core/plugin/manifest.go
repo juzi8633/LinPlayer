@@ -411,7 +411,7 @@ var contribPoints = map[string]contribPoint{
 	// —— 只接了一半 ——
 	"hooks": {label: "钩子", where: "数据源的列表变换",
 		note: "只有 listTransform 接了;navigate 与 cardBadge 还没有"},
-	"commands": {label: "命令", where: "plugin.runCommand",
+	"commands": {label: "命令", where: "source.runCommand",
 		note: "只有数据源列表项的菜单和搜索快捷动作会调命令;还没有命令面板,也没有深链调用"},
 	"menus": {label: "菜单项", where: "datasource 的菜单项",
 		note: "只有数据源列表项那一处;条目卡片 / 单集 / 播放页更多还没有"},

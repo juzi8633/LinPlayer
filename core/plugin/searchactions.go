@@ -6,7 +6,10 @@ package plugin
 // 不调的表现是「插件声明了,界面上一个都看不见」,而四边全绿。
 //
 // 插件拿到用户输的那串字,回几个「在豆瓣查看」「导入这个订阅」这样的按钮;
-// 结果列表本身不动。点了就跑插件自己的命令。
+// 结果列表本身不动。
+//
+// 点了跑哪条命令,走的是**已有的** `source.runCommand`(它本来就是给菜单项和设置按钮
+// 跑插件命令用的,不限于数据源)—— 再开一条同样的命令只会让人猜该用哪个。
 
 import (
 	"context"
@@ -15,7 +18,6 @@ import (
 	"time"
 
 	"linplayer/core/bus"
-	"linplayer/core/plugin/rt"
 )
 
 // SearchActionInfo 搜索页上的一颗按钮。
@@ -102,24 +104,5 @@ func registerSearchActions() {
 			return []SearchActionInfo{}, nil
 		}
 		return Default().SearchActions(ctx, q), nil
-	})
-	/* 快捷动作的另一半:点了要能跑。
-	   ☠ 只接「列出来」那一半的话,搜索页上会多出一排**点了没反应**的按钮 ——
-	     比没有更糟,而且一条错都不报。 */
-	bus.Register("plugin.runCommand", func(ctx context.Context, seq int64, a map[string]any) (any, error) {
-		id, _ := a["plugin_id"].(string)
-		cmd, _ := a["command"].(string)
-		if id == "" || cmd == "" {
-			return nil, bus.NewErr(bus.EInvalid, "缺少 plugin_id 或 command")
-		}
-		args := []any{}
-		if v, ok := a["args"]; ok && v != nil {
-			args = append(args, v)
-		}
-		out, err := Default().Call(ctx, id, rt.BudgetData, "commands."+cmd, args, map[string]any{})
-		if err != nil {
-			return nil, err
-		}
-		return json.RawMessage(out), nil
 	})
 }
