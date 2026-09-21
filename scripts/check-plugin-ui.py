@@ -191,29 +191,54 @@ def arms(text, pattern):
 
 
 def anchor_commands_wired():
-    """核心层为贡献点开的取表命令,两个壳都要调。"""
+    """核心层为贡献点开的取表命令,**三个壳**都要调。
+
+    ☠ 安卓一棵树里装着手机和 TV 两个壳。把它们当成一个数、手机调了就算绿,
+    TV 上什么都没画也看不出来 —— homeSections 就是这么漏的(2026-09-21)。
+    """
     src = (ROOT / "core/plugin/anchors.go").read_text(encoding="utf-8")
     cmds = sorted(set(re.findall(r'bus\.Register\("(plugin\.\w+)"', src)))
     if len(cmds) < 3:
         fail.append("从 anchors.go 只读到 %d 条取贡献表的命令 —— 那个文件的写法变了,这一关等于没跑" % len(cmds))
         return
-    shells = {
-        "桌面": ROOT / "apps/windows/LinPlayer.Desktop",
-        "安卓": ROOT / "apps/android/app/src/main/kotlin",
-    }
-    exts = {"桌面": "*.cs", "安卓": "*.kt"}
-    for name, root in shells.items():
+
+    def body(root, ext, skip=()):
         # ☠ 注释里提一句命令名不算「调了」—— 刚加这一关时就是这么差点放过桌面端的:
         #   XML 文档注释里写了 <c>plugin.sidebar</c>,把真调用删掉照样绿。
-        text = "\n".join(strip_comments(f.read_text(encoding="utf-8", errors="replace"))
-                         for f in root.rglob(exts[name]) if "/obj/" not in f.as_posix()
-                         and "/build/" not in f.as_posix())
+        return "\n".join(
+            strip_comments(f.read_text(encoding="utf-8", errors="replace"))
+            for f in root.rglob(ext)
+            if "/obj/" not in f.as_posix() and "/build/" not in f.as_posix()
+            and not any(k in f.as_posix() for k in skip))
+
+    andr = ROOT / "apps/android/app/src/main/kotlin/xyz/linplayer/app"
+    # 共用组合式里发请求的那几条,壳里只看得到函数名。把「哪个函数算调了哪条命令」
+    # **从源码里算出来**,不写死对照表 —— 对照表会退化成「新命令忘了登记就默认绿」。
+    proxies = {}
+    for f in (andr / "ui/plugin").rglob("*.kt"):
+        text = strip_comments(f.read_text(encoding="utf-8", errors="replace"))
+        names = set(re.findall(r'^(?:internal\s+|private\s+)?fun\s+([A-Za-z]\w*)', text, re.M))
+        for c in cmds:
+            if c in text:
+                proxies.setdefault(c, set()).update(names)
+
+    shells = {
+        "桌面": body(ROOT / "apps/windows/LinPlayer.Desktop", "*.cs"),
+        # 手机壳 = 安卓树去掉 tv/;TV 壳 = 只看 tv/。两边各自算。
+        "手机": body(andr, "*.kt", skip=("/app/tv/",)),
+        "TV": body(andr / "tv", "*.kt"),
+    }
+    for name, text in shells.items():
         missing = []
         for c in cmds:
-            # 直接写命令名,或者走生成的绑定(plugin.sidebar → PluginSidebar)
+            # 直接写命令名,或者走生成的绑定(plugin.sidebar → PluginSidebar),
+            # 或者走安卓两壳共用的那个读取函数
             binding = "".join(w[:1].upper() + w[1:] for w in c.split("."))
-            if c not in text and binding not in text:
-                missing.append(c)
+            if c in text or binding in text:
+                continue
+            if any(re.search(r'\b%s\b' % re.escape(fn), text) for fn in proxies.get(c, ())):
+                continue
+            missing.append(c)
         if missing:
             fail.append("%s壳从来不调这 %d 条取贡献表的命令,插件声明的入口在这一端**一个都不会出现**:\n    %s"
                         % (name, len(missing), " ".join(missing)))

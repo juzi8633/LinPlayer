@@ -50,12 +50,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
 import xyz.linplayer.app.data.Block
 import xyz.linplayer.app.data.Item
 import xyz.linplayer.app.data.LocalApp
 import xyz.linplayer.app.data.View
+import xyz.linplayer.app.data.arr
 import xyz.linplayer.app.data.block
 import xyz.linplayer.app.data.keepState
+import xyz.linplayer.app.data.obj
+import xyz.linplayer.app.data.str
 import xyz.linplayer.app.tv.kit.FullState
 import xyz.linplayer.app.tv.kit.InlineError
 import xyz.linplayer.app.tv.kit.ProvideColumnKeyline
@@ -109,6 +113,13 @@ fun HomePage() {
     var latest by keepState<Map<String, Block<List<Item>>>>("$ck.latest") { emptyMap() }
     var collections by keepState<Block<List<Item>>>("$ck.coll") { Block.Loading }
     var reload by remember { mutableIntStateOf(0) }
+    /* 插件声明的首页栏目(SPEC 6.1,D303)。桌面和手机 2026-09-21 接通,TV 这一端当时没做
+       —— 官方那几行是按 Emby 的 Item 写的,插件给的是数据源形状的 JSON,得另走一条。 */
+    var pluginSections by keepState<List<JsonObject>>("tv.home.plugins") { emptyList() }
+    LaunchedEffect(reload) {
+        pluginSections = runCatching { app.call("plugin.homeSections") }.getOrNull().arr().mapNotNull { it.obj() }
+            .filter { !it.str("id").isNullOrEmpty() && !it.str("plugin_id").isNullOrEmpty() }
+    }
 
     /* 回来时后台静默刷新:结果回来才替换,**一次拉取失败不把手里已有的冲掉**。 */
     fun <T> keep(old: Block<T>, new: Block<T>) = if (new is Block.Fail && old is Block.Ok) old else new
@@ -131,7 +142,9 @@ fun HomePage() {
 
     val menu: (Item) -> Unit = { item -> overlay.openCardMenu(app, nav, scope, item) { if (it == "blocked") reload++ } }
     val allEmpty = listOf(hero, resume, nextUp, collections).all { it is Block.Ok && it.value.isEmpty() } &&
-        views.let { it is Block.Ok && it.value.isEmpty() }
+        views.let { it is Block.Ok && it.value.isEmpty() } &&
+        // 官方内容全空但插件有栏目时**不能**换成空状态页:那一屏正是插件栏目最该出现的时候
+        pluginSections.isEmpty()
 
     Box(Modifier.fillMaxSize()) {
         if (allEmpty) {
@@ -165,10 +178,70 @@ fun HomePage() {
                     itemRow("coll", "合集", collections) { it ->
                         items(it, key = { i -> i.id }) { i -> ItemPoster(i, "home.coll.${i.id}", menu) }
                     }
+                    // 插件栏目排在官方栏目**后面**(D156:新装的追加到末尾)
+                    pluginSections.forEach { pluginRow(it) }
                 }
             }
         }
         OverlayHost(overlay)
+    }
+}
+
+/** 插件的一条首页栏目(D303)。空的 / 拿不到的**整行不画**,不在首页上留一行空标题。 */
+private fun LazyListScope.pluginRow(sec: JsonObject) {
+    val pid = sec.str("plugin_id") ?: return
+    val sid = sec.str("id") ?: return
+    val title = sec.str("title")?.takeIf { it.isNotEmpty() } ?: sid
+    item("ps:$pid:$sid") {
+        Column(Modifier.padding(top = TvSp.x20)) {
+            Box(Modifier.padding(start = TvSp.x24)) { RowTitle(title) }
+            Spacer(Modifier.height(TvSp.x8))
+            if (sec.str("kind") == "custom") PluginBlock(pid, sec.str("block")?.takeIf { it.isNotEmpty() } ?: sid)
+            else PluginItems(pid, sid, sec.str("shape") ?: "portrait")
+        }
+    }
+}
+
+/** ☠ 插件自画的那块必须套 [LocalPluginTv]:不套的话插件的按钮不可聚焦,遥控器**进不去这一行**。 */
+@Composable
+private fun PluginBlock(pid: String, block: String) {
+    androidx.compose.runtime.CompositionLocalProvider(xyz.linplayer.app.ui.plugin.LocalPluginTv provides true) {
+        Box(Modifier.padding(start = TvSp.x32, end = TvDim.safeH)) {
+            xyz.linplayer.app.ui.plugin.PluginSurface(pid, block, "block", modifier = Modifier.fillMaxWidth())
+        }
+    }
+}
+
+/** 插件只给条目时,用数据源那套海报卡画 —— 主题、焦点轨道自动跟随官方行。 */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@Composable
+private fun PluginItems(pid: String, sid: String, shape: String) {
+    val app = LocalApp.current
+    val nav = LocalNav.current
+    val rail = LocalRailFocus.current
+    var got by remember(pid, sid) { mutableStateOf<List<JsonObject>?>(null) }
+    LaunchedEffect(pid, sid) {
+        got = runCatching { app.call("plugin.homeItems", args("plugin_id" to pid, "id" to sid)) }
+            .getOrNull().arr().mapNotNull { it.obj() }
+    }
+    val list = got ?: return
+    if (list.isEmpty()) return
+    ProvideRowKeyline(TvSp.x32) {
+        LazyRow(
+            // 行首再按 ← 进轨(§4.4),和官方行同一条规矩
+            modifier = Modifier.focusProperties {
+                exit = { d -> if (d == FocusDirection.Left) rail ?: FocusRequester.Default else FocusRequester.Default }
+            },
+            contentPadding = PaddingValues(start = TvSp.x32, end = TvDim.safeH, top = TvSp.x6, bottom = TvSp.x2),
+            horizontalArrangement = Arrangement.spacedBy(TvSp.x12),
+        ) {
+            items(list, key = { it.str("id") ?: "" }) { x ->
+                SourcePoster(x, "home.ps.$pid.$sid.${x.str("id")}") {
+                    // 条目带来源(D282),按它回到对应数据源的详情页
+                    nav.push(TvRoute.SourceDetail(x.str("source") ?: "", x.str("id") ?: ""))
+                }
+            }
+        }
     }
 }
 

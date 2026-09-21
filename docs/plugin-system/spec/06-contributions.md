@@ -56,13 +56,15 @@
 
 首页栏目的落点(D583):核心层 `plugin.homeSections` 取表、`plugin.homeItems` 取 `kind=items`
 那一栏的数据;桌面画在首页最后,手机同。`kind=items` 由壳画成官方轨道的样子(主题自动跟随),
-`kind=custom` 整块交给插件的 block。**官方首页提前返回时照画** —— 账号不是 Emby 的那一屏
+`kind=custom` 整块交给插件的 block;TV 同(D584),`custom` 那块必须套 `LocalPluginTv`,
+不套的话插件的按钮不可聚焦、遥控器进不去那一行。**官方首页提前返回时照画** —— 账号不是 Emby 的那一屏
 本来就只有一行说明,插件栏目正该在那时候出现。
 
-**贡献点的表,壳必须真去要(D580)。** `core/plugin/anchors.go` 里每条 `plugin.*`
-取贡献表的命令(`anchors` / `settingsSections` / `playerSurfaces` / `sidebar`),
-两个壳都得调 —— 不调的表现是「插件声明了入口,界面上一个都看不见」,而三边全绿:
-manifest 合法、`lp check` 通过、核心层返回正确。由 `scripts/check-plugin-ui.py` 第 5 条守着。
+**贡献点的表,壳必须真去要(D580 D584)。** `core/plugin/anchors.go` 里每条 `plugin.*`
+取贡献表的命令,**三个壳**(桌面 / 手机 / TV)都得调 —— 不调的表现是「插件声明了入口,
+界面上一个都看不见」,而三边全绿:manifest 合法、`lp check` 通过、核心层返回正确。
+由 `scripts/check-plugin-ui.py` 第 5 条守着;安卓一棵树里装着手机和 TV 两个壳,
+**必须分开算**,合成一个数的话手机调了就算绿(D583 的首页栏目就是这么漏了 TV 一整端)。
 
 侧栏入口三端的落点:桌面 = 侧栏(导航项与服务器区之间);手机 = 设置根列表的「插件页面」一组;
 TV = 设置页的「插件」组(导航轨按下标写死,加动态项要整个重排,暂不动)。

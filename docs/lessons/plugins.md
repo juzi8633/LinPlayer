@@ -690,6 +690,14 @@ manifest 合法 ✓   lp check 通过 ✓   贡献点清单里列着它 ✓   �
 **判断一个贡献点是不是真的通了,只有一条判据:从 manifest 到屏幕,中间每一段都有人接。**
 现在由 `check-plugin-ui.py` 第 5 条守着 `anchors.go` 里的取表命令
 (`anchors` / `settingsSections` / `playerSurfaces` / `sidebar` / `homeSections` / `homeItems`)。
+
+☠ 这一关自己也栽过一次:**安卓一棵树里装着手机和 TV 两个壳**,把它们当成一个数,
+手机调了就算绿 —— 首页栏目(D583)在 TV 上一行都没画,门禁照样全过,我自己加的门禁
+第二天就被自己漏过去了。2026-09-21 拆成三端分别算(手机 = 安卓树去掉 `tv/`,TV = 只看 `tv/`)。
+拆的时候要注意 `plugin.anchors` / `settingsSections` / `playerSurfaces` 这三条是在
+`ui/plugin/` 的**共用组合式**里发的,壳里只看得到函数名 —— 「哪个函数算调了哪条命令」
+**从源码里算出来**,别写死对照表,对照表会退化成「新命令忘了登记就默认绿」。
+
 它只能证明「壳去要了」,证明不了「要来的东西画对了」—— 后者靠各自的插件验收测试
 (`uhd_plugin_test.go` 的首页流量栏那条就是:列得出来 **且** 挂上去画出真实数字)。
 
