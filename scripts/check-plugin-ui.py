@@ -22,6 +22,7 @@
 退出码非 0 = 有一端把某个组件或属性静默降级了。
 """
 import pathlib
+import json
 import re
 import sys
 
@@ -246,6 +247,50 @@ def anchor_commands_wired():
             print("  ✓ %s:%d 条贡献表命令都有人调" % (name, len(cmds)))
 
 
+def contrib_points_classified():
+    """schema 里的每个贡献点,核心层都要表明态度:接了(落点是谁)还是没接。
+
+    ☠ 漏一个键 = 那个键默认被当成已接 —— 插件声明了不会有任何反应，
+      而安装确认里还替它许了一个不会兑现的愿。
+    """
+    schema = json.loads((ROOT / "docs/plugin-system/api/manifest.schema.json").read_text(encoding="utf-8"))
+    ref = schema["properties"]["contributes"]["$ref"].split("/")[-1]
+    keys = set(schema["$defs"][ref]["properties"])
+
+    src = (ROOT / "core/plugin/manifest.go").read_text(encoding="utf-8")
+    table = src[src.index("var contribPoints = map[string]contribPoint{"):]
+    table = table[:table.index("\n}\n")]
+    got = set(re.findall(r'^\t"(\w+)":', table, re.M))
+    missing = sorted(keys - got)
+    extra = sorted(got - keys)
+    if missing:
+        fail.append("contribPoints 里没给这 %d 个贡献点表态,它们会被当成「已接」:\n    %s"
+                    % (len(missing), " ".join(missing)))
+    if extra:
+        fail.append("contribPoints 里这 %d 个键 schema 里没有,多半是拼错了:\n    %s"
+                    % (len(extra), " ".join(extra)))
+
+    # 写了落点就得是真的:长得像命令名的,必须真有人注册过
+    cmds = set()
+    for f in (ROOT / "core").rglob("*.go"):
+        # commands.go 里是 reg("…") 的写法,bus.Register 是另一处
+        cmds |= set(re.findall(r'(?:Register|\breg)\("([a-z][\w.]*)"', f.read_text(encoding="utf-8", errors="replace")))
+    bad = []
+    for key, where in re.findall(r'^\t"(\w+)":\s*\{label: "[^"]*", where: "([^"]*)"', table, re.M):
+        if not where or not re.fullmatch(r'[a-z][a-zA-Z]*\.[\w.]*\*?', where):
+            continue
+        if where.endswith(".*"):
+            if any(c.startswith(where[:-1]) for c in cmds):
+                continue
+        elif where in cmds:
+            continue
+        bad.append("%s → %s" % (key, where))
+    if bad:
+        fail.append("contribPoints 写的落点在核心层根本没注册过这条命令:\n    %s" % "  ".join(bad))
+    if not missing and not extra and not bad:
+        print("  ✓ 贡献点:%d 个都表了态,写了落点的都真存在" % len(keys))
+
+
 def main():
     comps = components()
     if len(comps) < 30:
@@ -332,6 +377,7 @@ def main():
 
     # 5. 贡献表命令有没有人调
     anchor_commands_wired()
+    contrib_points_classified()
 
     if fail:
         print()

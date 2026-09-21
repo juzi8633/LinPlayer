@@ -343,6 +343,12 @@ func check(dir string) error {
 			ok("声明的贡献点都有实现")
 		}
 	}
+	// 「有实现」不等于「会生效」:宿主没接的贡献点,装上去一点反应都没有且不报错(D585)
+	if warn := m.UnsupportedContribs(); len(warn) > 0 {
+		for _, w := range warn {
+			fmt.Println("  ! " + w)
+		}
+	}
 	if len(fails) > 0 {
 		for _, f := range fails {
 			fmt.Println("  ✗", f)

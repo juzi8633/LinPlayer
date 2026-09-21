@@ -11,6 +11,15 @@
 | **钩子** | 串联或「第一个生效」,顺序用户拖(D280);单个出错或超 300ms 跳过(D281) | 设置里的钩子顺序列表 |
 | **提供者** | 全部生效,结果合并或并列 | 对应功能的设置(弹幕源列表、元数据优先级…) |
 
+**这一版宿主真接了哪些(D585)。** `contributes` 的 35 个键里,端到端通了的是
+`pages` `sidebar` `homeSections` `anchors` `settingsSections` `settings`
+`playerOverlays` `playerPanels` `theme` `wallpaper` `dataSource`;
+`hooks`(只有 `listTransform`)、`commands` / `menus`(只有数据源列表项那一处)、
+`pageTakeovers`(能选,但没有壳会去画插件那一版)接了一半;**其余一行都没接**。
+正本是 `core/plugin/contribPoints`,不是本表 —— 本表讲设计,那张表讲这一版的实情,
+`check-plugin-ui.py` 第 6 条拿 schema 对账,漏一个键就红。声明了没接的点,
+`lp check` 会当场警告,安装确认里也标「(这一版还不支持)」。
+
 ## 6.1 接管位
 
 | 接管位 | manifest 键 | 说明 | 出处 |

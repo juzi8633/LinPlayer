@@ -372,35 +372,122 @@ func sign(d int) int {
 	return 0
 }
 
-// ContributionList 贡献点清单(安装确认、插件详情、市场分类用,D117 D79)。
-func (m *Manifest) ContributionList() []string {
+// contribPoint 一个贡献点在宿主这一版的处境。
+type contribPoint struct {
+	label string // 贡献点清单上的中文名(安装确认、插件详情、市场分类看的就是它)
+	where string // 宿主的落点;**空 = 这一版一行都没接**
+	note  string // 只接了一半时说清楚接的是哪一半
+}
+
+/*
+贡献点 → 宿主这一版接到哪儿。
+
+☠ 这张表存在的唯一理由:**`where` 空着的那些,插件声明了也不会有任何反应,而且没有一条错**。
+  manifest 合法、`lp check` 过、贡献点清单里还列着它 —— 作者照着 SPEC 写完,装上去什么都不发生,
+  只能一个个去猜是自己写错了还是宿主没接。所以 `lp check` 要当场说出来,
+  安装确认里也要标出来(D585)。
+
+  表里**漏一个键 = 那个键默认被当成已接**,所以 `scripts/check-plugin-ui.py` 第 6 条
+  拿 manifest.schema.json 的 contributes 键对账,少一个就红。
+*/
+var contribPoints = map[string]contribPoint{
+	// —— 接通了的 ——
+	"pages":            {label: "插件页面", where: "plugin.ui.mount"},
+	"sidebar":          {label: "侧栏入口", where: "plugin.sidebar"},
+	"homeSections":     {label: "首页栏目", where: "plugin.homeSections"},
+	"anchors":          {label: "官方页面区块", where: "plugin.anchors"},
+	"settingsSections": {label: "官方设置分节", where: "plugin.settingsSections"},
+	"settings":         {label: "设置项", where: "plugin.setSetting"},
+	"playerOverlays":   {label: "画面覆盖层", where: "plugin.playerSurfaces"},
+	"playerPanels":     {label: "播放页侧栏", where: "plugin.playerSurfaces"},
+	"theme":            {label: "主题", where: "plugin.themes"},
+	"wallpaper":        {label: "壁纸", where: "plugin.wallpapers"},
+	"dataSource":       {label: "数据源", where: "source.*"},
+
+	// —— 只接了一半 ——
+	"hooks": {label: "钩子", where: "数据源的列表变换",
+		note: "只有 listTransform 接了;navigate 与 cardBadge 还没有"},
+	"commands": {label: "命令", where: "datasource 的菜单项",
+		note: "只有数据源列表项的菜单会调命令;还没有命令面板,也没有深链调用"},
+	"menus": {label: "菜单项", where: "datasource 的菜单项",
+		note: "只有数据源列表项那一处;条目卡片 / 单集 / 播放页更多还没有"},
+	"pageTakeovers": {label: "接管官方页面", where: "plugin.takeovers",
+		note: "插件页的「接管位」标签能列出来也能选,但**选了之后没有任何一个壳会去画插件那一版**"},
+
+	// —— 一行都没接 ——
+	"osd":              {label: "播放控制栏"},
+	"launchTargets":    {label: "启动页"},
+	"nextUp":           {label: "下一个播什么"},
+	"shaders":          {label: "着色器"},
+	"settingsPage":     {label: "设置页"},
+	"globalOverlays":   {label: "全局悬浮层"},
+	"virtualLibraries": {label: "虚拟媒体库"},
+	"searchActions":    {label: "搜索建议"},
+	"keybindings":      {label: "快捷键"},
+	"gestures":         {label: "手势"},
+	"remoteButtons":    {label: "遥控按钮"},
+	"windows":          {label: "子窗口"},
+	"trayMenu":         {label: "托盘菜单"},
+	"android":          {label: "Android 系统入口"},
+	"deepLinks":        {label: "深链"},
+	"externalInputs":   {label: "外部输入"},
+	"providers":        {label: "提供者"},
+	"m3u8Filters":      {label: "m3u8 过滤器"},
+	"registry":         {label: "注册表通道"},
+	"background":       {label: "后台运行"},
+}
+
+// declaredContribs manifest 里真写了的那些键。
+func (m *Manifest) declaredContribs() []string {
 	var raw struct {
 		Contributes map[string]json.RawMessage `json:"contributes"`
 	}
 	_ = json.Unmarshal(m.Raw, &raw)
-	labels := map[string]string{
-		"pages": "插件页面", "pageTakeovers": "接管官方页面", "anchors": "官方页面区块", "osd": "播放控制栏",
-		"theme": "主题", "wallpaper": "壁纸", "launchTargets": "启动页", "nextUp": "下一个播什么",
-		"shaders": "着色器", "sidebar": "侧栏入口", "homeSections": "首页栏目", "settings": "设置项",
-		"settingsPage": "设置页", "settingsSections": "官方设置分节", "menus": "菜单项",
-		"playerOverlays": "画面覆盖层", "globalOverlays": "全局悬浮层", "playerPanels": "播放页侧栏",
-		"virtualLibraries": "虚拟媒体库", "searchActions": "搜索建议", "commands": "命令",
-		"keybindings": "快捷键", "gestures": "手势", "remoteButtons": "遥控按钮", "windows": "子窗口",
-		"trayMenu": "托盘菜单", "android": "Android 系统入口", "deepLinks": "深链", "externalInputs": "外部输入",
-		"dataSource": "数据源", "providers": "提供者", "hooks": "钩子", "m3u8Filters": "m3u8 过滤器",
-		"registry": "注册表通道", "background": "后台运行",
-	}
-	var out []string
+	out := make([]string, 0, len(raw.Contributes))
 	for k := range raw.Contributes {
-		if l, ok := labels[k]; ok {
-			out = append(out, l)
-		} else {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// ContributionList 贡献点清单(安装确认、插件详情、市场分类用,D117 D79)。
+// 宿主还没接的那些标出来 —— 不标的话安装确认等于在替插件许一个不会兑现的愿(D585)。
+func (m *Manifest) ContributionList() []string {
+	var out []string
+	for _, k := range m.declaredContribs() {
+		c, known := contribPoints[k]
+		switch {
+		case !known:
 			out = append(out, k)
+		case c.where == "":
+			out = append(out, c.label+"(这一版还不支持)")
+		default:
+			out = append(out, c.label)
 		}
 	}
 	sort.Strings(out)
 	if m.LAN {
 		out = append(out, "会访问局域网")
+	}
+	return out
+}
+
+// UnsupportedContribs 声明了、但宿主这一版接不住的贡献点,每条一句人话。
+// `lp check` 拿它当警告打出来 —— 作者在本机就该知道,而不是装到机器上去猜。
+func (m *Manifest) UnsupportedContribs() []string {
+	var out []string
+	for _, k := range m.declaredContribs() {
+		c, known := contribPoints[k]
+		if !known {
+			continue
+		}
+		switch {
+		case c.where == "":
+			out = append(out, k+":宿主这一版还没接「"+c.label+"」,装上去不会有任何反应")
+		case c.note != "":
+			out = append(out, k+":"+c.note)
+		}
 	}
 	return out
 }
