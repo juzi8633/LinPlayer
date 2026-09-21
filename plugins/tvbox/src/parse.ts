@@ -2,7 +2,7 @@
 // 按用户在解析管理里排好的顺序逐个试,type 0 与兜底走 WebView 嗅探。
 import { app, settings, storage, webview, PluginError, type PlayResult } from '@linplayer/plugin-sdk'
 import type { ParseCfg } from './config'
-import { fetchJson, isMedia } from './net'
+import { fetchJson, fetchResp, isMedia } from './net'
 import type { PlayRaw } from './sites'
 
 export interface SubInfo {
@@ -53,14 +53,59 @@ function sniffMs(): number {
   return (Number.isFinite(s) && s > 0 ? s : 15) * 1000
 }
 
+// 页面里明文写着的播放地址。`\/` 是 JSON 里转义过的斜杠,先还原再找。
+const MEDIA_IN_PAGE = /https?:\/\/[^\s"'<>]+?\.(?:m3u8|mp4)[^\s"'<>]*/i
+
+/**
+ * 「云播」线路其实是个网页 —— 抓下来把地址抠出来,不用开 WebView。
+ *
+ * ☠ 实测(2026-09-21,用户给的 17 个活站):7 个站有这种线路,地址长成
+ * `https://<云播站>/play/<一串 id>` —— **没有扩展名**,而原来只有
+ * `.html/.php/.shtml` 才会去解析,于是这条线路被原样丢给播放器,
+ * 用户看到的是「放不出来」。页面本身只有 1.3~1.6 KB,是个 DPlayer 壳,
+ * m3u8 就在里面,7 个里 6 个一抠就中。
+ *
+ * ★ 只取前 32 KB:万一判断错了、那个地址其实是视频本身,也不会把整部片读进内存。
+ */
+async function mediaInPage(url: string, headers?: Record<string, string>, signal?: AbortSignal): Promise<string | null> {
+  const res = await fetchResp(url, { headers: { Range: 'bytes=0-32767', ...(headers ?? {}) }, timeout: 15000, signal })
+  const ct = (res.headers.get('content-type') ?? '').toLowerCase()
+  if (!ct.includes('html') && !ct.includes('text/plain')) return null
+  const text = (await res.text()).split('\\/').join('/')
+  if (text.trimStart().startsWith('#EXTM3U')) return null // 它自己就是播放列表,交给播放器
+  const m = MEDIA_IN_PAGE.exec(text)
+  if (!m) return null
+  try {
+    return new URL(m[0], url).href
+  } catch {
+    return null
+  }
+}
+
 /** 把源给的播放结果变成最终可播地址(D257:play() 必须返回最终地址)。 */
 export async function resolvePlay(raw: PlayRaw, flag: string, sub: SubInfo | undefined, signal?: AbortSignal): Promise<PlayResult> {
   const url = String(raw.url ?? '')
   if (!url) throw new PluginError({ kind: 'parseFailed', message: '源没有给出播放地址' })
   const needParse = raw.parse === 1 || raw.jx === 1 || (sub?.flags ?? []).includes(flag)
+  // 看着就是媒体、或者压根不是 http(自定义协议交给宿主)→ 直接播,不多打一次请求
   if (!needParse && (isMedia(url) || !/^https?:/.test(url))) return { url, headers: raw.header }
-  if (!needParse && !/\.(html?|php|shtml)(\?|$)/i.test(url)) return { url, headers: raw.header }
   const errors: string[] = []
+  /* ☠ 剩下的 http 地址**一律当网页处理**。原来这里是「不像网页就直接播」
+     (只认 .html/.php/.shtml),而真实的云播线路没有扩展名 —— 见 mediaInPage。 */
+  const fromPage = async (): Promise<PlayResult | null> => {
+    try {
+      const u = await mediaInPage(url, raw.header, signal)
+      return u ? { url: u, headers: raw.header, parser: '页面内地址' } : null
+    } catch (e) {
+      errors.push(`抓页面:${(e as any)?.message ?? e}`)
+      return null
+    }
+  }
+  // 源自己说了要解析(flags / parse=1)就先听它的,它多半指向官方站,页面里抠不出东西
+  if (!needParse) {
+    const r = await fromPage()
+    if (r) return r
+  }
   for (const p of sub ? orderedParsers(sub) : []) {
     try {
       const r = await tryParser(p, url, signal)
@@ -69,6 +114,10 @@ export async function resolvePlay(raw: PlayRaw, flag: string, sub: SubInfo | und
     } catch (e) {
       errors.push(`${p.name}:${(e as any)?.message ?? e}`)
     }
+  }
+  if (needParse) {
+    const r = await fromPage()
+    if (r) return r
   }
   if (app.capabilities?.webview !== false) {
     try {

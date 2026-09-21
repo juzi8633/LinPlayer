@@ -6,9 +6,17 @@
 set -uo pipefail
 cd "${1:?用法:sigprobe-linux.sh <解压好的包目录>}"
 
-RC=0; LP_NO_SIGFIX=1 LP_SIGPROBE=1 timeout 60 ./LinPlayer || RC=$?
-echo "== 对照组(关掉修复):退出码 $RC"
-if [ "$RC" -lt 128 ] || [ "$RC" = 124 ]; then echo "✗ 关掉修复却没崩:探针测不出这个死法"; exit 1; fi
+# ☠ 对照组是**概率性**的:那个死法要 CoreCLR 的 GC 正好在某个线程踩在 Go 的信号栈上时
+#   暂停它。实测跑 15 秒、671 轮 GC 也有整场躲过去的时候(2026-09-21 CI 红了一次)。
+#   所以给它三次机会 —— 崩一次就证明探针有牙,三次都没崩才是真的测不出来。
+#   **不许改成「没崩就算过」**:那样这一关就只是在跑程序,什么都没验。
+RC=0
+for i in 1 2 3; do
+  RC=0; LP_NO_SIGFIX=1 LP_SIGPROBE=1 timeout 60 ./LinPlayer || RC=$?
+  echo "== 对照组(关掉修复)第 $i 次:退出码 $RC"
+  { [ "$RC" -ge 128 ] && [ "$RC" != 124 ]; } && break
+done
+if [ "$RC" -lt 128 ] || [ "$RC" = 124 ]; then echo "✗ 关掉修复连着三次都没崩:探针测不出这个死法"; exit 1; fi
 
 RC=0; LP_SIGPROBE=1 timeout 60 ./LinPlayer || RC=$?
 echo "== 修复:退出码 $RC"

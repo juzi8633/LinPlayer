@@ -595,3 +595,39 @@ func TestTVBoxParentCategoryHasNoItems(t *testing.T) {
 		t.Fatalf("别把网页原文糊进报错: %v", err)
 	}
 }
+
+// 「云播」线路是个**没有扩展名的网页**,m3u8 写在网页里(2026-09-21 用户报障:
+// 「里面的资源放不出来」)。原来只有 .html/.php/.shtml 才会去解析,这种地址被原样
+// 丢给播放器 —— 播放器拿到一段 HTML。实测用户给的 17 个活站里 7 个有这种线路。
+func TestTVBoxCloudLineIsAWebPage(t *testing.T) {
+	e := newEnv(t)
+	e.subscribe(e.base + "/config/plain.json")
+	key := e.key("cms1")
+	var d map[string]any
+	json.Unmarshal(e.call("source.detail", map[string]any{"server_id": key, "item_id": "101"}), &d)
+	lines, _ := d["lines"].([]any)
+	var cloud map[string]any
+	for _, l := range lines {
+		if m, ok := l.(map[string]any); ok && m["name"] == "云播线路" {
+			cloud = m
+		}
+	}
+	if cloud == nil {
+		t.Fatalf("假站上应有一条云播线路: %v", d["lines"])
+	}
+	eps := cloud["episodes"].([]any)
+	ep0 := eps[0].(map[string]any)
+	epID, _ := ep0["id"].(string)
+	if strings.Contains(epID, ".m3u8") {
+		t.Fatalf("云播线路的地址本该是个没有扩展名的网页: %s", epID)
+	}
+	e.call("source.playItem", map[string]any{"server_id": key, "item": d, "line_id": cloud["id"], "episode_id": epID})
+	if e.last == nil || !strings.HasSuffix(e.last.url, ".m3u8") {
+		t.Fatalf("云播线路要把网页里的地址抠出来再播,得到 %q", func() string {
+			if e.last == nil {
+				return "(没起播)"
+			}
+			return e.last.url
+		}())
+	}
+}

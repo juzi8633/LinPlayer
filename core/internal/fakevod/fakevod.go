@@ -40,6 +40,10 @@ type Line struct {
 	Name     string
 	Episodes []string // 集名;地址按 Site.playURL 生成
 	Flag     string   // 要走解析时的线路代号(出现在配置 flags 里)
+	// Cloud 「云播」线路:地址是个**没有扩展名**的网页,m3u8 写在网页里。
+	// 真实资源站里极常见(17 个活站有 7 个这样),而它不在 flags 里、也不回 parse=1 ——
+	// 从地址上完全看不出要解析。
+	Cloud bool
 }
 
 // Site 一个假站(同一台服务器上用路径前缀区分)。
@@ -89,7 +93,8 @@ func siteA() []Vod {
 	}
 	vods := []Vod{
 		{ID: "101", Name: "星际漫游", Year: 2023, Type: "1", Remarks: "HD", Content: "<p>一部讲<b>星际</b>旅行的电影。</p><p>第二段简介</p>",
-			Actor: "张三,李四", Lines: []Line{{Name: "星空线路", Episodes: []string{"正片"}}, {Name: "备用线路", Episodes: []string{"正片"}}}},
+			Actor: "张三,李四", Lines: []Line{{Name: "星空线路", Episodes: []string{"正片"}}, {Name: "备用线路", Episodes: []string{"正片"}},
+				{Name: "云播线路", Episodes: []string{"正片"}, Cloud: true}}},
 		{ID: "102", Name: "山河故事", Year: 2021, Type: "2", Remarks: "更新至12集", Content: "山河之间的故事。",
 			Lines: []Line{{Name: "星空线路", Episodes: eps(12, "第%d集")}, {Name: "极速线路", Episodes: eps(10, "第%02d集")},
 				{Name: "官源线路", Episodes: eps(3, "第%d集"), Flag: "fakeflag"}}},
@@ -166,6 +171,16 @@ func (s *Server) Handler() http.Handler {
 		name := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/page/"), ".html")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprintf(w, `<html><body>这是一个视频网页,需要解析<script>fetch("/media/sniff-%s.m3u8")</script></body></html>`, name)
+	}))
+	/* 「云播」页:**地址没有扩展名**,内容是个一千多字节的 DPlayer 壳,
+	   m3u8 明文写在里面(真实资源站的云播线路就长这样)。
+	   照原样丢给播放器的话用户看到的是「放不出来」—— 要先把地址抠出来。 */
+	mux.HandleFunc("/cloud/", count(func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimPrefix(r.URL.Path, "/cloud/")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, `<head><meta charset="utf-8"><script src="https://cdn.invalid/hls.min.js"></script></head>`+
+			`<body><div id="dplayer"></div><script>new DPlayer({video:{url:"%s\/media\/cloud-%s.m3u8",type:"hls"}})</script></body>`,
+			strings.ReplaceAll(s.Base, "/", `\/`), name)
 	}))
 	mux.HandleFunc("/media/", s.media)
 	mux.HandleFunc("/live.m3u", func(w http.ResponseWriter, r *http.Request) {
@@ -278,6 +293,9 @@ func (s *Server) json5Config() string {
 // ---------------------------------------------------------------- 苹果CMS
 
 func (s *Server) playURL(site *Site, v Vod, li, ei int) string {
+	if v.Lines[li].Cloud {
+		return fmt.Sprintf("%s/cloud/%s-%d-%d", s.Base, v.ID, li, ei)
+	}
 	if v.Lines[li].Flag != "" {
 		return fmt.Sprintf("%s/page/%s-%d-%d.html", s.Base, v.ID, li, ei)
 	}

@@ -2,7 +2,7 @@
   "$schema": "../../docs/plugin-system/api/manifest.schema.json",
   "id": "linplayer/tvbox",
   "name": "TVBox 兼容",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "导入 TVBox 配置订阅或 drpy 规则,把里面的站点变成可以浏览、搜索、播放的数据源。插件本身不带任何源,内容由用户自行订阅。",
   "i18n": { "en": { "name": "TVBox compatibility", "description": "Import TVBox subscriptions or drpy rules as data sources." } },
   "minAppVersion": "2.0.0",
