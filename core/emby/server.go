@@ -25,8 +25,11 @@ type ServerInfo struct {
 //
 // ★ **不需要登录态** —— 这是登录**前**用的,别走 session。
 func (c *Client) ProbeServer(ctx context.Context, server string) (*ServerInfo, error) {
-	u := NormServer(server) + "/System/Info/Public"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	base, err := NormServer(server)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/System/Info/Public", nil)
 	if err != nil {
 		return nil, fmt.Errorf("请求构造失败: %w", err)
 	}
@@ -74,7 +77,10 @@ func (c *Client) ExtDomains(ctx context.Context, s *Session) ([]ExtDomain, error
 	/* 端点路径在上游 nginx 里是**精确匹配**,相对 origin。
 	   用户填的地址可能已经带了 /emby(反代常见写法),直接拼就成了 /emby/emby/… → 404。
 	   故先把结尾的 /emby 削掉再拼。 */
-	base := NormServer(s.Server)
+	base, err := NormServer(s.Server)
+	if err != nil {
+		return nil, err
+	}
 	origin := strings.TrimSuffix(base, "/emby")
 	u := origin + "/emby/System/Ext/ServerDomains"
 
@@ -82,9 +88,9 @@ func (c *Client) ExtDomains(ctx context.Context, s *Session) ([]ExtDomain, error
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, fmt.Errorf("请求构造失败: %w", err)
+	req, err2 := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err2 != nil {
+		return nil, fmt.Errorf("请求构造失败: %w", err2)
 	}
 	req.Header.Set("X-Emby-Token", s.Token)
 	req.Header.Set("X-Emby-Authorization", c.authHeader(s.DeviceID))

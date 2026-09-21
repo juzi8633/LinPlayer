@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 )
 
@@ -49,17 +50,52 @@ type LoginResult struct {
 	PrimaryImageTag *string `json:"primary_image_tag"`
 }
 
-// NormServer 归一化服务器地址:去空白 + 去尾斜杠。
+// reScheme 开头的协议,斜杠**给几个算几个**(零个也认)。
+var reScheme = regexp.MustCompile(`(?i)^(https?):/*`)
+
+// NormServer 归一化服务器地址:认协议、补协议、去尾斜杠。
 //
 // ★ 尾斜杠不去掉的话后面每一处 `server + "/Users/..."` 都会拼出 `//Users`。
 // 大多数反代能忍,**有的会 404**,而且只在那台上出问题 —— 最难查的那类。
-func NormServer(server string) string {
-	return strings.TrimRight(strings.TrimSpace(server), "/")
+//
+// ☠ 少打一个斜杠不该变成一句英文报错。三个壳各自补了一遍协议,而它们都只认
+// `http://` `https://` 两个**完整**前缀 —— 用户写成 `https:/host` 或 `https:host`
+// 时壳照样在前面再拼一个 `http://`,拼出 `http://https:host`,Go 的 url.Parse
+// 报 `invalid port ":host" after host`。用户看到的是「请求构造失败」加一串英文,
+// 而他只是漏按了一下斜杠。所以这里反复剥协议、**以最后一个为准**:
+// 壳补的那层是外面那个,用户自己写的才是里面那个。
+func NormServer(server string) (string, error) {
+	s := strings.TrimSpace(server)
+	scheme := ""
+	for {
+		m := reScheme.FindStringSubmatch(s)
+		if m == nil {
+			break
+		}
+		scheme, s = strings.ToLower(m[1]), s[len(m[0]):]
+	}
+	s = strings.TrimRight(s, "/")
+	if s == "" {
+		return "", errors.New("没填服务器地址")
+	}
+	if scheme == "" {
+		// 补错协议只会连不上,而补 https 到一台只有 http 的服务器上,
+		// 报的是看不懂的 TLS 错 —— 所以默认补 http。
+		scheme = "http"
+	}
+	out := scheme + "://" + s
+	if u, err := url.Parse(out); err != nil || u.Host == "" {
+		return "", fmt.Errorf("服务器地址看不懂:%s", server)
+	}
+	return out, nil
 }
 
 // Login 用户名密码登录。
 func (c *Client) Login(ctx context.Context, server, username, password, deviceID string) (*Session, *LoginResult, error) {
-	server = NormServer(server)
+	server, err := NormServer(server)
+	if err != nil {
+		return nil, nil, err
+	}
 	body, _ := json.Marshal(map[string]string{"Username": username, "Pw": password})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		server+"/Users/AuthenticateByName", bytes.NewReader(body))

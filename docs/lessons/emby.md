@@ -892,3 +892,26 @@ SVG 也判失败(两端都解不开,认它等于换一个静默失败);每条候
 - 核心层命令 `emby.hideResume`;PC 首页「继续观看」右键、安卓首页「继续观看」长按各多一项。
   PC 首页重建时先画 MetaCache 里的旧表,不把那一条从缓存里抠掉的话,移除的卡会先闪回来一下(`HomePage.ForgetResume`)。
 - 「接下来看」(NextUp)上的条目**没验证** HideFromResume 对它有没有用:测试服那个号造不出 NextUp 数据。所以只挂在继续观看这一条上。
+
+## 漏一个斜杠 → 「请求构造失败」加一串英文(2026-09-21)
+
+用户填 `https:host`(少打 `//`),界面报:
+
+```
+请求构造失败:parse "http://https:host/Users/AuthenticateByName": invalid port ":host" after host
+```
+
+链条:三个壳(桌面 `Pages.cs`、手机/TV `GatePage.kt#withScheme`)各自补协议,
+而它们都只认 `http://` `https://` 两个**完整**前缀 —— 看到 `https:host` 判成「没写协议」,
+又在前面拼一个 `http://`。核心层的 `NormServer` 当时只做「去空白 + 去尾斜杠」,
+照单全收拼进 URL,于是 `url.Parse` 把 `https` 当主机名、`:host` 当端口。
+
+修在**核心层一处**(`core/emby/account.go` NormServer):反复剥开头的 `https?:/*`
+(斜杠给几个算几个)、**以最后一个协议为准**,再补回 `://`;修不回来的报中文
+「服务器地址看不懂」。壳里那层保留着 —— 它拼出来的 `http://https:host` 现在照样能拆回来,
+老版本的壳配新核心也能用。
+
+- 判据:`core/emby/normserver_test.go`。反向注入旧实现(只 TrimSpace+TrimRight)当场红 10 条。
+- **没顺手改的**:线路表(`account.setLines` → `parseLines`)里的地址不走 `NormServer`,
+  手填一条没写协议的线路,切过去照样是同一种英文报错。没改是因为 `Account` 不只有 emby 一种,
+  拿 `NormServer` 去套非 http 的源地址会拼出垃圾。要修得先按 `SourceKind()` 分开。
