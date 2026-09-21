@@ -36,8 +36,12 @@ jobs:
           node-version: 22
       # ☠ 不写死版本:lockfile 是 pnpm 12 生成的(lockfileVersion 9.0),
       #   而 action 默认装 9 —— 版本对不上时 `--frozen-lockfile` 会以各种
-      #   看不出根因的方式红。让它读 package.json 的 packageManager。
+      #   看不出根因的方式红。让它读 packageManager,但**要指到 site/** ——
+      #   action 默认在仓库根找 package.json,而根上没有,报的是
+      #   "No pnpm version is specified"。
       - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: site/package.json
 
       - name: 构建
         working-directory: site
