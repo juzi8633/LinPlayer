@@ -195,6 +195,26 @@ func (s *Server) Handler() http.Handler {
 		fmt.Fprintf(w, `{"sites":[{"key":"jsck","name":"带防护的站","type":1,"api":"%s/jsck/api.php/provide/vod/","searchable":1}]}`, s.Base)
 	})
 	mux.HandleFunc("/config/bad.txt", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("这不是配置")) })
+	// 裸数组、站点不写 key —— 手工维护的 vod.json 常见形状
+	mux.HandleFunc("/config/bare.json", count(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `[{"name":"裸表一","type":1,"api":"%[1]s/a/api.php/provide/vod/"},`+
+			`{"name":"裸表二","type":1,"api":"%[1]s/b/api.php/provide/vod/"}]`, s.Base)
+	}))
+	/* ForwardWidget 的小组件清单:不是 TVBox 配置,每个小组件是一段自带 RESOURCE_SITES 的 JS。
+	   第三个故意 404 —— 一个小组件拉不到不该让整份清单导入失败。 */
+	mux.HandleFunc("/config/fwd.json", count(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"title":"小组件清单","widgets":[`+
+			`{"id":"w1","title":"组件一","url":"%[1]s/widget/%%E4%%B8%%80.js"},`+
+			`{"id":"w2","title":"组件二","url":"%[1]s/widget/two.js"},`+
+			`{"id":"w3","title":"没了","url":"%[1]s/widget/gone.js"}]}`, s.Base)
+	}))
+	// 路径带中文:真实清单里就是这样,不转义发出去拿到的是 404
+	mux.HandleFunc("/widget/一.js", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "const RESOURCE_SITES = `\n组件站一,%s/a/api.php/provide/vod/\n`;\nWidgetMetadata = {};\n", s.Base)
+	})
+	mux.HandleFunc("/widget/two.js", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "const RESOURCE_SITES = `\n组件站二,%s/b/api.php/provide/vod/\n`;\n", s.Base)
+	})
 	return mux
 }
 

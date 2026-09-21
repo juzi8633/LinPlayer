@@ -20,11 +20,12 @@
 ### 能力范围(D7 D24 D100~D103 D114 D348 D532)
 - 站点:type 0(XML 苹果CMS)、type 1(JSON 苹果CMS)、type 3 JS spider(drpy 系)、type 3 jar(`csp_`)、Python spider、type 4 远程 HTTP 接口(T4)。
 - 整份配置导入,订阅式;解析接口(parses)type 0/1/2/3 与 jar 类(含神解析,随 jar 环境);WebView 嗅探;直播源(`lives`)交给直播插件;rules / ads 去广告。
+- **不是标准形状的配置也要认回来(D573)**:裸站点数组(外面没有 `{"sites":…}`)、站点不写 `key`(按 name / api 哈希补)、直接粘进来的配置内容(不是地址)、ForwardWidget 的 `.fwd` 小组件清单(抠出每个小组件里的采集站)。认不出来时报错要说清它**是什么**,不能导入「成功」而 0 个源。
 - 用户手写的 drpy 规则作为单个数据源(D120)。
 - 不做 DoH,忽略 `doh`;忽略 `notice` `wallpaper` `logo`;忽略 `changeable` `style` `playerType`;源级 `timeout` 生效;全局 `flags` 照 TVBox 语义(D103 D347 D440)。
 
 ### 贡献点
-- `dataSource.serverTypes`:「TVBox 订阅」(表单:配置地址)、「drpy 规则」(表单:规则文本或地址)。
+- `dataSource.serverTypes`:「TVBox 订阅」(表单:配置地址**或配置内容**,多行 → 壳给「从文件读入」,见 12.4)、「drpy 规则」(表单:规则文本或地址)。
 - `deepLinks`:一键导入 TVBox 配置;`externalInputs`:分享/拖放/剪贴板里的 TVBox 地址。
 - `m3u8Filters`:配置自带的 rules / ads(D238)。
 - `registry.channels`:写 `live.channels` `live.epg`,推荐读者 `linplayer/live`(D275)。

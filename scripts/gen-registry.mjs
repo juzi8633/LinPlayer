@@ -28,7 +28,15 @@ const checkOnly = process.argv.includes('--check')
 // 全部插件共用**一个** Release(D572)。一个插件一个 Release 的话,九个插件就是
 // 九条 Release,往后每发一版再加一条,Release 页很快变成一堵墙,而用户在那页上
 // 找的是「应用的新版本」。资产名带版本号,所以历史版本照样各有各的地址(D450)。
-const REPO = process.env.PLUGIN_REPO_SLUG || 'OWNER/REPO'
+// ☠ 没给 slug 就**直接退**,不要退回占位符:占位符会原样写进 index.json,
+//   而那是客户端「插件商店」读的同一份文件 —— 九条下载地址全指向一个不存在的
+//   OWNER/REPO,生成还一行错都不报。2026-09-21 顺手跑了一次 `node scripts/gen-registry.mjs`
+//   就这么把整份索引写坏了,靠 git diff 才看出来。
+const REPO = process.env.PLUGIN_REPO_SLUG
+if (!REPO) {
+  console.error('没给 PLUGIN_REPO_SLUG(形如 owner/repo)—— 索引里的下载地址要靠它,不能用占位符。')
+  process.exit(1)
+}
 const TAG = process.env.PLUGIN_RELEASE_TAG || 'plugins'
 const assetUrl = (name, ver) =>
   `https://github.com/${REPO}/releases/download/${TAG}/${name}-${ver}.lpplugin`
@@ -58,6 +66,17 @@ function categories(keys, id) {
   return [...cats].sort()
 }
 
+// 沿用上一份索引里的日期:`addedAt` 是「这个插件什么时候上架的」,
+// `released` 是「这个版本什么时候发的」—— 每次重新生成都盖成当天的话,
+// 两个日期就都变成了「上次跑生成器的时间」,而且每发一版九条全变,
+// 真正改了什么全淹在 diff 里。版本号变了才给新的 released。
+const prev = new Map()
+if (existsSync(out)) {
+  try {
+    for (const p of JSON.parse(readFileSync(out, 'utf8')).plugins ?? []) prev.set(p.id, p)
+  } catch { /* 上一份坏了就当没有,重新生成一份干净的 */ }
+}
+
 const entries = []
 const problems = []
 
@@ -82,7 +101,7 @@ for (const name of readdirSync(pluginsDir).sort()) {
     author: m.id.split('/')[0],
     repository: process.env.MAIN_REPO_URL || undefined,
     official: true,
-    addedAt: new Date().toISOString(),
+    addedAt: prev.get(m.id)?.addedAt ?? new Date().toISOString(),
     contributes: keys,
     categories: categories(keys, m.id),
     versions: [{
@@ -90,7 +109,7 @@ for (const name of readdirSync(pluginsDir).sort()) {
       url: assetUrl(name, m.version),
       size,
       minAppVersion: m.minAppVersion,
-      released: new Date().toISOString(),
+      released: prev.get(m.id)?.versions?.find((v) => v.version === m.version)?.released ?? new Date().toISOString(),
       platforms: m.platforms,
     }],
   }

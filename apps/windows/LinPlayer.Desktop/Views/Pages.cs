@@ -241,12 +241,40 @@ public sealed class AddServerPage : PageBase
                     pluginFields[Get(f, "key")] = tb;
                     pluginRow.Children.Add(Label(Get(f, "label")));
                     pluginRow.Children.Add(tb);
+                    // 多行字段配一个「从文件读入」:插件读不到本地文件(宿主不给它 file://),
+                    // 所以导入一份 vod.json / m3u 只能靠把内容贴进来 —— 由壳来读那个文件。
+                    if (multi) pluginRow.Children.Add(FileIntoBox(tb));
                 }
             dirRow.IsVisible = isLocal;
             test.IsVisible = k == "emby";
             server.Watermark = "https://你的服务器地址";
             for (var i = 0; i < kindBar.Children.Count; i++)
                 ((Button)kindBar.Children[i]).Classes.Set("primary", i == kindIndex);
+        }
+
+        static Button FileIntoBox(TextBox tb)
+        {
+            var btn = new Button { Classes = { "ghost" }, Content = "从文件读入…" };
+            btn.Click += async (_, _) =>
+            {
+                if (TopLevel.GetTopLevel(btn) is not { } top) return;
+                var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+                {
+                    Title = "选择配置文件", AllowMultiple = false,
+                    FileTypeFilter = [new FilePickerFileType("配置文件") { Patterns = ["*.json", "*.txt", "*.m3u", "*.m3u8", "*.js", "*.fwd", "*"] }],
+                });
+                if (files.Count == 0 || files[0].TryGetLocalPath() is not { } path) return;
+                try
+                {
+                    // 配置文件都是几十 KB 的量级;真拖进来一个几百兆的文件,填进文本框只会把界面卡死
+                    var info = new System.IO.FileInfo(path);
+                    if (info.Length > 4 * 1024 * 1024) { btn.Content = "这个文件太大了(" + info.Length / 1024 / 1024 + " MB)"; return; }
+                    tb.Text = await System.IO.File.ReadAllTextAsync(path);
+                    btn.Content = info.Name;
+                }
+                catch (Exception e) { btn.Content = "读不出来:" + e.Message; }
+            };
+            return btn;
         }
 
         void AddChip(int idx)

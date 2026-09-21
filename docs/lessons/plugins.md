@@ -485,3 +485,31 @@ UHD(<UHD 求片站>)**测试账号**(用户提供,服主已授权测试,可直�
 
 - [分发通道 GitHub 优于 CF](build-release.md) — 插件包与市场索引走 GitHub,别挪 CF
 - [起播不露视频窗](player-mpv.md) — 非 Emby 源起播不露画面窗的两个真因
+
+## 「导入不了」的三种形状,两种是静默的(2026-09-21)
+
+用户拿来两样东西:一个本地 `vod.json`、一个 `.fwd` 订阅链接。两样都不工作,而**只有一样会报错**。
+
+| 拿到的东西 | 原来的表现 | 真正的原因 |
+|---|---|---|
+| 裸数组 `[{name,type,api}, …]` | 导入「成功」,0 个源 | 外面没有 `{"sites":…}` 那层壳,`cfg.sites` 是 `undefined` |
+| 站点不写 `key` | 导入「成功」,0 个源 | `draftsOf` 的 `if (!site.key) continue` —— TVBox 里 key 必填,手写配置基本都没有 |
+| `.fwd` 小组件清单 | 导入「成功」,0 个源 | 那根本不是 TVBox 配置,是另一个播放器(ForwardWidget)的插件清单 |
+
+三条里两条是**「成功」加 0 个源** —— 用户看不出是配置不对、地址不对,还是软件坏了。
+判据在 `core/datasource/tvbox_e2e_test.go` 的 `TestTVBoxNonStandardConfigShapes`,
+夹具在 `core/internal/fakevod`(`/config/bare.json`、`/config/fwd.json`、`/widget/*.js`)。
+
+`.fwd` 值得单说:一份清单里每个小组件是一段自带运行时 API(`WidgetMetadata` / `Widget.http`)的 JS,
+看着完全没法接。但**真去读一个**就会发现,这类「VOD 单站点脚本」干的事只有一件 ——
+把一个苹果 CMS 采集站的地址写在开头的 `RESOURCE_SITES` 里,剩下全是把 `vod_play_url` 拆成集数,
+而那段逻辑我们自己早就有了。所以不用跑它的运行时,抠出那一行就是一个 type 1 站点。
+**先读一个样本再判断能不能接**,别看见陌生格式就下结论。
+
+配套的坑:
+
+- **`new URL(u).href` 不是为了转义中文路径**。清单里的地址确实带中文,而实测宿主发请求时
+  已经做了百分号编码(夹具 `/widget/一.js` 证明)。留着它是为了让相对路径 / 缺协议的地址当场抛。
+  (curl 那边不一样 —— `scripts/fetch-drpy.sh` 里是真的要自己 urlencode,见 `docs/lessons/build-release.md`。)
+- **插件读不到本地文件是故意的**(`rt/system.go` 拦 `file://`)。所以「导入一个文件」只能是
+  **壳**读文件、填进插件表单的多行字段(D574),不是给插件开一个 fs API。

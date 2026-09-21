@@ -484,3 +484,47 @@ func TestTVBoxConfigOkhttpUA(t *testing.T) {
 		t.Fatal("配置没读出源")
 	}
 }
+
+// 不是标准 TVBox 配置的三种真实形状(2026-09-21 用户报障:
+// 「插件不支持导入 vod 文件」「这个订阅链接也不会读」)。
+func TestTVBoxNonStandardConfigShapes(t *testing.T) {
+	e := newEnv(t)
+
+	// ① 裸数组 + 站点不写 key。原来两样都踩:外层不是 {"sites":…} → 0 个源;
+	//    就算解出来,没有 key 的站点会在 draftsOf 里被静默跳过 —— 导入「成功」而一个源都没有。
+	bare := e.subscribe(e.base + "/config/bare.json")
+	if len(bare) != 2 {
+		t.Fatalf("裸数组配置应解出 2 个源,得到 %d", len(bare))
+	}
+	for _, d := range bare {
+		if d.Unavailable != "" {
+			t.Fatalf("%s 不该不可用:%s", d.Name, d.Unavailable)
+		}
+	}
+
+	// ② 直接粘配置内容(插件读不到本地文件,导入一份 vod.json 只能靠贴内容)
+	inline := e.subscribe(`[{"name":"贴进来的","type":1,"api":"` + e.base + `/a/api.php/provide/vod/"}]`)
+	if len(inline) != 1 || inline[0].Name != "贴进来的" {
+		t.Fatalf("粘贴配置内容应解出那一个源: %+v", inline)
+	}
+
+	// ③ ForwardWidget 小组件清单:抠出每个小组件里的采集站;拉不到的那个跳过
+	fwd := e.subscribe(e.base + "/config/fwd.json")
+	if len(fwd) != 2 {
+		t.Fatalf("小组件清单应转出 2 个站(第三个 404 跳过),得到 %d: %+v", len(fwd), fwd)
+	}
+	names := map[string]bool{}
+	for _, d := range fwd {
+		names[d.Name] = true
+	}
+	if !names["组件站一"] || !names["组件站二"] {
+		t.Fatalf("站名应取自小组件里的 RESOURCE_SITES: %+v", names)
+	}
+
+	// 一个都抠不出来时要说清楚它是什么,别只说「解析失败」
+	_, err := e.try("source.createSources", map[string]any{"plugin_id": "linplayer/tvbox", "type_id": "subscription",
+		"form": map[string]any{"url": `{"widgets":[{"id":"x","title":"空的","url":"` + e.base + `/widget/gone.js"}]}`}})
+	if err == nil || !strings.Contains(err.Error(), "ForwardWidget") {
+		t.Fatalf("空清单应报「这是 ForwardWidget 的小组件清单」: %v", err)
+	}
+}

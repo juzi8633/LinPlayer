@@ -1,6 +1,7 @@
 // TVBox 配置拉取与解码(D100):按影视仓/FongMi 的顺序依次识别
 // ;pk; 密钥(AES-ECB)→ 合法 JSON → 「8 位标记 + ** + base64」(图片尾部藏配置同一形状)→ 「2423」开头的 AES-CBC → JSON5。
 import { crypt, PluginError } from '@linplayer/plugin-sdk'
+import { forwardToSites, isForward, type ForwardManifest } from './forward'
 import { fetchText } from './net'
 
 export interface SiteCfg {
@@ -156,25 +157,41 @@ export function decodeConfigText(raw: string, url: string, pk?: string): string 
   return fixRelative(url, text)
 }
 
+/** 认回两种「不是标准 TVBox 配置」的常见形状。 */
+function asConfig(v: unknown): TvConfig {
+  // 裸数组:不少手工维护的 vod.json 就是一串站点,外面没有 {"sites":…} 这层壳
+  const cfg = (Array.isArray(v) ? { sites: v as SiteCfg[] } : v) as TvConfig
+  for (const s of cfg?.sites ?? []) {
+    // key 是我们给源编 id 用的(TVBox 里它必填),而手写/生成的配置常常只有 name+api。
+    // 不补的话这些站点会在 draftsOf 里被**静默跳过** —— 导入成功,一个源都没有。
+    if (s && !s.key) s.key = s.name || shortHash(String(s.api ?? ''))
+  }
+  return cfg
+}
+
 export function parseConfig(text: string): TvConfig {
   try {
-    return JSON.parse(text)
+    return asConfig(JSON.parse(text))
   } catch {
     try {
-      return parseJson5(text) as TvConfig
+      return asConfig(parseJson5(text))
     } catch (e) {
       throw new PluginError({ kind: 'parseFailed', message: '配置不是 TVBox 格式(JSON/JSON5 解析失败,也不是已知的加密格式)', detail: String(e) })
     }
   }
 }
 
-/** 拉并解码一份配置。地址可带 ;pk;密钥。 */
+/** 拉并解码一份配置。地址可带 ;pk;密钥;也可以直接给配置内容。 */
 export async function loadConfig(input: string): Promise<{ cfg: TvConfig; url: string }> {
   const [url, pk] = input.trim().split(';pk;')
+  // ★ 直接粘配置内容也收:插件读不到本地文件(宿主不放 file://,见 rt/system.go),
+  //   所以「导入一份 vod.json」唯一的走法就是把内容贴进来。
+  const inline = /^[[{]/.test(url)
   // 拉配置用 okhttp 的 UA(TVBox 系客户端都这样):不少中转按 UA 分流,浏览器 UA 拿到的是下载页
-  const raw = await fetchText(url, { timeout: 30000, headers: { 'User-Agent': 'okhttp/3.12.13' } })
-  const cfg = parseConfig(decodeConfigText(raw, url, pk))
+  const raw = inline ? url : await fetchText(url, { timeout: 30000, headers: { 'User-Agent': 'okhttp/3.12.13' } })
+  const cfg = parseConfig(decodeConfigText(raw, inline ? '' : url, pk))
   if (!cfg || typeof cfg !== 'object') throw new PluginError({ kind: 'parseFailed', message: '配置内容为空' })
+  if (isForward(cfg)) return { cfg: asConfig(await forwardToSites(cfg as ForwardManifest)), url }
   return { cfg, url }
 }
 

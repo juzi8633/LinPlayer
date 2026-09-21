@@ -2,7 +2,7 @@
   "$schema": "../../docs/plugin-system/api/manifest.schema.json",
   "id": "linplayer/tvbox",
   "name": "TVBox 兼容",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "导入 TVBox 配置订阅或 drpy 规则,把里面的站点变成可以浏览、搜索、播放的数据源。插件本身不带任何源,内容由用户自行订阅。",
   "i18n": { "en": { "name": "TVBox compatibility", "description": "Import TVBox subscriptions or drpy rules as data sources." } },
   "minAppVersion": "2.0.0",
@@ -13,7 +13,7 @@
   "contributes": {
     "dataSource": {
       "serverTypes": [
-        { "id": "subscription", "name": "TVBox 订阅", "fields": [ { "key": "url", "type": "text", "title": "配置地址", "description": "支持加密配置、多仓地址;地址后可带 ;pk;密钥" } ] },
+        { "id": "subscription", "name": "TVBox 订阅", "fields": [ { "key": "url", "type": "text", "multiline": true, "title": "配置地址或配置内容", "description": "支持加密配置、多仓地址;地址后可带 ;pk;密钥。也可以直接把配置内容贴进来(或点「从文件读入」选一份 vod.json)——裸站点数组、没写 key 的站点都认。" } ] },
         { "id": "drpy-rule", "name": "drpy 规则", "fields": [ { "key": "rule", "type": "text", "title": "规则文本或地址", "multiline": true } ] }
       ]
     },
