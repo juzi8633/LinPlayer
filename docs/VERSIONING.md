@@ -2,7 +2,7 @@
 
 ## 唯一权威:仓库根的 `VERSION`
 
-一行,形如 `1.1.0`。发布版本号 = `<VERSION>-build<CI run_number>`。
+一行,形如 `2.0.0`。发布版本号 = `<VERSION>-build<CI run_number>`。
 
 读它的地方(改版本只改 `VERSION` 一处):
 
@@ -12,7 +12,15 @@
 | C# 宿主 | CI 传 `dotnet publish -p:Version=<版本>`;本地开发回落 `csproj` 里的 `<Version>` |
 | Go 核心层 | `scripts/build-core.sh` 用 `-ldflags -X ...system.Version=<版本>` 注入 |
 
-## ★ 为什么是 1.1.0 而不是 1.0.0
+## 2026-09-21:1.1.0 → 2.0.0
+
+插件系统整体重做(旧的 `com.linplayer.*` 一个都不兼容),字幕翻译与 Trakt/Bangumi 同步
+从宿主挪进插件 —— 用户升上来会发现界面里少了东西,这是 major。
+线上最高是 `1.1.0-build804`,`2.0.0-buildN` 无论 N 多小都压得过。
+
+下面这段是 1.1.0 的由来,留着是因为那三次事故的教训没过期。
+
+## ★ 为什么当初是 1.1.0 而不是 1.0.0
 
 **版本必须单调递增,否则老用户永远收不到更新** —— App 的更新检查
 (`core/system/update.go`)按 `major.minor.patch.build` 逐级比大小,

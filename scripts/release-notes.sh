@@ -31,7 +31,32 @@ LINES=$(printf '%s\n' "$RAW" \
   | awk '!seen[$0]++' \
   | head -40)
 
+# 大版本的「这一版是什么」是人写的,放在提交清单**上面**。
+# 只有提交清单的话,用户读完也不知道这版删了什么 —— 而 2.0.0 确实把几个
+# 内置功能挪成了插件,不说清楚就是「一更新发现啥都没了」。
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+VER="$(tr -d '[:space:]' < "$ROOT/VERSION")"
+PREAMBLE="$ROOT/docs/plugin-system/RELEASE-$VER.md"
+
+# 大版本(x.0.0)**必须**有人写的那一段。少了它,用户拿到的就只有一串提交标题,
+# 而大版本恰恰是「有东西被挪走了」的那一版 —— 不说清楚就是「一更新发现啥都没了」。
+case "$VER" in
+  *.0.0)
+    [ -f "$PREAMBLE" ] || {
+      echo "$VER 是大版本,但 $PREAMBLE 不在。" >&2
+      echo "大版本的发布说明不能只有提交清单,先把「加了什么 / 删了什么」写进那个文件。" >&2
+      exit 1
+    } ;;
+esac
+
 {
+  if [ -f "$PREAMBLE" ]; then
+    # 开头那段 `> ...` 是给自己人看的,不进发布说明;正文里的引用块要留
+    sed '0,/^## /{/^>/d}' "$PREAMBLE"
+    echo
+    echo "---"
+    echo
+  fi
   echo "## 本次更新"
   echo
   if [ -z "$LINES" ]; then

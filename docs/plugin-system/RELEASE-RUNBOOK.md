@@ -10,7 +10,8 @@
 | 自有公开域名豁免红线 | ✅ 2026-09-21 裁决豁免(D565)。名单在 `scripts/secrets-allow.txt`,口径写进 `AGENTS.md` §3.1 |
 | `lp` 的许可证(D519 原来的卡点) | ✅ 整仓改 AGPL-3.0-or-later(D566)—— 和主仓库同许可证,不再需要版权人另行授权 |
 | 清空重建官方插件仓库(D149) | ✅ 2026-09-21 已推(**保留历史**,一次提交换内容)。Pages 自定义域名与 `SITE_URL` / `PUBLIC_REPO_URL` 变量都配好了,站点已上线 |
-| **官方插件的 .lpplugin 还没发 Release** | ⏸ 索引里的下载地址现在指向 404。包已打好在 `build/lpplugin/`,发法见第 4 步 |
+| 官方插件的 .lpplugin 已发 Release | ✅ 2026-09-21 九个全发,`release-plugins.sh` 发完照索引逐条回验下载体积 |
+| 官方市场地址 | ✅ 站点托管 `/registry/index.json`(D567),`LP_PLUGIN_MARKET_URL` 已配。**没配这个 = 构建出来的插件商店是空的,而且不报错** |
 | git 历史里的旧泄漏 | ⏸ 红线原文要求「改写历史或删库重建」,破坏性操作,等你决定。现状见 `docs/lessons/red-line-audit.md` |
 
 ## 1. 版本号
@@ -18,11 +19,14 @@
 改 `VERSION` 一处(唯一权威,见 `docs/VERSIONING.md`):
 
 ```
-1.1.0  →  2.0.0
+1.1.0  →  2.0.0    ← 2026-09-21 已改
 ```
 
 ☠ **不要在没想好之前改它**:`VERSION` 一进 main,CI 就会自动出预发布。
 2.0.0 无论 build 号多小都压得过线上的 1.1.0-buildN,所以单调性没问题。
+
+大版本还要写 `docs/plugin-system/RELEASE-<VERSION>.md`(**加了什么 / 删了什么 / 挪去哪了**)——
+`release-notes.sh` 把它拼在提交清单上面,文件不在就直接红(D570)。
 
 ## 2. 那条命令
 
@@ -70,6 +74,14 @@ PLUGIN_REPO_SLUG=... bash scripts/release-plugins.sh --yes  # 真发
 git push origin main       # 触发自动预发布
 git push origin v2.0.0     # 打了 tag 才发正式版
 ```
+
+## 5.5 推完先验一件事
+
+安装包里**不带任何插件**,市场地址是拿到插件的唯一一条路。它是编译期注入的
+(`LP_PLUGIN_MARKET_URL` → `core/cmd/sealsecrets`),漏注入时**不报错**,
+表现是「插件商店是空的」。
+
+验法:装上预发布,打开「设置 → 插件 → 市场」——九条都在 = 注入成功。
 
 ## 6. 发完之后
 
